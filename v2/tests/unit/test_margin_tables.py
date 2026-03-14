@@ -48,6 +48,18 @@ def _sample_tables() -> MarginTables:
             "CL": "CL",
             "FV": "ZF",    # TS FV → IB ZF (not in ib dict, tests fallback)
         },
+        sector_lookup={
+            "ES": "Index",
+            "NQ": "Index",
+            "YM": "Index",
+            "CL": "Energy",
+            "NG": "Energy",
+            "GC": "Metals",
+            "SI": "Metals",
+            "VX": "Volatility",
+            "TY": "Interest Rate",
+            "EC": "Currencies",
+        },
     )
 
 
@@ -153,9 +165,65 @@ class TestResolveForSymbols:
         assert result == {}
 
 
+# ── sector_lookup ─────────────────────────────────────────────────────────────
+
+class TestSectorLookup:
+    def test_known_symbols(self):
+        tables = _sample_tables()
+        assert tables.sector_lookup["ES"] == "Index"
+        assert tables.sector_lookup["CL"] == "Energy"
+        assert tables.sector_lookup["GC"] == "Metals"
+        assert tables.sector_lookup["VX"] == "Volatility"
+
+    def test_missing_symbol_returns_key_error(self):
+        tables = _sample_tables()
+        with pytest.raises(KeyError):
+            _ = tables.sector_lookup["UNKNOWN"]
+
+    def test_resolve_for_symbols_uses_sector_via_get_margin(self):
+        """sector_lookup is independent — get_margin is not affected by it."""
+        tables = _sample_tables()
+        result = tables.resolve_for_symbols(["ES", "CL"], "TradeStation", "Maintenance")
+        assert "ES" in result  # margin lookup unaffected by sector_lookup
+
+    def test_empty_sector_lookup(self):
+        tables = MarginTables(ts={}, ib={}, lookup={}, sector_lookup={})
+        assert tables.sector_lookup == {}
+
+    def test_all_common_symbols_have_sectors(self):
+        """Smoke-test the breadth of coverage in the sample data."""
+        tables = _sample_tables()
+        # symbols that should map to specific sectors
+        expected = {
+            "ES": "Index", "NQ": "Index",
+            "CL": "Energy",
+            "GC": "Metals", "SI": "Metals",
+            "VX": "Volatility",
+            "TY": "Interest Rate",
+            "EC": "Currencies",
+        }
+        for sym, sector in expected.items():
+            assert tables.sector_lookup.get(sym) == sector, (
+                f"{sym}: expected {sector}, got {tables.sector_lookup.get(sym)}"
+            )
+
+
 # ── save / load round-trip ────────────────────────────────────────────────────
 
 class TestSaveLoadMarginTables:
+    def test_round_trip_includes_sector_lookup(self, tmp_path, monkeypatch):
+        """sector_lookup persists through save/load."""
+        margin_file = tmp_path / "margin_tables.yaml"
+        monkeypatch.setattr("core.ingestion.xlsb_importer.MARGIN_TABLES_FILE", margin_file)
+        monkeypatch.setattr("core.ingestion.xlsb_importer.CONFIG_DIR", tmp_path)
+
+        tables = _sample_tables()
+        save_margin_tables(tables)
+        loaded = load_margin_tables()
+
+        assert loaded is not None
+        assert loaded.sector_lookup == tables.sector_lookup
+
     def test_round_trip(self, tmp_path, monkeypatch):
         """save_margin_tables / load_margin_tables round-trip."""
         margin_file = tmp_path / "margin_tables.yaml"

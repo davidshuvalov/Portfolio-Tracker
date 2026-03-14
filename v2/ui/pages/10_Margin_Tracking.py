@@ -28,7 +28,12 @@ from core.analytics.margin import (
 )
 from core.config import AppConfig
 from core.data_types import PortfolioData
-from core.ingestion.xlsb_importer import MarginTables, load_margin_tables
+from core.ingestion.xlsb_importer import (
+    IB_MARGINS_URL,
+    TS_MARGINS_URL,
+    MarginTables,
+    load_margin_tables,
+)
 
 st.set_page_config(page_title="Margin Tracking", layout="wide")
 st.title("Margin Tracking")
@@ -158,6 +163,19 @@ with st.sidebar:
         st.success("Saved.")
 
     st.divider()
+
+    if tables_available:
+        st.caption(
+            "Margin data imported from your v1.24 workbook. "
+            "To refresh with current exchange rates, download updated tables from:"
+        )
+        st.markdown(
+            f"- [TradeStation margin requirements]({TS_MARGINS_URL})\n"
+            f"- [Interactive Brokers margin requirements]({IB_MARGINS_URL})\n\n"
+            "Then paste the updated data into the corresponding sheets in your "
+            "`.xlsb` file and re-run **Migrate**."
+        )
+        st.divider()
 
     period_label = st.selectbox(
         "Period",

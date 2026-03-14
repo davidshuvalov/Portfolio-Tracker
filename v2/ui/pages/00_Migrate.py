@@ -80,16 +80,27 @@ if not strategies:
     st.error("No strategies found in the Strategies tab. Nothing to import.")
     st.stop()
 
+# Auto-fill sectors from Sector sheet lookup before showing preview
+n_filled = 0
+if margin_tables is not None and margin_tables.sector_lookup:
+    for strat in strategies:
+        sym = strat.get("symbol", "")
+        if sym and not strat.get("sector") and sym in margin_tables.sector_lookup:
+            strat["sector"] = margin_tables.sector_lookup[sym]
+            n_filled += 1
+
 col_s, col_m = st.columns(2)
 col_s.success(f"Found **{len(strategies)}** strategies.")
 if margin_tables is not None:
+    sector_note = f" · **{n_filled}** sectors auto-filled" if n_filled else ""
     col_m.success(
-        f"Margin tables: **{len(margin_tables.ts)}** TS symbols, "
-        f"**{len(margin_tables.ib)}** IB symbols, "
-        f"**{len(margin_tables.lookup)}** symbol mappings."
+        f"Reference tables: **{len(margin_tables.ts)}** TS margins, "
+        f"**{len(margin_tables.ib)}** IB margins, "
+        f"**{len(margin_tables.sector_lookup)}** sector mappings"
+        + sector_note + "."
     )
 else:
-    col_m.warning("Margin tables could not be read (see warnings above).")
+    col_m.warning("Reference tables could not be read (see warnings above).")
 
 # Preview table
 df = pd.DataFrame(strategies)

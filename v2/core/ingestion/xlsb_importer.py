@@ -84,6 +84,13 @@ STRATEGIES_SHEET  = "Strategies"
 TS_MARGINS_SHEET  = "TradeStation Margins"
 IB_MARGINS_SHEET  = "InteractiveBrokers Margins"
 SYMBOL_LOOKUP_SHEET = "TS Symbol Lookup"
+SECTOR_SHEET      = "Sector"
+
+# Public URLs for updating margin tables from source websites
+# (the xlsb sheets contain Excel hyperlinks that pyxlsb cannot read —
+#  these are the known destination URLs)
+TS_MARGINS_URL  = "https://www.tradestation.com/pricing/futures-margin-requirements/"
+IB_MARGINS_URL  = "https://www.interactivebrokers.com/en/trading/margin-requirements.php"
 
 
 # ── Margin tables dataclass ───────────────────────────────────────────────────
@@ -101,13 +108,16 @@ class MarginTables:
     """
     Reference tables imported from the v1.24 xlsb workbook.
 
-    ts:     TS symbol  → MarginEntry (using TradeStation overnight values)
-    ib:     IB symbol  → MarginEntry (using Interactive Brokers overnight values)
-    lookup: TS symbol  → IB symbol  (from TS Symbol Lookup sheet)
+    ts:            TS symbol → MarginEntry (TradeStation overnight values)
+    ib:            IB symbol → MarginEntry (Interactive Brokers overnight values)
+    lookup:        TS symbol → IB symbol  (from TS Symbol Lookup sheet)
+    sector_lookup: TS symbol → sector     (from Sector sheet)
+                   e.g. ES→Index, CL→Energy, GC→Metals, VX→Volatility
     """
     ts: dict[str, MarginEntry] = field(default_factory=dict)
     ib: dict[str, MarginEntry] = field(default_factory=dict)
     lookup: dict[str, str] = field(default_factory=dict)
+    sector_lookup: dict[str, str] = field(default_factory=dict)
 
     def get_margin(
         self,
@@ -177,6 +187,7 @@ def import_margin_tables(xlsb_path: Path) -> MarginTables:
     ts_margins: dict[str, MarginEntry] = {}
     ib_margins: dict[str, MarginEntry] = {}
     symbol_lookup: dict[str, str] = {}
+    sector_lookup: dict[str, str] = {}
 
     try:
         with pyxlsb.open_workbook(str(xlsb_path)) as wb:
@@ -250,12 +261,31 @@ def import_margin_tables(xlsb_path: Path) -> MarginTables:
                         if ts_sym and ib_sym:
                             symbol_lookup[ts_sym] = ib_sym
 
+            # ── Sector sheet ──────────────────────────────────────────────────
+            if SECTOR_SHEET in available:
+                with wb.get_sheet(SECTOR_SHEET) as ws:
+                    for i, row in enumerate(ws.rows()):
+                        if i == 0:
+                            continue  # header (Symbol, Sector)
+                        vals = [c.v for c in row]
+                        if len(vals) < 2:
+                            continue
+                        sym    = _str(vals[0])
+                        sector = _str(vals[1])
+                        if sym and sector:
+                            sector_lookup[sym] = sector
+
     except (ImportError, FileNotFoundError):
         raise
     except Exception as e:
         raise RuntimeError(f"Failed to read margin tables from {xlsb_path.name}: {e}") from e
 
-    return MarginTables(ts=ts_margins, ib=ib_margins, lookup=symbol_lookup)
+    return MarginTables(
+        ts=ts_margins,
+        ib=ib_margins,
+        lookup=symbol_lookup,
+        sector_lookup=sector_lookup,
+    )
 
 
 # ── Persist / load margin tables ──────────────────────────────────────────────
@@ -273,6 +303,7 @@ def save_margin_tables(tables: MarginTables) -> None:
             for sym, e in tables.ib.items()
         },
         "lookup": tables.lookup,
+        "sector_lookup": tables.sector_lookup,
     }
     with open(MARGIN_TABLES_FILE, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
@@ -303,8 +334,9 @@ def load_margin_tables() -> MarginTables | None:
             )
             for sym, d in data.get("ib", {}).items()
         }
-        lookup = {str(k): str(v) for k, v in data.get("lookup", {}).items()}
-        return MarginTables(ts=ts, ib=ib, lookup=lookup)
+        lookup        = {str(k): str(v) for k, v in data.get("lookup", {}).items()}
+        sector_lookup = {str(k): str(v) for k, v in data.get("sector_lookup", {}).items()}
+        return MarginTables(ts=ts, ib=ib, lookup=lookup, sector_lookup=sector_lookup)
     except Exception:
         return None
 

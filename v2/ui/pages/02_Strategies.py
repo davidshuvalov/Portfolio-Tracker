@@ -62,8 +62,9 @@ _COLUMN_CONFIG = {
     "sector": st.column_config.SelectboxColumn(
         "Sector",
         options=[
-            "", "Equity", "Index", "Bond", "Currency", "Energy",
-            "Metal", "Grain", "Soft", "Livestock", "Crypto", "Other",
+            "", "Index", "Energy", "Metals", "Currencies", "Interest Rate",
+            "Agriculture", "Soft", "Meats", "Crypto", "Volatility",
+            "Eurex Index", "Eurex Interest Rate", "Euronext LIFFE", "Other",
         ],
         width="medium",
     ),
@@ -236,3 +237,42 @@ with col_bulk3:
             save_strategies(kept)
             st.success(f"Removed {len(not_loaded)} not-loaded strategies.")
             st.rerun()
+
+# ── Auto-fill sectors from v1.24 reference data ────────────────────────────────
+
+st.divider()
+st.subheader("Auto-fill Sectors from v1.24 Reference")
+
+from core.ingestion.xlsb_importer import load_margin_tables  # noqa: E402
+if "margin_tables" not in st.session_state:
+    st.session_state["margin_tables"] = load_margin_tables()
+_mt = st.session_state.get("margin_tables")
+
+if _mt is not None and _mt.sector_lookup:
+    missing_sector = [s for s in strategies if not s.get("sector") and s.get("symbol")]
+    fillable = [s for s in missing_sector if s.get("symbol") in _mt.sector_lookup]
+    if fillable:
+        st.caption(
+            f"**{len(fillable)}** strategies have a symbol but no sector, and their "
+            f"symbol is in the v1.24 reference data."
+        )
+        if st.button(f"Auto-fill sectors for {len(fillable)} strategies", type="primary"):
+            updated = []
+            for s in strategies:
+                sym = s.get("symbol", "")
+                if not s.get("sector") and sym and sym in _mt.sector_lookup:
+                    s = dict(s, sector=_mt.sector_lookup[sym])
+                updated.append(s)
+            save_strategies(updated)
+            st.success(f"Filled sectors for {len(fillable)} strategies.")
+            st.rerun()
+    else:
+        st.caption(
+            "All strategies with symbols already have sectors, "
+            "or their symbols are not in the reference data."
+        )
+else:
+    st.caption(
+        "No v1.24 reference data found. Run the **Migrate** page with your "
+        "`.xlsb` file to import the Sector reference table."
+    )
