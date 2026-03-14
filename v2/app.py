@@ -2,16 +2,12 @@
 Portfolio Tracker v2 — Streamlit entrypoint.
 
 Handles:
-- First-run setup (license, folder config, optional v1.24 migration)
 - Session state initialisation
-- License gate (DEV_MODE bypasses during development)
+- License gate (checks MultiWalk DLL; shows customer-ID entry if not configured)
+- Sidebar with data status and nav hints
 """
 
 import streamlit as st
-from pathlib import Path
-
-# ── Dev mode bypass — remove before release ───────────────────────────────────
-DEV_MODE = True
 
 # ── Page config (must be first Streamlit call) ────────────────────────────────
 st.set_page_config(
@@ -36,37 +32,65 @@ if "portfolio_data" not in st.session_state:
 
 # ── License check ─────────────────────────────────────────────────────────────
 def _check_license() -> bool:
-    if DEV_MODE:
-        return True
+    config: AppConfig = st.session_state.config
+    customer_id = config.customer_id
+
+    if not customer_id:
+        _show_license_entry("Enter your TradeStation Customer ID to activate Portfolio Tracker.")
+        return False
+
     try:
         from core.licensing.license_manager import validate_full
-        customer_id = st.session_state.config.customer_id
-        if not customer_id:
-            return False
         valid, message = validate_full(customer_id)
-        if not valid:
-            st.error(f"License error: {message}")
-        return valid
     except Exception as e:
-        st.error(f"License check failed: {e}")
+        valid, message = False, str(e)
+
+    if not valid:
+        _show_license_entry(f"License check failed: {message}")
         return False
+
+    return True
+
+
+def _show_license_entry(prompt: str) -> None:
+    st.title("Portfolio Tracker v2 — License Required")
+    st.warning(prompt)
+    st.markdown(
+        "Enter your **TradeStation Customer ID** (the number you use to log in to "
+        "TradeStation). This is verified against the MultiWalk license DLL."
+    )
+    with st.form("license_form"):
+        cid = st.number_input(
+            "TradeStation Customer ID",
+            min_value=1,
+            max_value=9_999_999,
+            value=0,
+            step=1,
+        )
+        submitted = st.form_submit_button("Activate", type="primary")
+        if submitted and cid:
+            st.session_state.config.customer_id = int(cid)
+            st.session_state.config.save()
+            st.rerun()
+
+    st.info(
+        "If you need help or don't have a license, contact "
+        "david@portfoliotracker.com"
+    )
+    st.stop()
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     if not _check_license():
-        st.stop()
+        return
 
     config: AppConfig = st.session_state.config
 
-    # Sidebar: folder status + quick stats
+    # Sidebar: data status
     with st.sidebar:
         st.title("Portfolio Tracker")
         st.caption("v2.0.0")
-
-        if DEV_MODE:
-            st.warning("DEV MODE — license check disabled")
-
         st.divider()
 
         if st.session_state.imported_data is not None:
@@ -99,6 +123,7 @@ def main():
     | **Eligibility Backtest** | Walk-forward portfolio construction rules |
     | **Margin Tracking** | Contract margin by symbol and sector |
     | **Position Check** | Current live positions |
+    | **Settings** | License, export/import settings, Excel export |
     """)
 
     if not config.folders:

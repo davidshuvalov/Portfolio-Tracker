@@ -62,6 +62,7 @@ class AppConfig(BaseModel):
     default_margin: float = 5000.0
     margin_source: Literal["TradeStation", "InteractiveBrokers", "Manual"] = "TradeStation"
     margin_type: Literal["Initial", "Maintenance"] = "Maintenance"
+    customer_id: int = 0
 
     @field_validator("folders", mode="before")
     @classmethod
