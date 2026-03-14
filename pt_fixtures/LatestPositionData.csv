@@ -1,0 +1,431 @@
+Strategy Name,Position
+"DZS2023-09 Breakout with Twist MW [@NG-240min] WF(756-504,U,NPAvgDD,PMx)",0
+"DZS2023-09 Breakout with Twist MW [@NQ-125min] WF(504-252,U,NPAvgDD,PMx)",0
+"DZS2023-09 Breakout with Twist MW [@NQ-65min] WF(756-252,U,NPAvgDD,PMx)",0
+"DZS2023-09 Breakout with Twist MW [@NQ-Daily] WF(756-252,U,NPAvgDD,PMx)",0
+"DZS2023-11 Donchian 4 week MW [@HO-360min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2023-11 Turn-of-the-month fac MW [@TU-60min] WF(504-252,U,NPAvgDD,PMx)",0
+"DZS2023-12 Reverse MCAD with StopLoss MW [@NQ-120min] WF(1Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-01 Breakout with LastSess Filter V2 MW [@JY-719min] WF(756-126,U,NPAvgDD,PMx)",0
+"DZS2024-01 Trade the Pullback v2 MW [@JY-701min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-01 Trade the Pullback v2 MW [@NE1-701min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-01 Trade the Pullback v2 MW [@NG-701min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-02 52 Book Entry 10 v3 MW [@HO-179min] WF(2Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-02 52 Book Entry 10 W [@KC-63min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-02 Simple Breakout with Filter MW [@PL-61min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-02 Superman by Roman W [@RB-719min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-02 Turn of the Month NG MW [@NG-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 2barNR and ORB - E1 MW [@HG-15min+@HG-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 Breakout with Twist v2 MW [@NQ-359min+@NQ-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 Breakout with Twist v2 MW [@NQ-719min+@NQ-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 MACD Linear Reg ID MW [@ES.D-15min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-03 Volume Reversal Intraday Bars MW [@NQ-180min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 Volume Reversal Intraday Bars MW [@RB-300min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-03 Volume Reversal MW [@NQ-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-04 KJD Entry 34 MW [@GC-239min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-04 Moving Average Mean Reversion MW [@DX-719min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-04 PJK Trends MW [@NQ.D-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-04 Weekend Long MW [@SI-120min+@SI-1440min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-05 100MA Daily Rejection Breakout MW [@PL-240min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-05 Index AD Divergance MW [@NQ-240min+$%50DMAAND-240min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-05 Index AD Divergance MW [@ES.D-360min+$%10DMAAUS-360min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-05 Range Volume Breakout MW [@KC-63min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-06 Breakout Buildup Range MW [@KC-180min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-06 Stoc MACD-V Filter MW [@NQ-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 Test the Long MA MW [@AD-242min+@AD-Daily] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 Test the Long MA MW [@NG-182min+@NG-Daily] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-06 Test the Long MA MW [@NQ-28min+@NQ-Daily] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 Trade the VX MW [@VX-120min+@ES-120min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 Trade the VX MW [@VX-1440min+@ES-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 Trade the VX MW [@VX-180min+@ES-180min] WF(3Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 Trade the VX MW [@VX-240min+@NQ-240min] WF(2Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 Turnaround Monday MW [@ES.D-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 VX ES RSI MW [@VX-240min+@ES-240min] WF(3Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 VX ES RSI MW [@VX-240min+@NQ-240min] WF(2Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 VX ES RSI MW [@VX-240min+@YM-240min] WF(3Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-07 Buy at High MW [@NQ.D-45min+@NQ.D-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-07 Buy the Retracement MW [@NQ.D-30min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-07 Lunatic MW [@ES.D-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-07 RSI Momentum MW [@ES.D-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-07 RSI Momentum MW [@FESX-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2024-07 Trade the Holiday MW [@GC-1440min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-07 Trade the Holiday MW [@PL-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-07 Trade the Holiday MW [@SI-1440min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-08 Breakout with Twist MW [@ES-719min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-08 Breakout with Twist MW [@NQ.D-30min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-08 Buy High Sell Low MW [@NQ-15min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-08 Close below Low MW [@W-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-08 Connors Mean Reversion MW [@NQ.D-360min+@VX-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-08 Turn of the Month Bond MW [@US-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Breakout v4 MW [@ES-15min+@ES-1440min] WF(3Y-6M,A,NPAvgDD,PMx)",0
+"DZS2024-09 Breakout v9 MW [@NQ-15min+@NQ-360min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-09 Breakout with Twist Exit MW [@NQ-33min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Breakout with Twist Exit MW [@NQ-65min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-09 Follow Monentum and Trend MW [@ES-1440min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-09 Follow Monentum and Trend MW [@GC-1440min] WF(2Y-1Y,A,NPAvgDD,PMx)",0
+"DZS2024-09 Index Long Monday MW [@ES-Daily] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-09 NewBigMo MW [@KC-301min+@KC-1440min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Yesterday Range Breakout MW [@NQ.D-1440min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 Big Momentum MW [@KW-543min] WF(3Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-10 Bollinger Cross Against Trend MW [@JY-377min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 Bollinger Cross With Trend MW [@YM-987min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 Breakout with the trend MW [@NQ.D-360min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 GB VX 1440 MW [@VX-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-10 GB2024-10 Vix MW [@VX-268min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 HHs and HLs (shortbias) MW [@VX-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-10 Highs and Lows Pullback Long Only MW [@NQ.D-120min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 Highs and Lows Pullback Long Only MW [@YM-300min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-10 Highs and Lows Reverse S&L MW [@NE1-233min] WF(3Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-10 Three Consectutive MW [@ES-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-11 BB - Range Expansion MW [@PL-900min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-11 BigMo113 MW [@FV-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-11 Building Blocks - Low Vol Break MW [@PL-900min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-11 Building Blocks - Pitter Patter Pattern MW [@SI-460min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-11 Building Blocks - Pitter Patter Pattern MW [@PL-460min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-11 Building Blocks - RSILG MW [@PL-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Pitter Pattern 2 MW [@SF-360min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-12 CandleBar Breakout MW [@BO-300min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-12 Club DOM 01 2406 MW [@CL-120min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club DWh 01 2406 MW [@GC-220min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club DWh 01 2406 MW [@GC-241min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@NQ-900min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@NQ.D-120min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@NQ.D-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 MJa Trigger MW [@GC-120min+@GC-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 Art Six Indicators MW [@AD-690min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 Art Six Indicators MW [@SM-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 CLAY UTY_CL_DIRECTION MW [@TU-1440min+@Cl-1440min+$UTY-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 CLAY UTY_CL_DIRECTION MW [@US-1440min+@Cl-1440min+$UTY-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 Highs and Lows MW [@BO-610min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 TD Line Penetration MW [@SI-720min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Club 2022-10 TVo MW [@C-1440min+@C-Weekly] WF(14M-4M,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Low Vol Break MW [@PL-900min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 BB - Pitter Patter Pattern MW [@SI-460min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Pitter Pattern 2 MW [@JY-360min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Pitter Pattern 2 MW [@US-300min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Quick Pullback Pattern MW [@ES.D-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Quick Pullback Pattern MW [@NQ.D-240min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-04 BB - Quick Pullback Pattern MW [@PL-460min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Breakout with Twist Exit MW [@NG-30min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Breakout with Twist Exit MW [@NQ-55min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2022-10 Ded MW [@S-1440min] WF(4Y-16M,U,NPAvgDD,PMx)",1
+"KJD2014-11 Chandelier 04 AH Gold MW [@GC-120min] WF(252-126,U,NP,PMx)",-1
+"KJD2016-08 MultiC PP06RH BP MW [@BP-360min] WF(504-126,U,NP,PMx)",1
+"KJD2018-01 MondayCrude 01 MW [@CL-30min] WF(1Y-6M,U,NPAvgDD,PMx)",-1
+"KJD2019-02 Club CJ 01 MW [@LC-359min] WF(504-252,U,NPAvgDD,PMx)",1
+"KJD2019-12 Workshop NQ MW [@NQ.D-5min+@NQ.D-Daily] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"KJD2021-04 Beyond 01 Base MW [@CL-60min] WF(252-126,U,NP,PMx)",1
+"KJD2021-04 Beyond 04 MW [@S-30min] WF(252-63,U,NP,PMx)",-1
+"KJD2021-04 Beyond 05 Base MW [@NG-Daily] WF(252-126,U,NP,PMx)",-1
+"KJD2021-09 StocStrat 01 Base MW [@KW-Daily] WF(504-252,U,NP,PMx)",0
+"KJD2021-09 StocStrat 02 MW [@S-1440min] WF(504-252,U,NP,PMx)",0
+"KJD2022-05 Free Crude Strategy MW [@CL-Daily] WF(756-252,A,NPAvgDD,PMx)",0
+"KJD2023-10 Midde of Week MW [@ES-60min] WF(504-252,U,NP,PMx)",0
+"KJD2024-01 Dogi Signal MW [@MP1-59min] WF(256-126,U,NPAvgDD,PMx)",1
+"KJD2023-04 NewBigMo 004R ES237-2-2 MW [@ES.D-237min] WF(756-504,U,NPAvgDD,PMx)",0
+"KJD2023-04 NewBigMo 006R-KW-722-2-2 MW [@KW-722min] WF(756-126,U,NPAvgDD,PMx)",1
+"KJD2023-09 3&3 Strategy MW [@ES-Daily] WF(504-252,U,NPMaxDD,PMx)",0
+"DZS2023-12 Reverse MCAD MW2 [@CL-60min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-01 Buy the Dip MW [@NQ-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-01 Double Inside Day Breakout MW [@SI-59min] WF(756-256,U,NPAvgDD,PMx)",0
+"DZS2024-02 Simple Breakout with Filter MW [@LH-59min] WF(3Y-2Y,U,NPAvgDD,PMx)",1
+"DZS2024-03 2barNR and ORB - E3 MW [@CL-15min+@CL-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-05 Index AD Divergance MW [@NQ.D-120min+$ADNDD-120min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-05 Index AD Percentage Divergance MW [@ES-180min+$%10DMAAUS-180min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-06 Breakout Buildup Range E1 MW [@S-240min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-06 Breakout Buildup Range MW [@S-240min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-06 Trade the VX MW [@VX-Daily+@NQ-Daily] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-06 Turnaround Monday MW [@FDXM-360min] WF(2Y-3M,U,NPAvgDD,PMx)",0
+"DZS2024-06 VX ES RSI MW [@VX-120min+@ES-120min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2024-07 Turtle Strategy MW [@HO-360min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-08 Breakout Trend following MW [@HG-1440min+@HG-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-08 Breakout with Twist MW [@CL-59min] WF(1Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-08 Mean Reversion Band MW [@ES-360min+@VX-1440min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Beyond 04 Twist MW [@NQ-29min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-09 Breakout v4 MW [@YM-15min+@YM-1440min] WF(3Y-1Y,A,NPAvgDD,PMx)",0
+"DZS2024-10 Highs and Lows Reverse S&L MW [@BO-610min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-10 Multi Close Strat MW [@BP-361min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 TD Line Penetration MW [@SI-720min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-10 Triangle Breakout MW [@SI-610min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-11 BB - Range Expansion MW [@CD-900min] WF(4Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2024-11 BB - Range Expansion MW [@DX-690min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-11 BB - Range Expansion MW [@FV-690min] WF(2Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-11 BB - Range Expansion MW [@NG-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-11 BB - Range Expansion MW [@TY-900min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-11 Building Blocks - 3 Bar Close MW [@SI-685min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-11 Building Blocks - Pitter Patter Pattern MW [@NG-685min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-11 Building Blocks - RSILG MW [@SF-300min] WF(4Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2024-11 ThreeDay Joe Pattern MW [@GC-180min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 ArtRSI3 Long MW [@NQ-30min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Pitter Pattern 2 MW [@JY-360min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Pitter Pattern 2 MW [@RR-460min] WF(4Y-2Y,U,NPAvgDD,PMx)",1
+"DZS2024-12 BB - Pitter Pattern 2 MW [@US-300min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Pitter Pattern 2 MW [@VX-460min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Quick Pullback Pattern MW [@ES.D-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Quick Pullback Pattern MW [@NQ.D-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Quick Pullback Pattern MW [@PL-460min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 BB - Quick Pullback Pattern MW [@W-900min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-12 BigMo203 MW [@SF-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2024-12 Building Blocks - Closing Pattern Only MW [@JY-300min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-12 Club DAc 01 2406 MW [@NG-Daily] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club DWh 01 2406 MW [@S-460min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2024-12 Club DWh 01 2406 MW [@SI-900min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club PBr 01 2406 MW [@FDXM-900min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-12 Club PBr 01 2406 MW [@YM-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club RPl 01 2406 MW [@KW-300min+@KW-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-12 Club SPat 01 2406 MW [@ES.D-120min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@ES.D-360min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@GC-360min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@HO-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@NQ-120min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 Club SPat 01 2406 MW [@NQ-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 MJa Trigger MW [@CL-360min+@CL-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-12 MJa Trigger MW [@NQ-240min+@NQ-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Range Contraction MW [@ES.D-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-12 Range Contraction MW [@US-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 Art Six Indicators MW [@NK-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 Art Six Indicators MW [@RTY-690min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 Art Six Indicators MW [@US-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 BB - Contracting Ranges MW [@HG-460min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 BB - Entry 22 ASYMMETRIC AGAIN MW [@NQ.D-300min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 BB - OutsideBar MW [@LH-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 Long Term Mom Breakout MW [@FV-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-01 Long Term Mom Breakout MW [@S-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-01 Mean Reverting CCI MW [@C-460min+@C-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-01 Mean Reverting CCI MW [@SF-460min+@SF-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-01 Mean Reverting Entry as Exit MW [@NQ.D-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-01 Volatility and Momentum MW [@TU-Daily] WF(2Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-02 BB - 2 Period RSI MW [@HG-Daily] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 BB - 2 Period RSI MW [@NG-Daily] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-02 BB - 2 Period RSI MW [@NQ.D-Daily] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 BB - 2 Period RSI MW [@RTY-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 BB - Sum 2 Period RSI MW [@CD-Daily] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 BB - Sum 2 Period RSI MW [@EC-900min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 Better Breakout VolRange Long Only MW [@NQ-5min+@NQ-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 Bollinger Two Way MACDV MW [@PL-Daily] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-02 ID Entry 34 MW [@NG-90min+@NG-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 ID Entry 34 MW [@NQ-60min+@NQ-180min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 ID_Breakout_ASemetricFilter MW [@ES-45min+@ES-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 ID_Breakout_ASemetricFilter MW [@NQ-23min+@NQ-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-02 Month End Buy Dip MW [@ES-Daily] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 Price Ratio Indicator Avg Filter MW [@US-1440min+@FV-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 Price Ratio Indicator MW [@LC-1440min+@FC-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-02 UTY CounterTrend MW [@US-300min+$XUTY-300min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Badger MW [@DX-460min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Badger MW [@EC-360min] WF(4Y-16M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Badger MW [@NE1-360min] WF(4Y-16M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB - Dueling Mom MW [@RR-460min] WF(4Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-03 BB - Dueling Mom MW [@SF-460min] WF(4Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-03 BB - MA Cross MW [@BO-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB - MA Cross MW [@HO-900min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB - MA Cross MW [@RB-900min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB - New High with Consecutive Highs MW [@CL-690min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB - New High with Consecutive Highs MW [@RB-690min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB - New High with Consecutive Highs MW [@SI-360min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB - Volatility Breakout MW [@NK-300min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB - Volatility Breakout MW [@NQ.D-240min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB - Volatility Breakout MW [@SI-460min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB - Volatility Breakout MW [@US-360min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 BB RSI Trigger MW [@RTY-900min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 BB RSI Trigger MW [@SF-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-03 Breakout with DailyFilter MW [@NG-161min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with DailyFilter MW [@NQ-161min] WF(4Y-16M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with DailyFilter MW [@NQ-42min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with Twist Exit MW [@CL-60min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with Twist Exit MW [@NG-99min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Breakout with Twist Exit MW [@NK-42min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with Twist Exit MW [@NQ.D-42min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Breakout with Twist Exit MW [@YM-60min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Breitling MW [@CT-900min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Club 2022-10 MKA MW [@PL-842min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Club 2023-04 Rpo MW [@LH-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Club 2023-04 Rpo MW [@NQ-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Club 2023-04 SGh MW [@CT-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Club 2023-04 SGh MW [@S-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Daily Angle Strategy 2 MW [@CC-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-03 Helsinki MW [@CT-240min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 High-low Turning Points MW [@LC-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 ID_Vol Breakouts MW [@KW-300min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 ID_Vol Breakouts MW [@NQ-219min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-03 ID_Vol Breakouts MW [@NQ-65min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 ID_Vol Breakouts MW [@NQ.D-65min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 ID_Vol Breakouts MW [@W-120min] WF(2Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Long term Mom Mean Revert MW [@KW-360min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Long term Mom Mean Revert MW [@PL-360min] WF(4Y-6M,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Long term Mom Mean Revert MW [@RB-900min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Long term Mom Mean Revert MW [@RR-360min] WF(3Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-03 Low Vol Trend MW [@LH-119min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Monday Breakout MW [@FGBL-900min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Nat Gas EOM Short MW [@NG-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Peak March 25 Mean Reversion MW [@NG-60min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-03 Simple Breakout MW [@JY-1440min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Simple Breakout with Profit Protect MW [@CT-690min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Simple Breakout with Profit Protect MW [@SI-690min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-03 Thursday Breakout MW [@SB-460min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-03 Volume Breakout MW [@CD-1440min] WF(4Y-16M,U,NPAvgDD,PMx)",1
+"DZS2025-03 Wednesday Breakout MW [@LH-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 ADX Creep MW [@US-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Low Vol Break MW [@EC-900min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 BB - Pitter Pattern 2 MW [@RR-460min] WF(4Y-2Y,U,NPAvgDD,PMx)",1
+"DZS2025-04 BB - Pitter Pattern 2 MW [@SF-360min] WF(4Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 BB - Pitter Pattern 2 MW [@VX-460min] WF(4Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 BB - Quick Pullback Pattern MW [@W-900min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-04 Breakout with Twist Exit MW [@CL-33min] WF(4Y-16M,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Club 2022-10 DWh MW [@CC-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-04 Club 2022-10 RVi MW [@LH-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2023-04 FMa MW [@CL-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-04 Club 2023-04 FMa MW [@GC-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2023-04 JDe MW [@CC-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-04 Club 2023-04 JDe MW [@RR-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2023-11 DEd MW [@FGBL-685min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-04 Club 2023-11 FMA MW [@PL-1440min] WF(4Y-16M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2023-11 PTr MW [@KC-242min] WF(3Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2024-10 AAF MW [@PL-300min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 Club 2024-10 AAF MW [@RB-555min] WF(4Y-16M,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Club 2024-10 CNu MW [@KW-685min] WF(4Y-16M,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Club 2024-10 DAc MW [@RR-1440min] WF(2Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-04 Club 2024-10 GBa MW [@RR-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 Smash Breakout MW [@FDXM-460min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-04 Trade the VX MW [@VX-120min+@ES-120min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Trade the VX MW [@VX-1440min+@ES-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Two Bar Strength MW [@VX-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-04 VX ES RSI MW [@VX-240min+@NQ-240min] WF(2Y-1Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 VX ES RSI MW [@VX-240min+@YM-240min] WF(3Y-2Y,U,NPAvgDD,PMx)",-1
+"DZS2025-04 Zarattini Breakout MW [@NQ-30min+@NQ-1440min] WF(2Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-05 Club 2024-04 TSo MW [@S-185min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-05 Club 2024-09 SSt MW [@DX-685min] WF(3Y-5M,U,NPAvgDD,PMx)",-1
+"DZS2025-05 Club 2024-09 SSt MW [@GC-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",-1
+"DZS2025-05 Club 2024-10 GBa MW [@RR-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-05 Club2022-10 Seasonals MW [@S-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-05 EngulfingPro MW [@ES-1000min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-05 EngulfingPro MW [@NQ-1000min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-05 PEAK SOTM 202505 MW [@CC-1440min] WF(3Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-05 PivotX MW [@FDXM-360min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-05 PivotX MW [@O-1440min] WF(3Y-8M,U,NPAvgDD,PMx)",-1
+"DZS2025-06 ATR Breakout Trend (Long Bias) MW [@ES.D-90min+@ES.D-1440min+@US-1440min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-06 ATR Breakout Trend (Long Only) MW [@YM-90min+@YM-1440min+@US-1440min] WF(2Y-3M,U,NPAvgDD,PMx)",0
+"DZS2025-06 BB - ATRBreakout MW [@PL-1440min] WF(4Y-11M,U,NPAvgDD,PMx)",-1
+"DZS2025-06 Daily Breakout Long Only MW [@ES.D-60min+@US-1440min] WF(3Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-06 Daily Breakout Long Only MW [@NQ.D-20min+@US-1440min] WF(2Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-06 Peak Venon MW [@SI-900min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 AdaptiveCCISwing (Long Only) MW [@NQ.D-120min+@NQ.D-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 AdaptiveCCISwing MW [@FDXM-240min+@FDXM-1440min] WF(2Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 AdaptiveCCISwing MW [@NQ.D-120min+@NQ.D-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - ADX Ranker MW [@ES.D-120min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - ADX Ranker MW [@VX-685min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - Back in Style MW [@NQ-460min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - BreakOut MW [@ES.D-240min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - BreakOut MW [@NQ-685min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - ExpandContract MW [@NG-1259min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - Nebula MW [@HG-1440min] WF(2Y-3M,U,NPAvgDD,PMx)",0
+"DZS2025-07 BB - Olympus MW [@ES-1259min] WF(3Y-8M,U,NPAvgDD,PMx)",1
+"DZS2025-07 BB - Olympus MW [@ES.D-360min] WF(3Y-5M,U,NPAvgDD,PMx)",1
+"DZS2025-07 BB - Olympus MW [@NQ-1259min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-07 ExpandContract MW [@BP-900min] WF(2Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-07 ExpandContract MW [@EC-900min] WF(2Y-3M,U,NPAvgDD,PMx)",-1
+"DZS2025-07 Kikkake Pattern MW [@CL-460min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-07 Kikkake Pattern MW [@GC-460min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-07 Olumpus MW [@S-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",1
+"DZS2025-07 Peak Pullback MW [@US-357min] WF(3Y-8M,U,NPAvgDD,PMx)",-1
+"DZS2025-08 DWh Asy Breakout MW [@CL-900min] WF(2Y-3M,U,NPAvgDD,PMx)",0
+"DZS2025-08 DWh Asy Breakout MW [@CT-900min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-08 DWh Asy Breakout MW [@HO-900min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-08 DWh Asy Breakout MW [@NG-300min] WF(3Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-08 InsideRangeTrigger MW [@CT-900min] WF(2Y-3M,U,NPAvgDD,PMx)",0
+"DZS2025-08 InsideRangeTrigger MW [@GC-900min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-08 InsideRangeTrigger MW [@SI-900min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-08 PivotRSI_BreakoutATR MW [@CC-60min] WF(4Y-16M,U,NPAvgDD,PMx)",0
+"DZS2025-08 Range Breakout MW [@SI-60min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-08 SpikeCounterTrend MW [@AD-600min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-08 Vol Pivot MW [@ES.D-240min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-08 Vol Pivot MW [@HG-360min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-08 Vol Pivot MW [@RTY-1440min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-08 Vol Pivot MW [@US-1000min] WF(4Y-6M,U,NPAvgDD,PMx)",1
+"DZS2025-09 ATRRangeTrap MW [@CL-240min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2025-09 CalendarDayStrat MW [@US-1440min] WF(2Y-8M,U,NPAvgDD,PMx)",-1
+"DZS2025-09 ExtremeVolFlow MW [@BP-1440min] WF(3Y-5M,U,NPAvgDD,PMx)",-1
+"DZS2025-09 LowADXBreakout MW [@LH-240min] WF(3Y-8M,U,NPAvgDD,PMx)",1
+"DZS2025-09 LowADXBreakout MW [@NG-120min] WF(4Y-11M,U,NPAvgDD,PMx)",-1
+"DZS2025-09 Pivot Breakout Long Only MW [@NQ.D-1440min] WF(2Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-09 RSI Breakout MW [@HO-240min] WF(3Y-5M,U,NPAvgDD,PMx)",0
+"DZS2025-09 SplitMonthPattern MW [@NG-1200min] WF(4Y-11M,U,NPAvgDD,PMx)",0
+"DZS2025-09 Trend Pullback MW [@ES-120min] WF(4Y-6M,U,NPAvgDD,PMx)",0
+"DZS2025-09 VolatilityTrendBreak MW [@FV-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2025-11 InsideBarRangeBreak MW [@S-1440min] WF(2Y-5M,U,NPAvgDD,PMx)",1
+"DZS2025-11 ManualADXBreakout MW [@NQ-460min] WF(2Y-5M,U,NPAvgDD,PMx)",-1
+"DZS2025-11 ManualADXBreakout MW [@SI-480min] WF(2Y-8M,U,NPAvgDD,PMx)",0
+"DZS2025-11 TrendCCIMA MW [@KW-300min] WF(3Y-8M,U,NPAvgDD,PMx)",-1
+"KJD2021-04 Beyond 08 MW [@ES-Daily] WF(126-126,U,NP,PMx)",1
+"KJD2021-05 Final 042ID SI 362 MW [@SI-362min] WF(504-126,U,NP,PMx)",0
+"KJD2024-03 BigMO MW [@SF-1440min] WF(4Y-1Y,U,NPAvgDD,PMx)",0
+"ArtCollins2024-01 Enter On Close Fade MW [@NQ-1440min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"ArtCollins2024-01 The Evening Gap System MW [@HG-360min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"ArtCollins2024-03 Three Cal Indicators Agree MW [@ES-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2023-12 Three Amigos SI 360 MW [@SI-360min] WF(3Y-1Y,U,NPAvgDD,PMx)",1
+"DZS2024-01 Breakout with AFT Trend Filter MW [@BO-59min] WF(2Y-6M,U,NPAvgDD,PMx)",1
+"DZS2024-01 Buy the Dip MW [@ES-1440min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-02 52 Book Entry 10 v2 MW [@CL-179min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-02 52 Book Entry 10 v2 MW [@PL-719min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-02 Superman by Roman W [@CT-240min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 Entry as Exit MW [@PL-120min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-03 MACD Linear Reg v2 MW [@NQ-60min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-05 100MA Daily Rejection Breakout MW [@HO-240min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-05 Alligator Trend Following MW [@HO-360min] WF(3Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-05 Index AD Divergance MW [@NQ-1440min+$%50DMAAND-1440min] WF(3Y-2Y,U,NPAvgDD,PMx)",0
+"DZS2024-06 Turn-of-the-month Crypto MW [@ETH-60min] WF(1Y-6M,U,NPAvgDD,PMx)",0
+"DZS2024-07 Turtle Strategy MW [@SI-720min] WF(2Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Go With Trend on Low Vol MW [@BO-1440min] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"DZS2024-09 Yesterday Range Breakout MW [@ES-Daily] WF(3Y-1Y,U,NPAvgDD,PMx)",0
+"KJD2019-02 Club CJ 01 MW [@CC-239min] WF(504-252,U,NPAvgDD,PMx)",0
+"MultiWalk HG Strategy (MW) [@HG-30min] WF(504-256,U,NPAvgDD,PMx)",0
+"DZS2024-11 Building Blocks - Pattern MW [@PL-460min] WF(4Y-2Y,U,NPAvgDD,PMx)",-1
+"_Buy_and_Hold_MW [@AD-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@BO-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@BP-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@C-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@CC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@CD-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@CL-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@CT-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@DX-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@EC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@ES-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@ES.D-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FDXM-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FESX-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FGBL-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FGBM-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FGBS-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@FV-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@GC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@HG-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@HO-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@JY-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@KC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@KW-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@LC-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@LH-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@MP1-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@NE1-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@NG-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@NK-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@NQ-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@NQ.D-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@O-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@OJ-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@PL-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@RB-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@RR-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@RTY-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@S-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@SB-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@SF-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@SI-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@SM-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@TU-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@TY-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@US-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@VX-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@W-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
+"_Buy_and_Hold_MW [@YM-1440min] WF(AD-AD,A,NP,PMx,OptOnly-1)",1
