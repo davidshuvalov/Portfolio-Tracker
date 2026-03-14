@@ -65,11 +65,16 @@ def import_all(
     date_format: str = "DMY",
     use_cutoff: bool = False,
     cutoff_date=None,
+    progress_cb=None,
 ) -> tuple[ImportedData, list[str]]:
     """
     Import all strategies' CSV data and build aligned DataFrames.
 
     Returns (ImportedData, warnings).
+
+    Args:
+        progress_cb: Optional callable(idx, total, name) called after each
+                     strategy CSV is read, for progress-bar updates.
 
     Mirrors VBA OptimizeDataProcessing:
     1. Read each strategy's EquityData.csv into per-strategy date→value dicts
@@ -79,8 +84,11 @@ def import_all(
     """
     warnings: list[str] = []
     strategy_data: list[_StrategyEquity] = []
+    total = len(strategy_folders)
 
-    for sf in strategy_folders:
+    for idx, sf in enumerate(strategy_folders):
+        if progress_cb is not None:
+            progress_cb(idx, total, sf.name)
         equity = _read_equity_csv(sf.equity_csv, sf.name, date_format, warnings)
         if equity is None:
             continue

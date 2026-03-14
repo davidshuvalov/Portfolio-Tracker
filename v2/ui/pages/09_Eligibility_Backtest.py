@@ -157,13 +157,19 @@ with tab1:
     )
 
     if run_btn1 or (rule_bt_result is None):
-        with st.spinner(f"Running rule backtest on {len(rules)} rules…"):
+        with st.status(f"Evaluating {len(rules)} rules × 12 horizons…", expanded=True) as _rbt_status:
+            st.write(f"Processing {len(portfolio.strategies)} strategies…")
             rule_bt_result = run_rule_backtest(
                 daily_pnl=imported.daily_m2m,
                 summary=summary,
                 config=elig_config,
                 rules=rules,
                 max_horizon=12,
+            )
+            _rbt_status.update(
+                label=f"Done — {len(rules)} rules × 12 horizons",
+                state="complete",
+                expanded=False,
             )
         st.session_state.rule_bt_result = rule_bt_result
         st.session_state.rule_bt_config_key = current_key

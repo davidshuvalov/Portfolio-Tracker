@@ -167,7 +167,9 @@ if run_btn:
         trade_option=trade_option,
     )
 
-    with st.spinner(f"Running {simulations:,} simulations…"):
+    with st.status(f"Running Monte Carlo — {mc_target}", expanded=True) as _mc_status:
+        st.write("Building trade sequence…")
+        _mc_status.update(label="Running simulations…")
         result = run_monte_carlo(
             daily_m2m=daily_m2m,
             config=mc_config,
@@ -175,6 +177,11 @@ if run_btn:
             closed_daily=closed_daily,
             strategy=strategy_obj,
             return_scenarios=True,
+        )
+        _mc_status.update(
+            label=f"Done — {simulations:,} scenarios complete",
+            state="complete",
+            expanded=False,
         )
 
     st.session_state.mc_result = result

@@ -185,17 +185,22 @@ if import_clicked and st.session_state.get("scan_result"):
         import datetime
         cutoff = cutoff_date if isinstance(cutoff_date, datetime.date) else None
 
-    progress = st.progress(0, text="Importing strategy data...")
+    n_strats_to_import = len(result.strategies)
+    progress = st.progress(0, text=f"Importing 0 / {n_strats_to_import} strategies…")
     status_text = st.empty()
 
+    def _on_progress(idx: int, total: int, name: str) -> None:
+        frac = idx / max(total, 1)
+        progress.progress(frac, text=f"Reading {name} ({idx}/{total})…")
+
     try:
-        with st.spinner("Reading CSV files..."):
-            imported, warnings = import_all(
-                result.strategies,
-                date_format=config.date_format,
-                use_cutoff=use_cutoff,
-                cutoff_date=cutoff,
-            )
+        imported, warnings = import_all(
+            result.strategies,
+            date_format=config.date_format,
+            use_cutoff=use_cutoff,
+            cutoff_date=cutoff,
+            progress_cb=_on_progress,
+        )
 
         if warnings:
             with st.expander(f"{len(warnings)} import warning(s)"):
@@ -205,7 +210,7 @@ if import_clicked and st.session_state.get("scan_result"):
         st.session_state.imported_data = imported
         st.session_state.portfolio_data = None  # Reset downstream cache
 
-        progress.progress(100, text="Import complete")
+        progress.progress(1.0, text="Import complete")
 
         # Summary stats
         n_strats = len(imported.strategy_names)
