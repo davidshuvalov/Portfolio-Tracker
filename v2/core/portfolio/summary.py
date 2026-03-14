@@ -1,0 +1,441 @@
+"""
+Per-strategy summary metrics — mirrors F_Summary_Tab_Setup.bas.
+
+Two computation paths:
+1. Static metrics from the Walkforward Details CSV (via walkforward_reader)
+2. Dynamic metrics from daily_m2m DataFrame (profit windows, drawdowns, incubation)
+
+Returns a DataFrame with index=strategy_name and columns=all metric fields.
+Strategies without WF data get NaN for WF-sourced columns.
+"""
+
+from __future__ import annotations
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from core.data_types import ImportedData, StrategyFolder
+from core.ingestion.date_utils import resolve_oos_dates
+from core.ingestion.walkforward_reader import WalkforwardMetrics, read_walkforward_csv
+
+
+# ── Days threshold default (mirrors EligibilityDaysThreshold named range) ───
+DEFAULT_DAYS_THRESHOLD = 0     # 0 = rolling window mode (not calendar-month mode)
+DEFAULT_INCUBATION_MONTHS = 6  # months before incubation check begins
+DEFAULT_MIN_INCUBATION_RATIO = 1.0  # profit must reach 1x expected rate
+DEFAULT_ELIGIBILITY_MONTHS = 12  # for count_profit_months
+
+
+def compute_summary(
+    imported: ImportedData,
+    strategy_folders: list[StrategyFolder],
+    date_format: str = "DMY",
+    use_cutoff: bool = False,
+    cutoff_date: date | None = None,
+    days_threshold: int = DEFAULT_DAYS_THRESHOLD,
+    incubation_months: int = DEFAULT_INCUBATION_MONTHS,
+    min_incubation_ratio: float = DEFAULT_MIN_INCUBATION_RATIO,
+    eligibility_months: int = DEFAULT_ELIGIBILITY_MONTHS,
+) -> pd.DataFrame:
+    """
+    Compute per-strategy summary metrics for all strategies in imported.
+
+    Args:
+        imported:          Full imported data (daily_m2m, trades, etc.)
+        strategy_folders:  StrategyFolder list from scan (for WF CSV paths)
+        date_format:       "DMY" or "MDY"
+        use_cutoff:        Whether to apply a cutoff date to OOS end
+        cutoff_date:       The cutoff date (if use_cutoff)
+        days_threshold:    Min days in current month before using it (0=rolling)
+        incubation_months: OOS months required before incubation check
+        min_incubation_ratio: Profit target as multiple of expected rate
+        eligibility_months: Lookback window for count_profit_months
+
+    Returns:
+        DataFrame indexed by strategy name with all metric columns.
+    """
+    # Build lookup: strategy_name → StrategyFolder
+    folder_map = {sf.name: sf for sf in strategy_folders}
+
+    rows: list[dict[str, Any]] = []
+
+    for name in imported.strategy_names:
+        sf = folder_map.get(name)
+
+        # Read WF metrics (may be None if WF CSV absent)
+        wf: WalkforwardMetrics | None = None
+        if sf and sf.walkforward_csv:
+            wf = read_walkforward_csv(
+                sf.walkforward_csv, name, date_format, use_cutoff, cutoff_date
+            )
+
+        # Daily PnL series for this strategy
+        pnl: pd.Series = imported.daily_m2m[name]
+
+        # Determine OOS dates
+        oos_begin: date | None = wf.oos_begin if wf else None
+        oos_end: date | None = wf.oos_end if wf else None
+
+        # Compute dynamic metrics from daily_m2m
+        dynamic = _compute_dynamic_metrics(
+            pnl=pnl,
+            oos_begin=oos_begin,
+            oos_end=oos_end,
+            expected_annual_profit=wf.expected_annual_profit if wf else 0.0,
+            annual_sd_is=wf.annual_sd_is if wf else 0.0,
+            days_threshold=days_threshold,
+            incubation_months=incubation_months,
+            min_incubation_ratio=min_incubation_ratio,
+            eligibility_months=eligibility_months,
+        )
+
+        row = _build_row(name, wf, dynamic)
+        rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows).set_index("strategy_name")
+    return df
+
+
+# ── Row builder ───────────────────────────────────────────────────────────────
+
+def _build_row(
+    name: str,
+    wf: WalkforwardMetrics | None,
+    dyn: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge WF metrics and dynamic metrics into a single flat dict."""
+    row: dict[str, Any] = {"strategy_name": name}
+
+    if wf:
+        row.update({
+            # Identity
+            "symbol": wf.symbol,
+            "timeframe": wf.timeframe,
+            "session": wf.session,
+            # Dates
+            "is_begin": wf.is_begin,
+            "oos_begin": wf.oos_begin,
+            "oos_end": wf.oos_end,
+            "next_opt_date": wf.next_opt_date,
+            "last_opt_date": wf.last_opt_date,
+            "oos_period_years": wf.oos_period_years,
+            # WF structure
+            "in_period": wf.in_period,
+            "out_period": wf.out_period,
+            "anchored": wf.anchored,
+            "fitness": wf.fitness,
+            # P&L
+            "expected_annual_profit": wf.expected_annual_profit,
+            "actual_annual_profit": wf.actual_annual_profit,
+            "return_efficiency": wf.return_efficiency,
+            "total_is_profit": wf.total_is_profit,
+            "total_isoos_profit": wf.total_isoos_profit,
+            "annualized_isoos_profit": wf.annualized_isoos_profit,
+            "mw_mc_is": wf.is_mc,
+            "mw_mc_isoos": wf.isoos_mc,
+            # Win rates
+            "is_win_rate": wf.is_win_rate,
+            "oos_win_rate": wf.oos_win_rate,
+            "overall_win_rate": wf.overall_win_rate,
+            # Trades
+            "trades_per_year": wf.trades_per_year,
+            "pct_time_in_market": wf.pct_time_in_market,
+            "avg_trade_length": wf.avg_trade_length,
+            "avg_trade": wf.avg_trade,
+            "avg_profitable_trade": wf.avg_profitable_trade,
+            "avg_loss_trade": wf.avg_loss_trade,
+            "largest_win": wf.largest_win,
+            "largest_loss": wf.largest_loss,
+            # Drawdown (from WF)
+            "max_drawdown_is": wf.max_drawdown_is,
+            "max_drawdown_isoos": wf.max_drawdown_isoos,
+            "avg_drawdown_is": wf.avg_drawdown_is,
+            "avg_drawdown_isoos": wf.avg_drawdown_isoos,
+            # Sharpe & SD
+            "sharpe_is": wf.sharpe_is,
+            "sharpe_isoos": wf.sharpe_isoos,
+            "annual_sd_is": wf.annual_sd_is,
+            "annual_sd_isoos": wf.annual_sd_isoos,
+            "trading_days_is": wf.trading_days_is,
+            "trading_days_isoos": wf.trading_days_isoos,
+        })
+    else:
+        # Fill WF-sourced columns with NaN
+        for col in _WF_FLOAT_COLS:
+            row[col] = float("nan")
+        for col in _WF_STR_COLS:
+            row[col] = ""
+        for col in _WF_DATE_COLS:
+            row[col] = None
+        for col in _WF_INT_COLS:
+            row[col] = 0
+
+    # Merge dynamic (always computed)
+    row.update(dyn)
+
+    # Derived metrics that combine WF + dynamic
+    profit_12m = dyn.get("profit_last_12_months", 0.0) or 0.0
+    max_dd_12m = dyn.get("max_drawdown_last_12_months", 0.0) or 0.0
+    profit_oos = dyn.get("profit_since_oos_start", 0.0) or 0.0
+    max_dd_oos = dyn.get("max_oos_drawdown", 0.0) or 0.0
+
+    row["rtd_12_months"] = (
+        profit_12m / (max_dd_12m + 1e-4) if abs(max_dd_12m) >= 10 else 10.0
+    )
+    row["rtd_oos"] = (
+        profit_oos / (max_dd_oos + 1e-4) if abs(max_dd_oos) >= 10 else 10.0
+    )
+
+    return row
+
+
+# ── Dynamic metrics from daily_m2m ────────────────────────────────────────────
+
+def _compute_dynamic_metrics(
+    pnl: pd.Series,
+    oos_begin: date | None,
+    oos_end: date | None,
+    expected_annual_profit: float,
+    annual_sd_is: float,
+    days_threshold: int,
+    incubation_months: int,
+    min_incubation_ratio: float,
+    eligibility_months: int,
+) -> dict[str, Any]:
+    """
+    Compute time-windowed and drawdown metrics from the daily PnL series.
+    Mirrors VBA CalculateProfitAndDrawdown() exactly.
+    """
+    result: dict[str, Any] = {
+        "profit_last_1_month": None,
+        "profit_last_3_months": None,
+        "profit_last_6_months": None,
+        "profit_last_9_months": None,
+        "profit_last_12_months": None,
+        "efficiency_last_1_month": None,
+        "efficiency_last_3_months": None,
+        "efficiency_last_6_months": None,
+        "efficiency_last_9_months": None,
+        "efficiency_last_12_months": None,
+        "profit_since_oos_start": 0.0,
+        "max_oos_drawdown": 0.0,
+        "avg_oos_drawdown": 0.0,
+        "max_drawdown_last_12_months": 0.0,
+        "count_profit_months": 0,
+        "incubation_status": "",
+        "incubation_date": None,
+    }
+
+    if oos_begin is None or oos_end is None:
+        return result
+    if pnl.empty:
+        return result
+
+    # Slice to OOS period
+    oos_begin_ts = pd.Timestamp(oos_begin)
+    oos_end_ts = pd.Timestamp(oos_end)
+    oos_pnl = pnl.loc[(pnl.index >= oos_begin_ts) & (pnl.index <= oos_end_ts)]
+
+    if oos_pnl.empty:
+        return result
+
+    # ── Effective end date & rolling window start dates ───────────────────────
+    effective_end_ts, window_starts = _calc_window_starts(
+        oos_end_ts, oos_begin_ts, days_threshold
+    )
+
+    # ── Profit windows ────────────────────────────────────────────────────────
+    window_pnl = oos_pnl.loc[oos_pnl.index <= effective_end_ts]
+    windows = {
+        "profit_last_1_month":  window_starts["1m"],
+        "profit_last_3_months": window_starts["3m"],
+        "profit_last_6_months": window_starts["6m"],
+        "profit_last_9_months": window_starts["9m"],
+        "profit_last_12_months": window_starts["12m"],
+    }
+    for key, start_ts in windows.items():
+        if start_ts is not None and start_ts >= oos_begin_ts:
+            result[key] = float(
+                window_pnl.loc[window_pnl.index >= start_ts].sum()
+            )
+        # else: leave as None (not enough OOS history)
+
+    # ── Efficiency (profit / expected_monthly) ────────────────────────────────
+    # expected monthly = expected_annual_profit / 12
+    exp_monthly = expected_annual_profit / 12.0 if expected_annual_profit > 0 else 0.0
+    for months, profit_key, eff_key in [
+        (1,  "profit_last_1_month",  "efficiency_last_1_month"),
+        (3,  "profit_last_3_months", "efficiency_last_3_months"),
+        (6,  "profit_last_6_months", "efficiency_last_6_months"),
+        (9,  "profit_last_9_months", "efficiency_last_9_months"),
+        (12, "profit_last_12_months", "efficiency_last_12_months"),
+    ]:
+        p = result[profit_key]
+        if p is not None and exp_monthly > 0:
+            result[eff_key] = p / (exp_monthly * months)
+
+    # ── Profit since OOS start ────────────────────────────────────────────────
+    result["profit_since_oos_start"] = float(oos_pnl.sum())
+
+    # ── OOS drawdown ──────────────────────────────────────────────────────────
+    oos_cumsum = oos_pnl.cumsum()
+    max_dd, avg_dd = _calc_drawdown(oos_cumsum.values)
+    result["max_oos_drawdown"] = max_dd
+    result["avg_oos_drawdown"] = avg_dd
+
+    # ── Drawdown last 12 months ───────────────────────────────────────────────
+    start_12m = window_starts["12m"]
+    if start_12m is not None:
+        pnl_12m = window_pnl.loc[window_pnl.index >= start_12m]
+        if not pnl_12m.empty:
+            cum_12m = pnl_12m.cumsum()
+            result["max_drawdown_last_12_months"], _ = _calc_drawdown(cum_12m.values)
+
+    # ── Count profitable months ───────────────────────────────────────────────
+    monthly = oos_pnl.resample("ME").sum()
+    if eligibility_months > 0 and len(monthly) > 0:
+        recent = monthly.iloc[-eligibility_months:]
+        result["count_profit_months"] = int((recent > 0).sum())
+
+    # ── Incubation status ─────────────────────────────────────────────────────
+    inc_status, inc_date = _calc_incubation(
+        oos_pnl,
+        expected_annual_profit,
+        incubation_months,
+        min_incubation_ratio,
+    )
+    result["incubation_status"] = inc_status
+    result["incubation_date"] = inc_date
+
+    return result
+
+
+def _calc_window_starts(
+    oos_end_ts: pd.Timestamp,
+    oos_begin_ts: pd.Timestamp,
+    days_threshold: int,
+) -> tuple[pd.Timestamp, dict[str, pd.Timestamp | None]]:
+    """
+    Compute rolling window start timestamps.
+    Mirrors VBA: if daysThreshold > 0 and current month has < threshold days,
+    use previous month's end as effective end date.
+    """
+    if days_threshold > 0:
+        month_start = oos_end_ts.replace(day=1)
+        days_in_current = (oos_end_ts - month_start).days + 1
+        if days_in_current < days_threshold:
+            # Use end of previous month
+            effective_end = month_start - timedelta(days=1)
+        else:
+            effective_end = oos_end_ts
+    else:
+        effective_end = oos_end_ts
+
+    eff = effective_end
+
+    def _months_back(n: int) -> pd.Timestamp:
+        """Go back n months from effective end — to start of that month."""
+        dt = eff.to_pydatetime() if hasattr(eff, "to_pydatetime") else eff
+        m = dt.month - n
+        y = dt.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        return pd.Timestamp(y, m, 1)
+
+    if days_threshold > 0:
+        starts = {
+            "1m":  _months_back(0),    # first day of effective end month
+            "3m":  _months_back(2),
+            "6m":  _months_back(5),
+            "9m":  _months_back(8),
+            "12m": _months_back(11),
+        }
+    else:
+        # Rolling: last N calendar months from effective end
+        starts = {
+            "1m":  eff - pd.DateOffset(months=1) + timedelta(days=1),
+            "3m":  eff - pd.DateOffset(months=3) + timedelta(days=1),
+            "6m":  eff - pd.DateOffset(months=6) + timedelta(days=1),
+            "9m":  eff - pd.DateOffset(months=9) + timedelta(days=1),
+            "12m": eff - pd.DateOffset(months=12) + timedelta(days=1),
+        }
+
+    return effective_end, starts
+
+
+def _calc_drawdown(equity: np.ndarray) -> tuple[float, float]:
+    """
+    Compute max and average dollar drawdown from an equity curve array.
+    Uses absolute dollar drawdown (not %) to mirror VBA.
+    Returns (max_drawdown, avg_drawdown).
+    """
+    if len(equity) == 0:
+        return 0.0, 0.0
+
+    peak = np.maximum.accumulate(equity)
+    drawdown = peak - equity  # absolute dollar drawdown
+
+    max_dd = float(np.max(drawdown))
+    # Average of non-zero drawdown points
+    nonzero = drawdown[drawdown > 0]
+    avg_dd = float(np.mean(nonzero)) if len(nonzero) > 0 else 0.0
+
+    return max_dd, avg_dd
+
+
+def _calc_incubation(
+    oos_pnl: pd.Series,
+    expected_annual_profit: float,
+    incubation_months: int,
+    min_incubation_ratio: float,
+) -> tuple[str, date | None]:
+    """
+    Determine incubation status.
+    Mirrors VBA: after incubation_months of OOS data, check if cumulative profit
+    has reached (expected_daily_rate × days × min_incubation_ratio).
+    Returns ("Passed", date) or ("Incubating", None) or ("", None).
+    """
+    if oos_pnl.empty or expected_annual_profit <= 0:
+        return "", None
+
+    incubation_days = round(incubation_months * 30.5)
+    expected_daily = expected_annual_profit / 365.25
+
+    cum = oos_pnl.cumsum()
+
+    for i, (ts, cum_val) in enumerate(cum.items()):
+        days_elapsed = i + 1
+        if days_elapsed >= incubation_days:
+            target = expected_daily * days_elapsed * min_incubation_ratio
+            if cum_val >= target:
+                return "Passed", ts.date()
+
+    return "Incubating", None
+
+
+# ── Column group definitions (for NaN-fill when WF missing) ───────────────────
+
+_WF_FLOAT_COLS = [
+    "expected_annual_profit", "actual_annual_profit", "return_efficiency",
+    "total_is_profit", "total_isoos_profit", "annualized_isoos_profit",
+    "mw_mc_is", "mw_mc_isoos",
+    "is_win_rate", "oos_win_rate", "overall_win_rate",
+    "trades_per_year", "pct_time_in_market", "avg_trade_length",
+    "avg_trade", "avg_profitable_trade", "avg_loss_trade",
+    "largest_win", "largest_loss",
+    "max_drawdown_is", "max_drawdown_isoos", "avg_drawdown_is", "avg_drawdown_isoos",
+    "sharpe_is", "sharpe_isoos", "annual_sd_is", "annual_sd_isoos",
+    "oos_period_years",
+]
+_WF_STR_COLS = [
+    "symbol", "timeframe", "session", "in_period", "out_period", "anchored", "fitness",
+]
+_WF_DATE_COLS = ["is_begin", "oos_begin", "oos_end", "next_opt_date", "last_opt_date"]
+_WF_INT_COLS = ["trading_days_is", "trading_days_isoos"]
