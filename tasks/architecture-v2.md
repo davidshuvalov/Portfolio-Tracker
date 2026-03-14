@@ -1,7 +1,7 @@
 # Portfolio Tracker v2 — Python Architecture Spec
 
 **Date:** 2026-03-14
-**Version:** 1.1 (updated with product decisions)
+**Version:** 1.2 (spec review decisions incorporated)
 **Status:** Approved for implementation
 
 ---
@@ -11,11 +11,17 @@
 | Question | Decision |
 |----------|----------|
 | MultiWalk dependency | Required — MultiWalk must be installed; registry lookup retained |
-| Pricing model | Annual subscription with server-side license validation |
+| Pricing model | Annual subscription — customer ID validated against server-side subscriber list |
+| Machine locking | Continues to use `MultiWalkIsLicensePro` DLL (machine transfer handled by MultiWalk) |
 | Platform target | Windows-only (.exe distribution via PyInstaller) |
 | CSV format | Microsoft Excel CSV (standard comma-delimited, UTF-8/ANSI) |
-| Data migration | Not required — clean install only |
-| Feature scope | v1.24 parity + new **Portfolio Eligibility Backtest** feature |
+| Data migration | One-time `.xlsb` importer provided for Strategies tab configuration |
+| Strategies config | Editable via UI table inside the app (not raw YAML) |
+| Portfolio backtest PnL | Sum of selected strategies' monthly PnL (equal weight, 1 contract each) |
+| Custom rules | Fixed 160 rules in v2.0; user-defined rules deferred to v2.1 |
+| Ranking metrics | oos_pnl, momentum_3m/6m, expected_return, Sharpe, OOS win rate, OOS drawdown |
+| Offline grace period | 30 days cached from last successful validation |
+| Feature scope | v1.24 parity + one-time migrator + new **Portfolio Eligibility Backtest** feature |
 
 ---
 
@@ -24,7 +30,9 @@
 ### Goals
 - Feature-parity with v1.24 (all analytics: MC, correlations, diversification, LOO, backtest)
 - Significant performance improvement on compute-heavy modules (MC, LOO, correlations)
-- Annual subscription licensing with server-side validation (replaces MultiWalk DLL)
+- Annual subscription licensing via MultiWalk DLL + server-side subscriber list
+- One-time `.xlsb` importer so existing customers can migrate their Strategies config
+- Strategies configuration editable via UI table (no raw file editing)
 - Maintainable, testable codebase with clear separation of concerns
 - Packaged as Windows `.exe` — no Python install required for end users
 - New feature: **Portfolio Eligibility Backtest** (walk-forward portfolio construction)
@@ -33,7 +41,7 @@
 - Real-time data feeds or broker integration
 - Multi-user collaboration or cloud sync
 - Mac/Linux support
-- Data migration from v1.24 Excel workbook
+- User-defined custom eligibility rules (deferred to v2.1)
 
 ---
 
@@ -813,70 +821,359 @@ with tab2:
 
 ---
 
-## 8. Licensing: Annual Subscription
+## 8. Licensing: MultiWalk DLL + Annual Subscription
 
-Replace the MultiWalk DLL with a proper subscription system.
+Two-layer validation that mirrors the existing VBA approach while adding subscription management.
 
-### Architecture
+### How the Existing VBA Licensing Works
 
 ```
-Customer buys annual subscription → receives license key (JWT, RS256-signed)
-License key contains: { customer_name, hardware_id, expiry, tier, issued_at }
-App validates on startup:
-    1. Decode JWT with embedded public key (offline check)
-    2. Verify hardware_id matches current machine
-    3. If expiry < 30 days away → prompt renewal
-    4. Optional: phone-home to subscription API for revocation check
+1. Customer enters their MultiWalk customer ID in a named range (TS_Customer_Number)
+2. App loads MultiWalkLicense64.dll from the MultiWalk program folder (read from registry)
+3. App calls MultiWalkIsLicensePro(mw_folder, customer_id, "ShuvalovPortfolio")
+4. DLL validates: customer has MultiWalk Pro on this machine → returns 0 if valid
+5. App also checks customer_id is in the hardcoded approved customer list
+```
+
+Machine locking is entirely handled by MultiWalk's DLL — it validates the customer's
+MultiWalk license is present on that machine. Machine transfers go through MultiWalk's
+own support process, which customers already know.
+
+### Python v2 Approach
+
+Replace the hardcoded customer list (A module) with a server-side subscriber list.
+Keep the DLL call for machine locking. Add subscription expiry tracking.
+
+```
+Layer 1 — Machine lock (unchanged):
+    ctypes call to MultiWalkIsLicensePro via the DLL found in registry
+    Same validation as v1.24 — customer's MultiWalk license IS the machine lock
+
+Layer 2 — Subscription check (new):
+    App calls subscription API: "is customer_id an active subscriber?"
+    API returns: { active: bool, expiry: date, customer_name: str }
+    Result cached locally for 30 days (offline grace period)
+    If expiry < 30 days away → show renewal prompt in UI
 ```
 
 ```python
 # core/licensing/license_manager.py
 
-import jwt, hashlib, uuid
+import ctypes, winreg, json, hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
+import requests
 
-LICENSE_FILE = Path.home() / ".portfolio_tracker" / "license.key"
-PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\n..."  # Embedded at build time
+CACHE_FILE = Path.home() / ".portfolio_tracker" / "license_cache.json"
+SUBSCRIPTION_API = "https://api.portfoliotracker.io"  # hosted on Railway/Render
+APP_NAME = "ShuvalovPortfolio"
 
-def validate_license() -> dict | None:
-    if not LICENSE_FILE.exists():
-        return None
-    key = LICENSE_FILE.read_text().strip()
+def get_multiwalk_folder() -> str | None:
+    """Read MultiWalk install path from registry — same as VBA GetMultiWalkProgramFolder."""
     try:
-        claims = jwt.decode(key, PUBLIC_KEY, algorithms=["RS256"])
-    except jwt.ExpiredSignatureError:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\MultiWalk")
+        folder, _ = winreg.QueryValueEx(key, "MultiWalkProgramFolder")
+        return folder
+    except OSError:
         return None
-    except jwt.InvalidTokenError:
-        return None
-    if claims.get("hardware_id") != get_hardware_id():
-        return None
-    return claims
 
-def days_until_expiry(claims: dict) -> int:
-    expiry = datetime.fromisoformat(claims["expiry"])
-    return (expiry - datetime.now()).days
+def validate_machine_license(customer_id: int) -> bool:
+    """
+    Call MultiWalkIsLicensePro via ctypes.
+    Mirrors VBA: MultiWalkIsLicensePro(program_folder, customer_id, app_name)
+    Returns True if machine is licensed (return code 0).
+    """
+    mw_folder = get_multiwalk_folder()
+    if not mw_folder:
+        return False
+    dll_path = Path(mw_folder) / "MultiWalkLicense64.dll"
+    if not dll_path.exists():
+        return False
+    try:
+        dll = ctypes.CDLL(str(dll_path))
+        dll.MultiWalkIsLicensePro.restype = ctypes.c_int
+        dll.MultiWalkIsLicensePro.argtypes = [
+            ctypes.c_wchar_p,  # program_folder
+            ctypes.c_long,     # customer_id
+            ctypes.c_wchar_p,  # app_name
+        ]
+        result = dll.MultiWalkIsLicensePro(mw_folder, customer_id, APP_NAME)
+        return result == 0
+    except Exception:
+        return False
 
-def get_hardware_id() -> str:
-    mac = uuid.getnode()
-    return hashlib.sha256(f"{mac}".encode()).hexdigest()[:16]
+def validate_subscription(customer_id: int) -> dict | None:
+    """
+    Check subscription status against API.
+    Falls back to cached result if offline (30-day grace period).
+    Returns: { active, expiry, customer_name, days_remaining } or None
+    """
+    cache = _load_cache()
+
+    # Try live check first
+    try:
+        resp = requests.get(
+            f"{SUBSCRIPTION_API}/check",
+            params={"customer_id": customer_id},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _save_cache(customer_id, data)
+            return data
+    except requests.RequestException:
+        pass  # Fall through to cache
+
+    # Offline: use cache if within grace period
+    if cache and cache.get("customer_id") == customer_id:
+        cached_at = datetime.fromisoformat(cache["cached_at"])
+        if datetime.now() - cached_at < timedelta(days=30):
+            return cache["data"]
+
+    return None
+
+def validate_full(customer_id: int) -> tuple[bool, str]:
+    """
+    Full validation: machine lock + subscription.
+    Returns (is_valid, message).
+    """
+    if not validate_machine_license(customer_id):
+        return False, "MultiWalk license not found on this machine. Is MultiWalk installed?"
+
+    sub = validate_subscription(customer_id)
+    if sub is None:
+        return False, "Could not validate subscription (offline and no cached data). Please connect to the internet."
+    if not sub.get("active"):
+        return False, f"Subscription expired. Please renew at portfoliotracker.io"
+
+    days = sub.get("days_remaining", 0)
+    warning = f" (renews in {days} days)" if days < 30 else ""
+    return True, f"Licensed to {sub['customer_name']}{warning}"
 ```
 
-### Subscription API (minimal server, e.g. on Railway/Render)
+### Subscription API (minimal server — Railway/Render, ~$5/month)
 
 ```python
-# server/api.py — simple FastAPI service
-# POST /activate   { license_key, hardware_id } → validates + logs activation
-# GET  /check      { license_key }              → returns valid/revoked/expired
-# POST /issue      { customer_email, tier }     → admin: generates new key
+# server/api.py — FastAPI
+# GET  /check    { customer_id }                   → { active, expiry, customer_name, days_remaining }
+# POST /renew    { customer_id, payment_ref }       → admin: mark subscription renewed
+# POST /revoke   { customer_id }                   → admin: immediately revoke
 ```
 
-This server holds the private key and customer database. The app embeds only the
-public key — so license files cannot be forged even if the app is decompiled.
+The server holds the customer database (customer_id → subscription expiry).
+No private keys, no JWT — just a simple lookup. The machine locking is entirely
+delegated to MultiWalk's DLL, which you don't need to manage.
+
+### Subscription API Customer Entry Fields
+
+```
+customer_id      int      MultiWalk customer ID (same as TS_Customer_Number)
+customer_name    str      Full name
+email            str      For renewal reminders
+subscription_end date     Annual renewal date
+active           bool     Can be manually revoked
+notes            str      Free text
+```
+
+### Startup Flow in App
+
+```
+1. Ask customer for their MultiWalk customer ID (first run only, saved to config)
+2. Call validate_machine_license(customer_id) → DLL check
+3. Call validate_subscription(customer_id)   → API / cache check
+4. If both pass → allow access, show customer name in sidebar
+5. If subscription expires < 30 days → yellow banner in UI with renewal link
+6. If either fails → show clear error with instructions
+```
 
 ---
 
-## 9. Performance Summary
+## 9. Data Migration: One-Time `.xlsb` Importer
+
+Existing customers have years of Strategies tab configuration in their v1.24 workbook:
+status, sector, symbol, contracts, type, horizon etc. Rather than re-entering manually,
+a one-time importer reads this directly from the `.xlsb` file.
+
+### What Gets Imported
+
+| Field | Source in v1.24 | Notes |
+|-------|----------------|-------|
+| Strategy name | Strategies tab col A | Primary key for matching |
+| Status | Strategies tab | Live, Paper, Retired, Pass, etc. |
+| Sector | Strategies tab | e.g. Equity, Bond, FX |
+| Symbol | Strategies tab | e.g. ES, NQ, CL |
+| Contracts | Strategies tab | Position size |
+| Type | Strategies tab | e.g. Trend, Mean Reversion |
+| Horizon | Strategies tab | e.g. Short, Medium, Long |
+| Incubation passed date | Summary tab | If present |
+
+### What Does NOT Get Imported
+- All computed metrics (regenerated from CSVs)
+- Chart formatting
+- Sheet layout preferences
+
+### Implementation
+
+```python
+# core/ingestion/xlsb_importer.py
+
+import openpyxl
+from pathlib import Path
+
+# openpyxl cannot read .xlsb directly — pyxlsb can
+import pyxlsb
+
+def import_strategies_from_xlsb(xlsb_path: Path) -> list[dict]:
+    """
+    Opens the v1.24 .xlsb file and reads the Strategies tab.
+    Returns list of dicts matching the Strategy dataclass fields.
+    Uses pyxlsb (read-only, no Excel required).
+    """
+    rows = []
+    with pyxlsb.open_workbook(str(xlsb_path)) as wb:
+        with wb.get_sheet("Strategies") as ws:
+            headers = None
+            for row in ws.rows():
+                values = [cell.v for cell in row]
+                if headers is None:
+                    headers = [str(v).strip() if v else "" for v in values]
+                    continue
+                if not any(values):
+                    continue
+                row_dict = dict(zip(headers, values))
+                # Normalise to Strategy dataclass field names
+                rows.append(_map_row(row_dict))
+    return rows
+
+def _map_row(row: dict) -> dict:
+    """Map v1.24 column names to v2 field names."""
+    return {
+        "name": _str(row.get("Strategy Name", "")),
+        "status": _str(row.get("Status (Input Column)", "Live")),
+        "sector": _str(row.get("Sector", "")),
+        "symbol": _str(row.get("Symbol", "")),
+        "contracts": _int(row.get("Contracts", 1)),
+        "type": _str(row.get("Type", "")),
+        "horizon": _str(row.get("Horizon", "")),
+    }
+```
+
+### UI: Migration Page
+
+```python
+# ui/pages/00_Migrate.py  (only shown if no strategies.yaml exists yet)
+
+st.title("Migrate from Portfolio Tracker v1.24")
+st.info("One-time import. Your new settings will be stored inside the app.")
+
+xlsb = st.file_uploader("Select your v1.24 .xlsb file", type=["xlsb"])
+if xlsb and st.button("Import"):
+    strategies = import_strategies_from_xlsb(xlsb)
+    st.success(f"Found {len(strategies)} strategies.")
+    st.dataframe(pd.DataFrame(strategies))   # preview before saving
+    if st.button("Confirm & Save"):
+        save_strategies_config(strategies)
+        st.success("Done. You can now use the app.")
+```
+
+---
+
+## 10. Strategies Configuration UI
+
+The Strategies tab is the most-edited part of the workbook. In v2, it becomes
+an editable table inside the app — no YAML editing, no Excel required.
+
+```python
+# ui/pages/02_Strategies.py
+
+import streamlit as st
+import pandas as pd
+from core.portfolio.strategies import load_strategies, save_strategies
+
+st.title("Strategies")
+
+strategies_df = load_strategies()
+
+# Editable grid using st.data_editor (Streamlit 1.23+)
+edited = st.data_editor(
+    strategies_df,
+    column_config={
+        "name":      st.column_config.TextColumn("Strategy Name", disabled=True),
+        "status":    st.column_config.SelectboxColumn("Status",
+                         options=["Live", "Paper", "Retired", "Pass", "Not Loaded"]),
+        "sector":    st.column_config.TextColumn("Sector"),
+        "symbol":    st.column_config.TextColumn("Symbol"),
+        "contracts": st.column_config.NumberColumn("Contracts", min_value=1, step=1),
+        "type":      st.column_config.SelectboxColumn("Type",
+                         options=["Trend", "Mean Reversion", "Seasonal", "Other"]),
+        "horizon":   st.column_config.SelectboxColumn("Horizon",
+                         options=["Short", "Medium", "Long"]),
+    },
+    num_rows="dynamic",    # allow adding new rows
+    use_container_width=True,
+)
+
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("Save Changes", type="primary"):
+        save_strategies(edited)
+        st.success("Saved.")
+with col2:
+    if st.button("Detect New Strategies"):
+        # Scans folders and adds any new strategies found
+        new = detect_new_strategies(edited, st.session_state.config.folders)
+        if new:
+            st.info(f"Found {len(new)} new strategies: {', '.join(new)}")
+        else:
+            st.info("No new strategies found.")
+```
+
+The underlying store is a YAML file, but customers never touch it directly —
+the UI is the only interface.
+
+---
+
+## 11. Eligibility Ranking Metrics (Updated)
+
+When `max_strategies` is set in the portfolio backtest, strategies are ranked
+by one of these metrics and only the top-N are selected:
+
+| Metric | Description | Data Source |
+|--------|-------------|-------------|
+| `oos_pnl` | Total OOS P&L ($) | Summary metrics (static) |
+| `momentum_3m` | Trailing 3-month P&L | Monthly PnL array (dynamic) |
+| `momentum_6m` | Trailing 6-month P&L | Monthly PnL array (dynamic) |
+| `expected_return` | Expected annual return ($) | Summary metrics (static) |
+| `sharpe_ratio` | OOS Sharpe ratio | Summary metrics (static) |
+| `oos_win_rate` | OOS monthly win rate (%) | Summary metrics (static) |
+| `oos_max_drawdown` | OOS max drawdown (lower = better) | Summary metrics (ascending) |
+
+The last three are the additions from the spec review. Note that `oos_max_drawdown`
+sorts ascending (lower drawdown = higher rank).
+
+```python
+def _rank_strategies(strategies, monthly_pnl, m_idx, summary, metric, top_n):
+    ascending = metric == "oos_max_drawdown"
+    if metric in ("oos_pnl", "expected_return", "sharpe_ratio",
+                  "oos_win_rate", "oos_max_drawdown"):
+        scores = summary.loc[strategies, metric]
+    elif metric == "momentum_3m":
+        scores = pd.Series(
+            {s: _trailing_sum(monthly_pnl[s].values, m_idx, 3) for s in strategies}
+        )
+    elif metric == "momentum_6m":
+        scores = pd.Series(
+            {s: _trailing_sum(monthly_pnl[s].values, m_idx, 6) for s in strategies}
+        )
+    else:
+        scores = pd.Series({s: 0.0 for s in strategies})
+
+    return scores.sort_values(ascending=ascending).index[:top_n].tolist()
+```
+
+---
+
+## 12. Performance Summary
 
 | Module | VBA Time | Python Time | Speedup |
 |--------|----------|-------------|---------|
@@ -919,49 +1216,59 @@ bleeds into the selection decision.
 
 ---
 
-## 11. Build Order (Phased Delivery)
+## 13. Build Order (Phased Delivery)
+
+### Pre-Phase — Capture Golden Dataset (before writing any Python)
+- [ ] Run v1.24 on a known set of anonymized MultiWalk strategy folders
+- [ ] Export all metrics (Summary, Portfolio, MC, Correlations, Rule Backtest) as JSON fixtures
+- [ ] These fixtures become the regression test baseline for all subsequent phases
 
 ### Phase 1 — Data Foundation (2-3 weeks)
 - [ ] `core/ingestion/folder_scanner.py` — scan MultiWalk folders, validate CSVs
 - [ ] `core/ingestion/csv_importer.py` — parse EquityData + TradeData CSVs
 - [ ] `core/ingestion/date_utils.py` — IS/OOS period logic, cutoff dates, trading calendar
+- [ ] `core/ingestion/xlsb_importer.py` — one-time v1.24 Strategies tab importer (`pyxlsb`)
 - [ ] `core/config.py` + `core/data_types.py`
+- [ ] `ui/pages/00_Migrate.py` — one-time xlsb import wizard (shown only on first run)
 - [ ] `ui/pages/01_Import.py` — folder picker, import progress, data preview table
 - [ ] Unit tests for all ingestion code
 
-### Phase 2 — Portfolio & Summary (1-2 weeks)
+### Phase 2 — Strategies Config + Portfolio (1-2 weeks)
+- [ ] `core/portfolio/strategies.py` — load/save strategies config (YAML backend)
 - [ ] `core/portfolio/aggregator.py` — aggregate strategies into portfolio
 - [ ] `core/portfolio/summary.py` — 80+ metrics per strategy
-- [ ] `ui/pages/02_Portfolio.py` — strategy table with filter/sort
-- [ ] Integration test: metrics match v1.24
+- [ ] `ui/pages/02_Strategies.py` — editable `st.data_editor` table for strategy config
+- [ ] `ui/pages/03_Portfolio.py` — portfolio summary with filter/sort
+- [ ] Integration test: metrics match v1.24 golden dataset
 
 ### Phase 3 — Monte Carlo (1 week)
-- [ ] `core/analytics/monte_carlo.py` — Numba JIT inner loop
-- [ ] `ui/pages/03_Monte_Carlo.py`
-- [ ] Regression test vs v1.24 output
+- [ ] `core/analytics/monte_carlo.py` — Numba JIT inner loop + iterative solver
+- [ ] `ui/pages/04_Monte_Carlo.py`
+- [ ] Regression test vs golden dataset (±0.5% tolerance; RNG difference documented)
 
 ### Phase 4 — Correlations + Diversification (1-2 weeks)
-- [ ] `core/analytics/correlations.py` — 3 modes
+- [ ] `core/analytics/correlations.py` — 3 modes (normal, negative, drawdown)
 - [ ] `core/analytics/diversification.py` — randomized + greedy
-- [ ] `ui/pages/04_Correlations.py` + `05_Diversification.py`
+- [ ] `ui/pages/05_Correlations.py` + `06_Diversification.py`
 
 ### Phase 5 — Eligibility Backtest (2-3 weeks) ← NEW FEATURE
 - [ ] `core/analytics/eligibility/rules.py` — all 160 rules as pure functions
 - [ ] `core/analytics/eligibility/rule_backtest.py` — walk-forward rule statistics
-- [ ] `core/analytics/eligibility/portfolio_backtest.py` — portfolio construction
-- [ ] `ui/pages/10_Eligibility_Backtest.py` — both tabs
-- [ ] Unit tests: each rule type, look-ahead bias validation
+- [ ] `core/analytics/eligibility/portfolio_backtest.py` — portfolio construction backtest
+- [ ] `ui/pages/10_Eligibility_Backtest.py` — Tab 1 (rule stats) + Tab 2 (portfolio backtest)
+- [ ] Unit tests: each rule type with synthetic data, look-ahead bias validation
 
 ### Phase 6 — Advanced Analytics (2 weeks)
 - [ ] `core/analytics/leave_one_out.py`
 - [ ] `core/analytics/backtest.py`
 - [ ] `core/analytics/margin.py`
-- [ ] Remaining UI pages
+- [ ] `ui/pages/07_Backtest.py`, `08_Leave_One_Out.py`, `09_Margin_Tracking.py`, `11_Position_Check.py`
 
 ### Phase 7 — Licensing + Packaging (1-2 weeks)
-- [ ] `core/licensing/` — JWT hardware-bound keys
-- [ ] Subscription API server (minimal FastAPI)
-- [ ] `core/reporting/excel_export.py` — optional .xlsx export
+- [ ] `core/licensing/license_manager.py` — MultiWalk DLL call via ctypes + subscription API check
+- [ ] Subscription API server (minimal FastAPI, deployed to Railway/Render)
+- [ ] Remove `DEV_MODE` bypass; gate all pages behind license check
+- [ ] `core/reporting/excel_export.py` — optional .xlsx export for customers who want it
 - [ ] Settings export/import (replaces Q module)
 - [ ] PyInstaller packaging + code signing
 - [ ] Auto-update check on startup
@@ -969,14 +1276,16 @@ bleeds into the selection decision.
 
 ---
 
-## 12. Key Risks & Mitigations
+## 14. Key Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
 | Portfolio backtest has look-ahead bias | Critical — invalidates results | Dedicated unit tests; code review gate before release |
 | MC output doesn't match v1.24 exactly | High | Document RNG difference; golden dataset tests within ±0.5% |
 | IS/OOS date logic bugs | High | Mirror VBA's ResolveOOSDates exactly; unit test every edge case |
-| Eligibility rule 160 definitions mismatch | Medium | Port each rule type from VBA line-by-line; unit test each |
-| PyInstaller + Numba JIT conflict | Medium | Test on clean Windows VM; pre-compile with cache=True |
-| Subscription API downtime blocks startup | Medium | Cache last valid check for 7 days offline grace period |
-| MultiWalk CSV format variations across MW versions | Medium | Header detection; log warnings on parse failure |
+| `pyxlsb` fails to read specific .xlsb | Medium | Test on actual customer file; fall back to manual CSV import if needed |
+| Eligibility rule definitions mismatch | Medium | Port each rule type from VBA line-by-line; unit test each |
+| PyInstaller + Numba JIT conflict | Medium | Test on clean Windows VM; pre-compile with `cache=True` |
+| MultiWalk DLL ctypes call fails | Medium | Test on multiple MultiWalk versions; fall back to grace-period cache |
+| Subscription API downtime blocks startup | Medium | 30-day offline grace period from last successful validation |
+| MultiWalk CSV format variations | Low | Header detection; log warnings on parse failure |
