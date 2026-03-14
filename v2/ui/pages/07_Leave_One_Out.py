@@ -85,6 +85,16 @@ with st.sidebar:
         use_container_width=True,
     )
 
+    st.divider()
+    if st.button("Save as defaults", use_container_width=True, help="Persist these settings so they load next session"):
+        config.monte_carlo.simulations      = int(simulations)
+        config.monte_carlo.risk_ruin_target = risk_ruin_pct / 100.0
+        config.monte_carlo.trade_adjustment = trade_adjustment
+        config.monte_carlo.trade_option     = trade_option
+        config.save()
+        st.session_state.config = config
+        st.success("Saved.")
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 loo_result: pd.DataFrame | None = st.session_state.get("loo_result")
 

@@ -282,6 +282,65 @@ st.divider()
 st.header("App Preferences")
 
 with st.form("preferences_form"):
+    st.subheader("Portfolio")
+    period_years = st.number_input(
+        "Lookback period (years)",
+        min_value=0.5, max_value=20.0, step=0.5,
+        value=float(config.portfolio.period_years), format="%.1f",
+        help="How many years of history to use when computing summary metrics.",
+    )
+    use_cutoff = st.checkbox(
+        "Use cutoff date",
+        value=config.portfolio.use_cutoff,
+        help="Treat data after this date as OOS-end for all strategies.",
+    )
+    cutoff_str = st.text_input(
+        "Cutoff date (YYYY-MM-DD)",
+        value=config.portfolio.cutoff_date or "",
+        disabled=not use_cutoff,
+        help="Only used when 'Use cutoff date' is checked.",
+    )
+
+    st.subheader("Monte Carlo defaults")
+    mc_sims = st.number_input(
+        "Default simulations",
+        min_value=1_000, max_value=100_000, step=1_000,
+        value=int(config.monte_carlo.simulations),
+    )
+    mc_period = st.selectbox(
+        "Default period",
+        ["OOS", "IS", "IS+OOS"],
+        index=["OOS", "IS", "IS+OOS"].index(config.monte_carlo.period),
+    )
+    mc_ror = st.slider(
+        "Default risk-of-ruin target %",
+        min_value=1, max_value=30,
+        value=int(config.monte_carlo.risk_ruin_target * 100),
+    )
+    mc_trade_opt = st.radio(
+        "Default trade data",
+        ["M2M", "Closed"],
+        index=["M2M", "Closed"].index(config.monte_carlo.trade_option),
+        horizontal=True,
+    )
+
+    st.subheader("Eligibility defaults")
+    elig_status = st.multiselect(
+        "Default eligible statuses",
+        ["Live", "Paper", "Pass", "Retired"],
+        default=list(config.eligibility.status_include),
+    )
+    elig_days = st.number_input(
+        "Default min OOS days",
+        min_value=0, max_value=730,
+        value=int(config.eligibility.days_threshold_oos),
+    )
+    elig_eff = st.slider(
+        "Default efficiency ratio",
+        0.0, 2.0, float(config.eligibility.efficiency_ratio), 0.05,
+    )
+
+    st.subheader("Display")
     date_fmt = st.selectbox(
         "Date format in CSV files",
         ["DMY", "MDY"],
@@ -304,11 +363,39 @@ with st.form("preferences_form"):
         value=config.corr_negative_threshold, format="%.2f",
         help="Pairs BELOW this are considered negatively correlated (diversifying).",
     )
-    if st.form_submit_button("Save Preferences", type="primary"):
-        config.date_format            = date_fmt
-        config.corr_normal_threshold  = corr_normal
+
+    if st.form_submit_button("Save All Preferences", type="primary"):
+        # Portfolio
+        config.portfolio.period_years = float(period_years)
+        config.portfolio.use_cutoff   = use_cutoff
+        if use_cutoff and cutoff_str.strip():
+            try:
+                from datetime import date as _date
+                _date.fromisoformat(cutoff_str.strip())   # validate
+                config.portfolio.cutoff_date = cutoff_str.strip()
+            except ValueError:
+                st.error("Invalid cutoff date — use YYYY-MM-DD format.")
+                st.stop()
+        elif not use_cutoff:
+            config.portfolio.cutoff_date = None
+
+        # Monte Carlo
+        config.monte_carlo.simulations      = int(mc_sims)
+        config.monte_carlo.period           = mc_period
+        config.monte_carlo.risk_ruin_target = mc_ror / 100.0
+        config.monte_carlo.trade_option     = mc_trade_opt
+
+        # Eligibility
+        config.eligibility.status_include      = elig_status if elig_status else ["Live"]
+        config.eligibility.days_threshold_oos  = int(elig_days)
+        config.eligibility.efficiency_ratio    = float(elig_eff)
+
+        # Display
+        config.date_format             = date_fmt
+        config.corr_normal_threshold   = corr_normal
         config.corr_drawdown_threshold = corr_drawdown
         config.corr_negative_threshold = corr_negative
+
         config.save()
         st.session_state.config = config
-        st.success("Preferences saved.")
+        st.success("All preferences saved.")

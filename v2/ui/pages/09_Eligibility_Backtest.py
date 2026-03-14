@@ -107,6 +107,17 @@ with st.sidebar:
         index=0 if config.eligibility.date_type == "OOS Start Date" else 1,
     )
 
+    st.divider()
+    if st.button("Save as defaults", use_container_width=True, help="Persist these settings so they load next session"):
+        config.eligibility.days_threshold_oos = int(days_threshold)
+        config.eligibility.oos_dd_vs_is_cap   = float(dd_cap)
+        config.eligibility.status_include      = status_include if status_include else ["Live"]
+        config.eligibility.efficiency_ratio    = float(eff_ratio)
+        config.eligibility.date_type           = date_type
+        config.save()
+        st.session_state.config = config
+        st.success("Saved.")
+
 elig_config = EligibilityConfig(
     days_threshold_oos=int(days_threshold),
     oos_dd_vs_is_cap=float(dd_cap),
