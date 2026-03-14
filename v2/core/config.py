@@ -55,6 +55,11 @@ class AppConfig(BaseModel):
     corr_normal_threshold: float = 0.70
     corr_negative_threshold: float = 0.30
     corr_drawdown_threshold: float = 0.70
+    symbol_margins: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-symbol margin requirement in $ (e.g. {'ES': 12000, 'NQ': 18000})",
+    )
+    default_margin: float = 5000.0
 
     @field_validator("folders", mode="before")
     @classmethod
