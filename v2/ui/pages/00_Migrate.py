@@ -7,7 +7,12 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-from core.ingestion.xlsb_importer import import_strategies_from_xlsb, PYXLSB_AVAILABLE
+from core.ingestion.xlsb_importer import (
+    import_strategies_from_xlsb,
+    import_margin_tables,
+    save_margin_tables,
+    PYXLSB_AVAILABLE,
+)
 from core.config import AppConfig
 
 st.set_page_config(page_title="Migrate from v1.24", layout="wide")
@@ -16,13 +21,16 @@ st.title("Migrate from Portfolio Tracker v1.24")
 config: AppConfig = st.session_state.get("config", AppConfig.load())
 
 st.markdown("""
-This one-time import reads your existing **Strategies tab** from the v1.24 `.xlsb` file
-and copies it into Portfolio Tracker v2.
+This one-time import reads your existing **v1.24 `.xlsb` file** and copies key
+configuration into Portfolio Tracker v2.
 
-**What gets imported:** Strategy name, status, contracts, symbol, timeframe, type, horizon, notes.
+**What gets imported:**
+- Strategy name, status, contracts, symbol, timeframe, type, horizon, notes
+- **Margin reference tables** (TradeStation Margins, IB Margins, Symbol Lookup)
+  — used by the Margin Tracking page to auto-populate margin requirements
 
-**What does NOT get imported:** All computed metrics — these are recalculated from your
-MultiWalk CSV files when you run an import.
+**What does NOT get imported:** All computed metrics — these are recalculated
+from your MultiWalk CSV files when you run an import.
 
 Once complete, you won't need to use this page again.
 """)
@@ -53,8 +61,13 @@ with tempfile.NamedTemporaryFile(suffix=".xlsb", delete=False) as tmp:
     tmp_path = Path(tmp.name)
 
 try:
-    with st.spinner("Reading Strategies tab from workbook..."):
+    with st.spinner("Reading Strategies tab and margin tables from workbook…"):
         strategies, warnings = import_strategies_from_xlsb(tmp_path)
+        try:
+            margin_tables = import_margin_tables(tmp_path)
+        except Exception as e:
+            margin_tables = None
+            warnings.append(f"Could not read margin tables: {e}")
 finally:
     os.unlink(tmp_path)
 
@@ -67,7 +80,16 @@ if not strategies:
     st.error("No strategies found in the Strategies tab. Nothing to import.")
     st.stop()
 
-st.success(f"Found **{len(strategies)}** strategies.")
+col_s, col_m = st.columns(2)
+col_s.success(f"Found **{len(strategies)}** strategies.")
+if margin_tables is not None:
+    col_m.success(
+        f"Margin tables: **{len(margin_tables.ts)}** TS symbols, "
+        f"**{len(margin_tables.ib)}** IB symbols, "
+        f"**{len(margin_tables.lookup)}** symbol mappings."
+    )
+else:
+    col_m.warning("Margin tables could not be read (see warnings above).")
 
 # Preview table
 df = pd.DataFrame(strategies)
@@ -94,9 +116,13 @@ if confirm:
     from core.portfolio.strategies import save_strategies
     save_strategies(strategies)
     st.session_state.config = config
+    if margin_tables is not None:
+        save_margin_tables(margin_tables)
+        st.session_state["margin_tables"] = margin_tables
     st.success(
-        f"Imported {len(strategies)} strategies. "
-        "Go to the **Strategies** page to review and add sector information, "
+        f"Imported {len(strategies)} strategies"
+        + (f" and margin tables for {len(margin_tables.ts)} symbols" if margin_tables else "")
+        + ". Go to the **Strategies** page to review and add sector information, "
         "then go to **Import** to load your MultiWalk data."
     )
     st.balloons()

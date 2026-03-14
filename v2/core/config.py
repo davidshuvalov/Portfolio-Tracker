@@ -60,6 +60,8 @@ class AppConfig(BaseModel):
         description="Per-symbol margin requirement in $ (e.g. {'ES': 12000, 'NQ': 18000})",
     )
     default_margin: float = 5000.0
+    margin_source: Literal["TradeStation", "InteractiveBrokers", "Manual"] = "TradeStation"
+    margin_type: Literal["Initial", "Maintenance"] = "Maintenance"
 
     @field_validator("folders", mode="before")
     @classmethod
