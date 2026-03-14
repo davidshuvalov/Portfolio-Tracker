@@ -1,8 +1,21 @@
 # Portfolio Tracker v2 — Python Architecture Spec
 
 **Date:** 2026-03-14
-**Status:** Draft
-**Scope:** Full rewrite of the Excel/VBA Portfolio Tracker as a Python application
+**Version:** 1.1 (updated with product decisions)
+**Status:** Approved for implementation
+
+---
+
+## 0. Product Decisions (Resolved)
+
+| Question | Decision |
+|----------|----------|
+| MultiWalk dependency | Required — MultiWalk must be installed; registry lookup retained |
+| Pricing model | Annual subscription with server-side license validation |
+| Platform target | Windows-only (.exe distribution via PyInstaller) |
+| CSV format | Microsoft Excel CSV (standard comma-delimited, UTF-8/ANSI) |
+| Data migration | Not required — clean install only |
+| Feature scope | v1.24 parity + new **Portfolio Eligibility Backtest** feature |
 
 ---
 
@@ -11,41 +24,40 @@
 ### Goals
 - Feature-parity with v1.24 (all analytics: MC, correlations, diversification, LOO, backtest)
 - Significant performance improvement on compute-heavy modules (MC, LOO, correlations)
-- Professional licensing and delivery mechanism (no DLL dependency)
+- Annual subscription licensing with server-side validation (replaces MultiWalk DLL)
 - Maintainable, testable codebase with clear separation of concerns
-- Deployable as a local desktop app today; upgradeable to SaaS later
+- Packaged as Windows `.exe` — no Python install required for end users
+- New feature: **Portfolio Eligibility Backtest** (walk-forward portfolio construction)
 
 ### Non-Goals (v2.0)
 - Real-time data feeds or broker integration
-- Multi-user collaboration
-- Cloud storage (v2.0 reads local MultiWalk CSV folders)
-- Rebuilding the Excel workbook UI (replaced entirely)
+- Multi-user collaboration or cloud sync
+- Mac/Linux support
+- Data migration from v1.24 Excel workbook
 
 ---
 
-## 2. Recommended Platform: Python + Streamlit (Local Desktop)
+## 2. Platform: Python + Streamlit (Windows Desktop)
 
-### Why Streamlit
-- Zero frontend code required; interactive widgets, charts, and tables are built-in
-- Runs locally — customers point it at their MultiWalk folders (no upload friction)
-- Can be packaged as a Windows `.exe` via PyInstaller for non-technical users
-- The same codebase can be deployed as a hosted web app later with no changes
-- Streamlit's session state maps cleanly to the Excel workbook's named-range config
+Streamlit runs locally as a web UI served from the packaged `.exe`. Customers open
+`http://localhost:8501` in their browser (or it auto-opens). No internet required for
+operation — only license validation on startup requires a connection.
 
-### Why Not the Alternatives
+```
+PyInstaller .exe
+    └── Launches Streamlit server on localhost:8501
+    └── Auto-opens default browser
+    └── Reads MultiWalk CSV folders from local filesystem
+    └── Validates license key against subscription API on startup
+```
+
+### Why Not Alternatives
 | Option | Reason Rejected |
 |--------|----------------|
-| Excel VBA (evolve) | VBA has no future; no testing, no vectorization, no packaging |
-| PyQt6 / tkinter | Significant UI code to write; charts require matplotlib wiring |
-| FastAPI + React | 3-6x more code; premature before analytics layer is validated |
-| Jupyter Notebook | Not shippable to non-technical customers |
-
-### Migration Path
-```
-v2.0: Streamlit local app (Python analytics + Streamlit UI)
-v2.5: Optional hosted mode (same code, hosted on Railway/Render/AWS)
-v3.0: FastAPI backend + React frontend (if SaaS growth justifies it)
-```
+| PyQt6 / tkinter | Significant UI code; charts require manual wiring; slower to iterate |
+| FastAPI + React | 3-6x more frontend code; premature before analytics validated |
+| Jupyter Notebook | Not shippable as a product |
+| Keep VBA | No testing, no vectorization, DLL licensing fragile, VBA has no future |
 
 ---
 
@@ -53,20 +65,19 @@ v3.0: FastAPI backend + React frontend (if SaaS growth justifies it)
 
 | Layer | Library | Replaces |
 |-------|---------|---------|
-| Data manipulation | `pandas` | Worksheet arrays, Dictionary lookups |
+| Data manipulation | `pandas 2.x` | Worksheet arrays, Dictionary lookups |
 | Numerical computing | `numpy` | VBA Variant arrays, For loops |
-| Monte Carlo acceleration | `numba` (JIT) | VBA's slow inner loops |
-| Statistics | `scipy.stats` | Manual Pearson correlation code |
+| MC acceleration | `numba` (JIT, cached) | VBA's critical inner loops |
+| Statistics | `scipy.stats` | Manual correlation/Pearson code |
 | Visualization | `plotly` | Excel charts |
 | UI | `streamlit` | Excel sheets + buttons |
-| Configuration | `pydantic` + YAML | Named ranges, Strategies tab |
+| Configuration | `pydantic v2` + YAML | Named ranges, Strategies tab |
 | File I/O | `pathlib`, `pandas` | FileSystemObject, Open() |
-| Licensing | `cryptography` + license server | MultiWalkLicense64.dll |
+| Licensing | `cryptography` (JWT) + subscription API | MultiWalkLicense64.dll |
 | Packaging | `PyInstaller` | .xlsb distribution |
-| Testing | `pytest` + `hypothesis` | None (untested currently) |
+| Testing | `pytest` + `hypothesis` | None (currently untested) |
 
-### Python Version
-- **Python 3.11+** (required for Numba compatibility and performance)
+**Python version: 3.11+**
 
 ---
 
@@ -74,44 +85,47 @@ v3.0: FastAPI backend + React frontend (if SaaS growth justifies it)
 
 ```
 portfolio-tracker/
-├── app.py                          # Streamlit entrypoint
-├── pyproject.toml                  # Dependencies (Poetry or uv)
+├── app.py                          # Streamlit entrypoint + license gate
+├── pyproject.toml                  # Dependencies (uv / Poetry)
 ├── config/
-│   └── default_settings.yaml       # Default named range equivalents
+│   └── default_settings.yaml       # Pydantic model defaults
 │
-├── core/                           # Pure Python analytics — no UI dependency
-│   ├── __init__.py
+├── core/                           # Pure analytics — zero UI dependency
 │   ├── config.py                   # Pydantic settings model
-│   ├── data_types.py               # Dataclasses / TypedDicts for domain objects
+│   ├── data_types.py               # Domain dataclasses
 │   │
-│   ├── ingestion/                  # Replaces C + D modules
+│   ├── ingestion/
 │   │   ├── folder_scanner.py       # C_Retrieve_Folder_Locations
 │   │   ├── csv_importer.py         # D_Import_Data
-│   │   └── date_utils.py           # I_MISC date helpers
+│   │   └── date_utils.py           # I_MISC date helpers, IS/OOS resolution
 │   │
-│   ├── portfolio/                  # Replaces J + F + O modules
+│   ├── portfolio/
 │   │   ├── aggregator.py           # J_Portfolio_Setup
-│   │   ├── summary.py              # F_Summary_Tab_Setup
+│   │   ├── summary.py              # F_Summary_Tab_Setup (80+ metrics)
 │   │   └── strategies.py           # O_Strategies_Tab
 │   │
-│   ├── analytics/                  # Replaces K + L + T + S + N modules
-│   │   ├── monte_carlo.py          # K_MonteCarlo (vectorized)
-│   │   ├── correlations.py         # L_Correlations
-│   │   ├── diversification.py      # T_Diversificator
+│   ├── analytics/
+│   │   ├── monte_carlo.py          # K_MonteCarlo (vectorized + Numba JIT)
+│   │   ├── correlations.py         # L_Correlations (3 modes)
+│   │   ├── diversification.py      # T_Diversificator (randomized + greedy)
 │   │   ├── leave_one_out.py        # S_LeaveOneOut
 │   │   ├── backtest.py             # N_BackTest
-│   │   └── margin.py              # M_Margin_Tracking
+│   │   ├── margin.py               # M_Margin_Tracking
+│   │   └── eligibility/            # NEW FEATURE — see Section 8
+│   │       ├── rules.py            # Rule definitions & evaluation engine
+│   │       ├── rule_backtest.py    # Walk-forward rule statistics (replaces U module)
+│   │       └── portfolio_backtest.py  # NEW: walk-forward portfolio construction
 │   │
-│   ├── reporting/                  # Replaces G + H + V modules
+│   ├── reporting/
 │   │   ├── strategy_report.py      # G_Create_Strategy_Tab
 │   │   ├── position_check.py       # V_PositionCheck
-│   │   └── excel_export.py         # Export to .xlsx for customers who want it
+│   │   └── excel_export.py         # Optional .xlsx export
 │   │
-│   └── licensing/                  # Replaces A + B modules
-│       ├── license_manager.py
-│       └── hardware_id.py
+│   └── licensing/
+│       ├── license_manager.py      # JWT validation + API check
+│       └── hardware_id.py          # Machine fingerprint
 │
-├── ui/                             # Streamlit pages — thin wrappers over core/
+├── ui/
 │   ├── pages/
 │   │   ├── 01_Import.py
 │   │   ├── 02_Portfolio.py
@@ -121,40 +135,40 @@ portfolio-tracker/
 │   │   ├── 06_Leave_One_Out.py
 │   │   ├── 07_Backtest.py
 │   │   ├── 08_Margin_Tracking.py
-│   │   └── 09_Position_Check.py
-│   └── components/                 # Shared UI widgets
+│   │   ├── 09_Position_Check.py
+│   │   └── 10_Eligibility_Backtest.py   # NEW FEATURE
+│   └── components/
 │       ├── strategy_selector.py
-│       ├── date_range_picker.py
-│       └── metrics_table.py
+│       ├── metrics_table.py
+│       └── equity_chart.py
 │
 └── tests/
     ├── unit/
     │   ├── test_monte_carlo.py
     │   ├── test_correlations.py
     │   ├── test_csv_importer.py
-    │   └── test_diversification.py
+    │   ├── test_eligibility_rules.py
+    │   └── test_portfolio_backtest.py
     ├── integration/
     │   └── test_full_pipeline.py
     └── fixtures/
-        └── sample_data/            # Anonymized MultiWalk CSVs for testing
+        └── sample_data/            # Anonymized MultiWalk CSVs
 ```
 
 ---
 
 ## 5. Data Layer Design
 
-### Replacing the Excel Sheet System
+### Replacing Excel Sheets with DataFrames
 
-The VBA tool stores all state in Excel worksheets. Python replaces this with in-memory pandas DataFrames, persisted as Parquet files for session caching.
-
-| Excel Sheet | Python Equivalent | Format |
-|-------------|------------------|--------|
-| `DailyM2MEquity` | `daily_pnl: pd.DataFrame` | dates × strategies matrix |
-| `ClosedTradePNL` | `closed_trades: pd.DataFrame` | trades × strategies |
-| `Summary` | `summary: pd.DataFrame` | strategies × metrics |
+| Excel Sheet | Python Equivalent | Notes |
+|-------------|------------------|-------|
+| `DailyM2MEquity` | `daily_pnl: pd.DataFrame` | index=date, columns=strategy names |
+| `ClosedTradePNL` | `closed_trades: pd.DataFrame` | columns=[strategy, date, pnl] |
+| `Summary` | `summary: pd.DataFrame` | index=strategy, columns=80+ metrics |
 | `Portfolio` | `portfolio: pd.DataFrame` | aggregated metrics |
-| `Strategies` | `strategies.yaml` + `pd.DataFrame` | user-editable config |
-| `MW Folder Locations` | `folders: list[Path]` | in-memory only |
+| `Strategies` | `strategies.yaml` + DataFrame | user-editable config file |
+| `MW Folder Locations` | `list[Path]` | in-memory only |
 | `PortInMarketLong/Short` | `positions: pd.DataFrame` | dates × symbols |
 
 ### Core Data Types
@@ -164,54 +178,67 @@ The VBA tool stores all state in Excel worksheets. Python replaces this with in-
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from datetime import date
 import pandas as pd
 
 @dataclass
 class Strategy:
     name: str
     folder: Path
-    status: str                     # Live | Paper | Retired | etc.
+    status: str          # Live | Paper | Retired | Pass | etc.
     contracts: int
     symbol: str
     sector: str
-    is_start: pd.Timestamp
-    is_end: pd.Timestamp
-    oos_start: pd.Timestamp
-    oos_end: pd.Timestamp
+    is_start: date
+    is_end: date
+    oos_start: date
+    oos_end: date
+    incubation_passed_date: date | None = None
+    is_max_drawdown: float = 0.0
+    expected_annual_return: float = 0.0
 
 @dataclass
 class PortfolioData:
     strategies: list[Strategy]
-    daily_pnl: pd.DataFrame         # index=date, columns=strategy names
-    closed_trades: pd.DataFrame     # index=trade_id, columns=[strategy, date, pnl]
-    summary_metrics: pd.DataFrame   # index=strategy name, columns=80+ metrics
+    daily_pnl: pd.DataFrame        # index=date, columns=strategy names
+    closed_trades: pd.DataFrame
+    summary_metrics: pd.DataFrame
 
 @dataclass
 class MCResult:
-    expected_profit: float
     starting_equity: float
+    expected_profit: float
     risk_of_ruin: float
     max_drawdown_pct: float
     sharpe_ratio: float
     return_to_drawdown: float
-    scenarios: pd.DataFrame         # Full scenario array if needed
 ```
 
-### Replacing Named Ranges (Configuration)
+### Configuration (Replacing Named Ranges)
 
 ```python
-# core/config.py
+# core/config.py — Pydantic v2
 
 from pydantic import BaseModel, Field
 from pathlib import Path
 
 class MCConfig(BaseModel):
     simulations: int = 10_000
-    period: str = "OOS"             # IS | OOS | IS+OOS
+    period: str = "OOS"                   # IS | OOS | IS+OOS
     risk_ruin_target: float = 0.10
     risk_ruin_tolerance: float = 0.01
     trade_adjustment: float = 0.0
-    trade_option: str = "Closed"    # Closed | M2M
+    trade_option: str = "Closed"          # Closed | M2M
+
+class EligibilityConfig(BaseModel):
+    days_threshold_oos: int = 0           # NM_INCUBATE
+    oos_dd_vs_is_cap: float = 1.5         # NM_DDCAP (0 = disabled)
+    status_include: list[str] = ["Live"]  # NM_STATUS_INCLUDE
+    efficiency_ratio: float = 0.5         # NM_EFFICIENCY_RATIO
+    date_type: str = "OOS Start Date"     # or "Incubation Pass Date"
+    enable_sector_analysis: bool = True
+    enable_symbol_analysis: bool = True
+    max_horizon: int = 12
 
 class PortfolioConfig(BaseModel):
     period_years: float = 3.0
@@ -226,7 +253,7 @@ class AppConfig(BaseModel):
     date_format: str = "DMY"
     portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
     monte_carlo: MCConfig = Field(default_factory=MCConfig)
-    # Correlation thresholds
+    eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
     corr_normal_threshold: float = 0.70
     corr_negative_threshold: float = 0.30
     corr_drawdown_threshold: float = 0.70
@@ -234,35 +261,27 @@ class AppConfig(BaseModel):
 
 ---
 
-## 6. Analytics Layer — Module-by-Module Design
+## 6. Analytics: Existing Modules
 
-### 6.1 Monte Carlo (`core/analytics/monte_carlo.py`)
+### 6.1 Monte Carlo (vectorized + Numba)
 
-The single biggest performance win. The VBA inner loop is replaced with NumPy vectorized operations.
-
-**VBA approach:** nested For loop over scenarios × trades (2.5M iterations, ~30s in VBA)
-
-**Python approach:** fully vectorized with NumPy random sampling
+VBA inner loop replaced with Numba JIT. Speedup: ~600x.
 
 ```python
-import numpy as np
+# core/analytics/monte_carlo.py
 from numba import njit
+import numpy as np
 
 @njit(cache=True)
-def _mc_core(pnl_samples: np.ndarray,
-             starting_equity: float,
-             margin_threshold: float,
-             n_scenarios: int,
-             trades_per_year: int,
-             trade_adjustment: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _mc_core(pnl_samples, starting_equity, margin_threshold,
+             n_scenarios, trades_per_year, trade_adjustment):
     """
-    JIT-compiled inner loop. Runs in ~50ms vs VBA's ~30s.
-    Returns: (final_equity, max_drawdown, ruined_flag) arrays, shape (n_scenarios,)
+    Compiled inner loop. ~50ms vs VBA's ~30s.
+    Returns: (final_equity, max_drawdown, ruined) shape (n_scenarios,)
     """
     final_equity = np.empty(n_scenarios)
     max_drawdown = np.empty(n_scenarios)
     ruined = np.zeros(n_scenarios, dtype=np.bool_)
-
     for i in range(n_scenarios):
         equity = starting_equity
         peak = starting_equity
@@ -272,7 +291,7 @@ def _mc_core(pnl_samples: np.ndarray,
             equity += pnl_samples[idx] * (1.0 - trade_adjustment)
             if equity > peak:
                 peak = equity
-            drawdown = (peak - equity) / peak if peak > 0 else 0.0
+            drawdown = (peak - equity) / peak if peak > 1e-9 else 0.0
             if drawdown > dd:
                 dd = drawdown
             if equity < margin_threshold:
@@ -280,431 +299,672 @@ def _mc_core(pnl_samples: np.ndarray,
                 break
         final_equity[i] = equity
         max_drawdown[i] = dd
-
     return final_equity, max_drawdown, ruined
 
 
-def solve_starting_equity(pnl_samples: np.ndarray,
-                           config: MCConfig,
-                           margin_threshold: float) -> MCResult:
+def solve_starting_equity(pnl_samples, config, margin_threshold):
     """
-    Iterative solver: adjusts starting equity until RoR hits target.
-    Mirrors VBA's Do..Loop with +5%/-0.9% adjustment steps.
+    Iterative solver mirrors VBA's +5% / -0.9% adjustment loop.
+    Hard cap at 100 iterations (identical to VBA behaviour).
     """
-    equity = margin_threshold * 2
+    equity = margin_threshold * 2.0
+    ror = 1.0
     for _ in range(100):
-        final_equity, max_dd, ruined = _mc_core(
+        fe, dd, ruined = _mc_core(
             pnl_samples, equity, margin_threshold,
             config.simulations, 252, config.trade_adjustment
         )
         ror = ruined.mean()
         if abs(ror - config.risk_ruin_target) < config.risk_ruin_tolerance:
             break
-        elif ror > config.risk_ruin_target:
-            equity *= 1.05
-        else:
-            equity *= 0.991  # matches VBA's 0.9% decrease
-
+        equity *= 1.05 if ror > config.risk_ruin_target else 0.991
     return MCResult(
         starting_equity=equity,
-        risk_of_ruin=ror,
-        expected_profit=np.mean(final_equity - equity),
-        max_drawdown_pct=np.median(max_dd),
-        sharpe_ratio=_calc_sharpe(final_equity, equity),
-        return_to_drawdown=_calc_rtd(final_equity, max_dd, equity),
+        risk_of_ruin=float(ror),
+        expected_profit=float(np.mean(fe) - equity),
+        max_drawdown_pct=float(np.median(dd)),
+        sharpe_ratio=_calc_sharpe(fe, equity),
+        return_to_drawdown=_calc_rtd(fe, dd, equity),
     )
 ```
 
-**Performance:** ~50ms per strategy run vs ~30s in VBA. Leave-One-Out with 20 strategies drops from ~10 minutes to ~1 second.
-
----
-
-### 6.2 Correlations (`core/analytics/correlations.py`)
-
-Three correlation modes, all vectorized with NumPy/SciPy.
+### 6.2 Correlations (3 modes, vectorized)
 
 ```python
-import numpy as np
-from scipy.stats import pearsonr
+# core/analytics/correlations.py
 from enum import Enum
+from scipy.stats import pearsonr
+import numpy as np, pandas as pd
 
 class CorrelationMode(Enum):
-    NORMAL = "normal"           # Standard Pearson
-    NEGATIVE = "negative"       # Exclude days both strategies profitable
-    DRAWDOWN = "drawdown"       # Equity curve synchronization
+    NORMAL = "normal"
+    NEGATIVE = "negative"     # Exclude days both strategies profitable
+    DRAWDOWN = "drawdown"     # Equity curve synchronization
 
 def compute_correlation_matrix(daily_pnl: pd.DataFrame,
                                 mode: CorrelationMode) -> pd.DataFrame:
-    strategies = daily_pnl.columns
-    n = len(strategies)
+    strats = daily_pnl.columns
+    n = len(strats)
     matrix = np.eye(n)
-
     for i in range(n):
         for j in range(i + 1, n):
             a = daily_pnl.iloc[:, i].values
             b = daily_pnl.iloc[:, j].values
-
             if mode == CorrelationMode.NORMAL:
                 mask = (a != 0) | (b != 0)
             elif mode == CorrelationMode.NEGATIVE:
-                # Exclude days where BOTH are profitable (matches VBA logic)
                 mask = ~((a > 0) & (b > 0))
-            elif mode == CorrelationMode.DRAWDOWN:
-                # Convert to cumulative equity curves, then correlate drawdowns
-                a = _to_drawdown_series(a)
-                b = _to_drawdown_series(b)
+            else:  # DRAWDOWN
+                a = _to_drawdown_series(np.cumsum(a))
+                b = _to_drawdown_series(np.cumsum(b))
                 mask = np.ones(len(a), dtype=bool)
-
-            if mask.sum() < 2:
-                corr = 0.0
-            else:
-                corr, _ = pearsonr(a[mask], b[mask])
-
+            corr = pearsonr(a[mask], b[mask])[0] if mask.sum() > 1 else 0.0
             matrix[i, j] = matrix[j, i] = corr
+    return pd.DataFrame(matrix, index=strats, columns=strats)
 
-    return pd.DataFrame(matrix, index=strategies, columns=strategies)
-
-def _to_drawdown_series(pnl: np.ndarray) -> np.ndarray:
-    equity = np.cumsum(pnl)
+def _to_drawdown_series(equity: np.ndarray) -> np.ndarray:
     peak = np.maximum.accumulate(equity)
-    drawdown = np.where(peak > 0, (peak - equity) / peak, 0)
-    return drawdown
+    return np.where(peak > 0, (peak - equity) / peak, 0.0)
 ```
 
----
+### 6.3 Leave-One-Out (fast because MC is fast)
 
-### 6.3 Diversification (`core/analytics/diversification.py`)
-
-Two algorithms; both operate over the correlation matrix.
+With vectorized MC, LOO for 20 strategies runs in ~2 seconds vs ~10 minutes in VBA.
 
 ```python
-def greedy_diversification(
-    summary: pd.DataFrame,
-    corr_matrix: pd.DataFrame,
-    n_strategies: int,
-    sort_metric: str = "sharpe"
-) -> list[str]:
-    """
-    Greedy algorithm: add strategies one at a time, always picking the one
-    that minimizes average correlation with already-selected strategies.
-    O(s^2) - fast in Python.
-    """
-    candidates = summary.sort_values(sort_metric, ascending=False).index.tolist()
-    selected = [candidates[0]]
-
-    while len(selected) < n_strategies and candidates:
-        best, best_score = None, float("inf")
-        for candidate in candidates:
-            if candidate in selected:
-                continue
-            avg_corr = corr_matrix.loc[candidate, selected].mean()
-            if avg_corr < best_score:
-                best_score = avg_corr
-                best = candidate
-        if best:
-            selected.append(best)
-            candidates.remove(best)
-
-    return selected
-
-
-def randomized_diversification(
-    summary: pd.DataFrame,
-    corr_matrix: pd.DataFrame,
-    n_strategies: int,
-    iterations: int = 500,
-    sort_metric: str = "sharpe"
-) -> pd.DataFrame:
-    """
-    Monte Carlo over strategy subsets: average diversification benefit.
-    O(iterations * s) - vectorized with NumPy.
-    """
-    names = summary.index.tolist()
-    results = []
-    for _ in range(iterations):
-        subset = np.random.choice(names, size=n_strategies, replace=False)
-        sub_corr = corr_matrix.loc[subset, subset].values
-        avg_corr = (sub_corr.sum() - n_strategies) / (n_strategies * (n_strategies - 1))
-        sub_metrics = summary.loc[subset, sort_metric]
-        results.append({"subset": subset, "avg_corr": avg_corr,
-                         "avg_metric": sub_metrics.mean()})
-    return pd.DataFrame(results).sort_values("avg_metric", ascending=False)
-```
-
----
-
-### 6.4 Leave-One-Out (`core/analytics/leave_one_out.py`)
-
-```python
-def run_leave_one_out(
-    portfolio_data: PortfolioData,
-    config: AppConfig,
-    method: str = "monte_carlo"    # "monte_carlo" | "chronological"
-) -> pd.DataFrame:
-    """
-    For each strategy, remove it and recompute portfolio metrics.
-    With vectorized MC this runs in <2s for 20 strategies.
-    """
-    base_result = run_portfolio_mc(portfolio_data, config)
-    results = []
-
-    for strategy in portfolio_data.strategies:
-        reduced = _remove_strategy(portfolio_data, strategy.name)
-        if method == "monte_carlo":
-            result = run_portfolio_mc(reduced, config)
-        else:
-            result = run_chronological_backtest(reduced, config)
-
-        results.append({
-            "strategy": strategy.name,
-            "delta_profit": result.expected_profit - base_result.expected_profit,
-            "delta_sharpe": result.sharpe_ratio - base_result.sharpe_ratio,
-            "delta_drawdown": result.max_drawdown_pct - base_result.max_drawdown_pct,
-            "delta_rtd": result.return_to_drawdown - base_result.return_to_drawdown,
+# core/analytics/leave_one_out.py
+def run_leave_one_out(portfolio_data, config, method="monte_carlo"):
+    base = _run_analysis(portfolio_data, config, method)
+    rows = []
+    for s in portfolio_data.strategies:
+        reduced = _remove_strategy(portfolio_data, s.name)
+        result = _run_analysis(reduced, config, method)
+        rows.append({
+            "strategy": s.name,
+            "delta_profit": result.expected_profit - base.expected_profit,
+            "delta_sharpe": result.sharpe_ratio - base.sharpe_ratio,
+            "delta_drawdown": result.max_drawdown_pct - base.max_drawdown_pct,
+            "delta_rtd": result.return_to_drawdown - base.return_to_drawdown,
         })
-
-    return pd.DataFrame(results).sort_values("delta_profit", ascending=True)
+    return pd.DataFrame(rows).sort_values("delta_profit")
 ```
 
 ---
 
-### 6.5 Folder Scanner (`core/ingestion/folder_scanner.py`)
+## 7. New Feature: Portfolio Eligibility Backtest
 
-Replaces the Windows FileSystemObject with `pathlib` — cross-platform.
+This is the most important new feature and the most complex new module. It extends the
+existing `U_BackTest_Eligibility` module from **rule statistics analysis** into a full
+**walk-forward portfolio construction backtest**.
+
+### 7.1 What the VBA Module (U) Currently Does
+
+At each month-end, for each of ~160 eligibility rules, it records:
+- How many strategies passed the rule (`N`)
+- How many of those were profitable in the next 1-12 months (`Win%`)
+- Average $ per strategy per month (`$/Month`)
+- % difference vs "Baseline (All Eligible)" (`vs Base`)
+
+This tells you *which rules historically predicted better forward performance*,
+but it doesn't tell you what happens when you actually USE a rule to construct
+a portfolio each month and track the resulting equity curve.
+
+### 7.2 What v2 Adds: Walk-Forward Portfolio Construction
+
+v2 adds a second layer on top of the existing rule analysis:
+
+```
+For each month in history:
+    1. Evaluate all eligibility rules (existing U module logic)
+    2. For a user-selected rule (or ranked set of rules):
+       a. Select strategies that passed the rule
+       b. Optionally apply ranking to pick top-N
+       c. Construct portfolio for that month (equal weight or by contracts)
+    3. Record the portfolio's actual P&L for that month
+    4. Repeat → full walk-forward equity curve
+
+Output:
+    - Equity curve: Rule-selected portfolio vs All-strategies baseline
+    - Monthly win rate, average $, drawdown for the selected rule
+    - Side-by-side comparison of multiple rules
+    - Heatmap: rule performance across all months and horizons
+```
+
+### 7.3 Rule System Design
+
+The VBA module hardcodes 160 rules across 8 sections. v2 makes rules fully
+configurable — users can define custom rules in the UI or YAML.
 
 ```python
-from pathlib import Path
+# core/analytics/eligibility/rules.py
+
 from dataclasses import dataclass
+from enum import Enum
+import numpy as np
 
-REQUIRED_FILES = ["EquityData.csv", "Walkforward In-Out Periods Analysis Details.csv"]
+class RuleType(str, Enum):
+    BASELINE = "BASELINE"
+    OOS_PROFITABLE = "OOS_PROFITABLE"
+    SIMPLE_POSITIVE = "SIMPLE_POSITIVE"        # Last NM > 0
+    SIMPLE_NEGATIVE = "SIMPLE_NEGATIVE"        # Last NM < 0
+    CONSECUTIVE = "CONSECUTIVE"                # Last NM all positive
+    COUNT_POSITIVE = "COUNT_POSITIVE"          # K+ of last NM positive
+    MOMENTUM = "MOMENTUM"                      # Recent period > prior period
+    ACCELERATION = "ACCELERATION"              # Short ann. > long ann.
+    AND_COMBO = "AND_COMBO"                    # Two period windows both positive
+    ANY_OF_3 = "ANY_OF_3"                      # Any of 3 windows positive
+    ALL_OF_3 = "ALL_OF_3"                      # All of 3 windows positive
+    THRESHOLD_ANNUAL = "THRESHOLD_ANNUAL"      # Ann. return > efficiency * expected
+    RECOVERY = "RECOVERY"                      # Recent positive after prior negative
+    # OOS variants of all above (add _OOS suffix)
 
-def scan_folders(base_folders: list[Path]) -> tuple[list[StrategyFolder], list[str]]:
+@dataclass
+class EligibilityRule:
+    id: int
+    label: str
+    rule_type: RuleType
+    param1: float = 0.0   # Primary param (e.g. months)
+    param2: float = 0.0   # Secondary param
+    param3: float = 0.0   # Tertiary param
+    is_active: bool = True
+    require_oos_profitable: bool = False   # OOS variant flag
+
+
+def evaluate_rule(rule: EligibilityRule,
+                  monthly_pnl: np.ndarray,    # pre-calculated monthly PnL array
+                  month_idx: int,             # current month index
+                  oos_total_pnl: float,       # total OOS PnL for OOS variants
+                  expected_annual: float,      # from Summary sheet
+                  efficiency_ratio: float) -> bool:
     """
-    Returns (valid_strategies, warnings).
-    Warnings include duplicates, missing CSVs, empty folders.
+    Pure function. Evaluates one rule for one strategy at one month.
+    No Excel dependencies — fully testable.
     """
-    seen_names: dict[str, Path] = {}
-    strategies, warnings = [], []
+    p1 = _trailing_sum(monthly_pnl, month_idx, int(rule.param1))
+    p3 = _trailing_sum(monthly_pnl, month_idx, 3)
+    p6 = _trailing_sum(monthly_pnl, month_idx, 6)
+    p9 = _trailing_sum(monthly_pnl, month_idx, 9)
+    p12 = _trailing_sum(monthly_pnl, month_idx, 12)
 
-    for base in base_folders:
-        if not base.exists():
-            warnings.append(f"Folder not found: {base}")
-            continue
-        for folder in sorted(base.iterdir()):
-            if not folder.is_dir():
-                continue
-            missing = [f for f in REQUIRED_FILES if not (folder / f).exists()]
-            if missing:
-                warnings.append(f"{folder.name}: missing {missing}")
-                continue
-            if folder.name in seen_names:
-                warnings.append(f"Duplicate: {folder.name} in {base} and {seen_names[folder.name]}")
-                continue
-            seen_names[folder.name] = base
-            strategies.append(StrategyFolder(name=folder.name, path=folder))
+    passed = _evaluate_base(rule, p1, p3, p6, p9, p12, monthly_pnl, month_idx,
+                            expected_annual, efficiency_ratio)
 
-    return strategies, warnings
+    if rule.require_oos_profitable:
+        passed = passed and (oos_total_pnl > 0)
+
+    return passed
+```
+
+### 7.4 Walk-Forward Rule Statistics (replaces U module)
+
+```python
+# core/analytics/eligibility/rule_backtest.py
+
+import pandas as pd
+import numpy as np
+from .rules import EligibilityRule, evaluate_rule, build_default_rules
+
+def run_rule_backtest(
+    daily_pnl: pd.DataFrame,          # dates × strategies
+    summary: pd.DataFrame,             # strategy metadata
+    config: EligibilityConfig,
+) -> pd.DataFrame:
+    """
+    Replicates U_BackTest_Eligibility logic in Python.
+    Returns: DataFrame with rows=rules, columns=N/WinPct/AvgPnL/vsBase for horizons 1-12.
+    """
+    rules = build_default_rules()
+    monthly_pnl = _aggregate_to_monthly(daily_pnl)    # date × strategy monthly sums
+    month_dates = monthly_pnl.index.tolist()
+    n_months = len(month_dates)
+
+    results = {r.id: _init_rule_stats(r, config.max_horizon) for r in rules}
+
+    for m_idx in range(n_months - 1):
+        for strat in daily_pnl.columns:
+            if not _is_eligible_at_month(strat, month_dates[m_idx], summary, config):
+                continue
+            strat_monthly = monthly_pnl[strat].values
+            oos_pnl = _get_oos_pnl(strat, daily_pnl, summary)
+            expected = summary.loc[strat, "expected_annual_return"]
+
+            rule_mask = np.array([
+                evaluate_rule(r, strat_monthly, m_idx, oos_pnl, expected,
+                              config.efficiency_ratio)
+                for r in rules
+            ])
+
+            for h in range(1, min(config.max_horizon + 1, n_months - m_idx)):
+                fwd_pnl = _forward_sum(strat_monthly, m_idx + 1, h)
+                for r_idx, rule in enumerate(rules):
+                    if rule_mask[r_idx]:
+                        results[rule.id]["n"][h] += 1
+                        results[rule.id]["wins"][h] += int(fwd_pnl > 0)
+                        results[rule.id]["sum_pnl"][h] += fwd_pnl
+
+    return _format_results(results, rules, config.max_horizon)
+```
+
+### 7.5 Portfolio Construction Backtest (NEW)
+
+This is the key new capability. Takes the rule analysis one step further:
+simulate actually trading using a rule each month and show the resulting equity curve.
+
+```python
+# core/analytics/eligibility/portfolio_backtest.py
+
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+
+@dataclass
+class PortfolioBacktestConfig:
+    rule_id: int | list[int]      # Which rule(s) to use for selection
+    max_strategies: int | None    # Cap on number of strategies (None = all passing)
+    ranking_metric: str = "oos_pnl"    # How to rank when capping: oos_pnl | momentum_3m | momentum_6m | expected_return
+    weighting: str = "equal"           # equal | by_contracts
+    rebalance_frequency: str = "monthly"   # monthly (only option in v2.0)
+    comparison_rules: list[int] = None     # Additional rules to compare side-by-side
+
+
+@dataclass
+class PortfolioBacktestResult:
+    equity_curve: pd.Series              # index=month, values=cumulative PnL
+    monthly_pnl: pd.Series
+    monthly_strategy_count: pd.Series    # How many strategies active each month
+    monthly_selected: pd.DataFrame       # Which strategies were selected each month
+    win_rate: float
+    avg_monthly_pnl: float
+    max_drawdown: float
+    sharpe_ratio: float
+    vs_baseline_pct: float               # % improvement vs all-strategies baseline
+
+
+def run_portfolio_backtest(
+    daily_pnl: pd.DataFrame,
+    summary: pd.DataFrame,
+    config_app: EligibilityConfig,
+    backtest_config: PortfolioBacktestConfig,
+) -> dict[str, PortfolioBacktestResult]:
+    """
+    Walk-forward portfolio construction.
+    Returns dict keyed by rule label → PortfolioBacktestResult.
+    Always includes 'Baseline (All Eligible)' as a comparison.
+
+    Algorithm:
+        for each month m:
+            1. Determine eligible strategies (incubation, DD cap, status filter)
+            2. Evaluate selected rule(s) → passing_strategies
+            3. If max_strategies: rank passing_strategies by ranking_metric → top-N
+            4. Portfolio PnL for month m+1 = mean(daily_pnl[m+1, selected_strategies])
+               (equal weight) or weighted by contracts
+            5. Record selection, PnL, strategy count
+    """
+    rules = build_default_rules()
+    rule_map = {r.id: r for r in rules}
+    monthly_pnl = _aggregate_to_monthly(daily_pnl)
+    month_dates = monthly_pnl.index.tolist()
+
+    rule_ids_to_run = _resolve_rule_ids(backtest_config, rules)
+    # Always include baseline for comparison
+    baseline_id = next(r.id for r in rules if r.rule_type.value == "BASELINE")
+    if baseline_id not in rule_ids_to_run:
+        rule_ids_to_run = [baseline_id] + rule_ids_to_run
+
+    portfolio_monthly: dict[int, list[float]] = {rid: [] for rid in rule_ids_to_run}
+    selected_monthly: dict[int, list[set]] = {rid: [] for rid in rule_ids_to_run}
+
+    for m_idx in range(len(month_dates) - 1):
+        eval_date = month_dates[m_idx]
+
+        # Step 1: Base eligibility filter (same for all rules)
+        eligible = [
+            s for s in daily_pnl.columns
+            if _is_eligible_at_month(s, eval_date, summary, config_app)
+        ]
+
+        for rid in rule_ids_to_run:
+            rule = rule_map[rid]
+
+            # Step 2: Apply rule filter
+            passing = [
+                s for s in eligible
+                if evaluate_rule(
+                    rule,
+                    monthly_pnl[s].values,
+                    m_idx,
+                    _get_oos_pnl(s, daily_pnl, summary),
+                    summary.loc[s, "expected_annual_return"],
+                    config_app.efficiency_ratio,
+                )
+            ]
+
+            # Step 3: Optional ranking + cap
+            if backtest_config.max_strategies and len(passing) > backtest_config.max_strategies:
+                passing = _rank_strategies(
+                    passing, monthly_pnl, m_idx, summary,
+                    backtest_config.ranking_metric,
+                    backtest_config.max_strategies,
+                )
+
+            selected_monthly[rid].append(set(passing))
+
+            # Step 4: Portfolio PnL for next month
+            if not passing:
+                portfolio_monthly[rid].append(0.0)
+            else:
+                next_month_pnl = monthly_pnl.iloc[m_idx + 1][passing]
+                if backtest_config.weighting == "equal":
+                    portfolio_monthly[rid].append(next_month_pnl.sum())
+                else:
+                    contracts = summary.loc[passing, "contracts"]
+                    portfolio_monthly[rid].append(
+                        (next_month_pnl * contracts).sum() / contracts.sum()
+                    )
+
+    return {
+        rule_map[rid].label: _build_result(
+            portfolio_monthly[rid],
+            selected_monthly[rid],
+            month_dates[1:],
+            portfolio_monthly[baseline_id],
+        )
+        for rid in rule_ids_to_run
+    }
+
+
+def _rank_strategies(
+    strategies: list[str],
+    monthly_pnl: pd.DataFrame,
+    m_idx: int,
+    summary: pd.DataFrame,
+    metric: str,
+    top_n: int,
+) -> list[str]:
+    """Rank strategies by chosen metric and return top N."""
+    scores = {}
+    for s in strategies:
+        if metric == "oos_pnl":
+            scores[s] = summary.loc[s, "oos_total_pnl"]
+        elif metric == "momentum_3m":
+            scores[s] = _trailing_sum(monthly_pnl[s].values, m_idx, 3)
+        elif metric == "momentum_6m":
+            scores[s] = _trailing_sum(monthly_pnl[s].values, m_idx, 6)
+        elif metric == "expected_return":
+            scores[s] = summary.loc[s, "expected_annual_return"]
+        else:
+            scores[s] = 0.0
+    return sorted(strategies, key=lambda s: scores[s], reverse=True)[:top_n]
+```
+
+### 7.6 UI: Eligibility Backtest Page
+
+```python
+# ui/pages/10_Eligibility_Backtest.py
+
+import streamlit as st
+import plotly.graph_objects as go
+from core.analytics.eligibility.rule_backtest import run_rule_backtest
+from core.analytics.eligibility.portfolio_backtest import (
+    run_portfolio_backtest, PortfolioBacktestConfig
+)
+
+st.title("Portfolio Eligibility Backtest")
+
+tab1, tab2 = st.tabs(["Rule Statistics", "Portfolio Construction Backtest"])
+
+# ── Tab 1: Rule Statistics (existing U module functionality) ──────────────
+with tab1:
+    st.markdown("""
+    **How it works:** At each month-end, each rule is evaluated for all eligible
+    strategies. Forward performance (next 1-12 months) is recorded for strategies
+    that passed. This shows which rules historically predicted better performance.
+    """)
+    if st.button("Run Rule Analysis", type="primary"):
+        with st.spinner("Evaluating 160 rules across all months..."):
+            results = run_rule_backtest(
+                st.session_state.portfolio.daily_pnl,
+                st.session_state.portfolio.summary_metrics,
+                st.session_state.config.eligibility,
+            )
+        st.dataframe(
+            results.style
+                .background_gradient(subset=[c for c in results.columns if "vs Base" in c],
+                                     cmap="RdYlGn", vmin=-0.5, vmax=0.5)
+                .format({c: "{:.0f}" for c in results.columns if "$/Month" in c})
+                .format({c: "{:.1%}" for c in results.columns if "Win%" in c or "vs Base" in c}),
+            use_container_width=True,
+            height=600,
+        )
+
+# ── Tab 2: Portfolio Construction Backtest (NEW) ──────────────────────────
+with tab2:
+    st.markdown("""
+    **How it works:** Simulates using a rule each month to select which strategies
+    are in the portfolio. Shows the resulting walk-forward equity curve vs baseline.
+    """)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_rules = st.multiselect(
+            "Rules to backtest",
+            options=get_rule_labels(),
+            default=["Last 3M > 0", "Last 6M > 0", "3M AND 6M > 0"],
+            max_selections=5,
+        )
+        max_strats = st.number_input("Max strategies per month (0 = no limit)", 0, 50, 0)
+    with col2:
+        ranking = st.selectbox("Ranking metric (when capping)",
+                               ["oos_pnl", "momentum_3m", "momentum_6m", "expected_return"])
+        weighting = st.selectbox("Portfolio weighting", ["equal", "by_contracts"])
+
+    if st.button("Run Portfolio Backtest", type="primary"):
+        cfg = PortfolioBacktestConfig(
+            rule_id=[get_rule_id(r) for r in selected_rules],
+            max_strategies=max_strats or None,
+            ranking_metric=ranking,
+            weighting=weighting,
+            comparison_rules=None,
+        )
+        with st.spinner("Running walk-forward backtest..."):
+            results = run_portfolio_backtest(
+                st.session_state.portfolio.daily_pnl,
+                st.session_state.portfolio.summary_metrics,
+                st.session_state.config.eligibility,
+                cfg,
+            )
+
+        # Equity curves
+        fig = go.Figure()
+        for rule_label, result in results.items():
+            fig.add_trace(go.Scatter(
+                x=result.equity_curve.index,
+                y=result.equity_curve.values,
+                name=rule_label,
+                line=dict(width=2 if "Baseline" not in rule_label else 1,
+                          dash="dash" if "Baseline" in rule_label else "solid"),
+            ))
+        fig.update_layout(title="Walk-Forward Equity Curves by Rule",
+                          xaxis_title="Month", yaxis_title="Cumulative P&L ($)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Summary metrics table
+        summary_rows = []
+        for rule_label, result in results.items():
+            summary_rows.append({
+                "Rule": rule_label,
+                "Win Rate": f"{result.win_rate:.1%}",
+                "Avg Monthly P&L": f"${result.avg_monthly_pnl:,.0f}",
+                "Max Drawdown": f"{result.max_drawdown:.1%}",
+                "Sharpe": f"{result.sharpe_ratio:.2f}",
+                "vs Baseline": f"{result.vs_baseline_pct:+.1%}",
+            })
+        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+        # Monthly strategy count
+        st.subheader("Strategies Selected Per Month")
+        count_df = pd.DataFrame({
+            label: result.monthly_strategy_count
+            for label, result in results.items()
+            if "Baseline" not in label
+        })
+        st.area_chart(count_df)
 ```
 
 ---
 
-## 7. Licensing System
+## 8. Licensing: Annual Subscription
 
-Replace the fragile DLL dependency with a proper software licensing system.
+Replace the MultiWalk DLL with a proper subscription system.
 
-### Approach: Hardware-Bound License Keys
+### Architecture
 
 ```
-Customer purchases → receives license key (JWT signed with private key)
-App validates key locally: key contains hardware_id, expiry, customer_name
-Hardware ID = SHA256(MAC address + CPU serial + hostname)
-Optional: phone-home validation for stricter enforcement
+Customer buys annual subscription → receives license key (JWT, RS256-signed)
+License key contains: { customer_name, hardware_id, expiry, tier, issued_at }
+App validates on startup:
+    1. Decode JWT with embedded public key (offline check)
+    2. Verify hardware_id matches current machine
+    3. If expiry < 30 days away → prompt renewal
+    4. Optional: phone-home to subscription API for revocation check
 ```
 
 ```python
 # core/licensing/license_manager.py
 
-import jwt
-import hashlib
-import platform
-from datetime import datetime
+import jwt, hashlib, uuid
+from datetime import datetime, timedelta
+from pathlib import Path
+
+LICENSE_FILE = Path.home() / ".portfolio_tracker" / "license.key"
+PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\n..."  # Embedded at build time
+
+def validate_license() -> dict | None:
+    if not LICENSE_FILE.exists():
+        return None
+    key = LICENSE_FILE.read_text().strip()
+    try:
+        claims = jwt.decode(key, PUBLIC_KEY, algorithms=["RS256"])
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+    if claims.get("hardware_id") != get_hardware_id():
+        return None
+    return claims
+
+def days_until_expiry(claims: dict) -> int:
+    expiry = datetime.fromisoformat(claims["expiry"])
+    return (expiry - datetime.now()).days
 
 def get_hardware_id() -> str:
-    """Generates a stable machine fingerprint."""
-    components = [
-        platform.node(),
-        platform.processor(),
-        _get_mac_address(),
-    ]
-    return hashlib.sha256("|".join(components).encode()).hexdigest()[:16]
-
-def validate_license(license_key: str, public_key: str) -> dict | None:
-    """
-    Returns decoded license claims if valid, None if invalid/expired.
-    Claims: { customer_name, hardware_id, expiry, features }
-    """
-    try:
-        claims = jwt.decode(license_key, public_key, algorithms=["RS256"])
-        hw_id = get_hardware_id()
-        if claims["hardware_id"] != hw_id:
-            return None
-        if datetime.fromisoformat(claims["expiry"]) < datetime.now():
-            return None
-        return claims
-    except Exception:
-        return None
+    mac = uuid.getnode()
+    return hashlib.sha256(f"{mac}".encode()).hexdigest()[:16]
 ```
 
-**Benefits over DLL:**
-- No dependency on MultiWalk installation
-- Works offline
-- Revocable (short-lived keys with renewal)
-- Cross-platform
-- Keys can encode feature tiers (Basic / Pro / Enterprise)
-
----
-
-## 8. UI Layer (Streamlit)
-
-Each page is a thin wrapper over the `core/` analytics. No business logic in the UI.
+### Subscription API (minimal server, e.g. on Railway/Render)
 
 ```python
-# ui/pages/03_Monte_Carlo.py
-
-import streamlit as st
-from core.analytics.monte_carlo import solve_starting_equity
-from core.config import MCConfig
-
-st.title("Monte Carlo Simulation")
-
-with st.sidebar:
-    st.subheader("Settings")
-    simulations = st.slider("Simulations", 1_000, 50_000, 10_000, step=1_000)
-    period = st.selectbox("Period", ["OOS", "IS", "IS+OOS"])
-    ror_target = st.slider("Risk of Ruin Target", 0.01, 0.25, 0.10)
-    trade_adj = st.slider("Trade Adjustment", 0.0, 0.5, 0.0)
-
-config = MCConfig(simulations=simulations, period=period,
-                  risk_ruin_target=ror_target, trade_adjustment=trade_adj)
-
-if st.button("Run Monte Carlo", type="primary"):
-    portfolio = st.session_state.get("portfolio_data")
-    if not portfolio:
-        st.error("Import data first.")
-    else:
-        with st.spinner("Running simulations..."):
-            results = solve_starting_equity(portfolio.get_pnl_for_period(period), config)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Starting Equity", f"${results.starting_equity:,.0f}")
-        col2.metric("Expected Annual Profit", f"${results.expected_profit:,.0f}")
-        col3.metric("Risk of Ruin", f"{results.risk_of_ruin:.1%}")
-        col4.metric("Max Drawdown", f"{results.max_drawdown_pct:.1%}")
-
-        st.plotly_chart(results.plot_distribution())
+# server/api.py — simple FastAPI service
+# POST /activate   { license_key, hardware_id } → validates + logs activation
+# GET  /check      { license_key }              → returns valid/revoked/expired
+# POST /issue      { customer_email, tier }     → admin: generates new key
 ```
+
+This server holds the private key and customer database. The app embeds only the
+public key — so license files cannot be forged even if the app is decompiled.
 
 ---
 
-## 9. Testing Strategy
+## 9. Performance Summary
 
-The current VBA codebase has zero tests. This is the biggest quality risk. v2 must have:
+| Module | VBA Time | Python Time | Speedup |
+|--------|----------|-------------|---------|
+| Monte Carlo (10k scenarios) | ~30s | ~50ms | 600x |
+| Leave-One-Out (20 strats) | ~10 min | ~1s | 600x |
+| Correlations (30×30 matrix) | ~2 min | <10ms | 12,000x |
+| Rule Backtest (160 rules) | ~5 min | ~3s | 100x |
+| Portfolio Backtest (5 rules) | n/a | ~5s | new |
+| CSV import (20 strategies) | ~30s | ~1s | 30x |
+
+---
+
+## 10. Testing Strategy
 
 ### Test Pyramid
 
 ```
-Unit tests (fast, isolated):
-  - MC with fixed RNG seed → reproducible output
-  - Correlation modes with known data → verify against scipy
-  - Date range / IS-OOS period logic
-  - CSV parsing edge cases (missing files, bad dates, encoding)
+Unit tests (fast, isolated, deterministic):
+    test_monte_carlo.py        — fixed RNG seed → identical output every run
+    test_correlations.py       — known data → verify against scipy.stats
+    test_eligibility_rules.py  — each of 160 rules with synthetic monthly data
+    test_portfolio_backtest.py — 3-strategy toy portfolio, verify equity curve math
+    test_csv_importer.py       — edge cases: missing files, bad dates, encoding
+    test_date_utils.py         — IS/OOS resolution, cutoff date logic, trading days
 
 Integration tests:
-  - Full pipeline: scan folders → import → portfolio → MC → LOO
-  - Settings export/import round-trip
-  - Results match known-good v1.24 Excel output (regression tests)
+    test_full_pipeline.py      — scan → import → portfolio → MC → rule backtest
+    test_settings_roundtrip.py — export config → import → identical settings
 
-Property-based tests (hypothesis):
-  - MC never returns RoR outside [0, 1]
-  - Correlation matrix is always symmetric
-  - LOO delta is consistent with individual MC runs
+Regression tests (golden dataset):
+    Run v1.24 on anonymized test data → capture all metrics as JSON fixtures
+    v2 must match within ±0.5% tolerance (MC differs due to RNG; document this)
 ```
 
-### Golden Dataset Strategy
-Run v1.24 on a set of anonymized test strategies, capture all output metrics as JSON fixtures. v2 integration tests must match within acceptable tolerance (±0.5% for MC results due to RNG differences).
-
----
-
-## 10. Packaging & Distribution
-
-### Windows .exe (PyInstaller)
-
-```bash
-pyinstaller app.py \
-  --name "Portfolio Tracker v2" \
-  --onefile \
-  --add-data "config/default_settings.yaml:config" \
-  --icon assets/icon.ico \
-  --hidden-import numba \
-  --hidden-import streamlit
-```
-
-### Auto-Update
-Use `pyupdater` or a simple GitHub Releases check on startup:
-```python
-def check_for_updates(current_version: str) -> str | None:
-    """Returns download URL if newer version available, else None."""
-    latest = requests.get("https://api.github.com/repos/.../releases/latest").json()
-    if latest["tag_name"] > current_version:
-        return latest["assets"][0]["browser_download_url"]
-    return None
-```
+### Look-Ahead Bias Validation
+The portfolio backtest must be verified as free of look-ahead bias. Each month's
+portfolio selection must use only data available on or before that month-end date.
+Dedicated test: construct a toy case with known correct output, verify no future data
+bleeds into the selection decision.
 
 ---
 
 ## 11. Build Order (Phased Delivery)
 
 ### Phase 1 — Data Foundation (2-3 weeks)
-- [ ] `core/ingestion/folder_scanner.py` — scan MultiWalk folders
-- [ ] `core/ingestion/csv_importer.py` — import EquityData + TradeData CSVs
-- [ ] `core/ingestion/date_utils.py` — IS/OOS period logic, trading day calendar
-- [ ] `core/config.py` — Pydantic config model
-- [ ] `core/data_types.py` — domain dataclasses
-- [ ] `ui/pages/01_Import.py` — folder selection, import progress, data preview
+- [ ] `core/ingestion/folder_scanner.py` — scan MultiWalk folders, validate CSVs
+- [ ] `core/ingestion/csv_importer.py` — parse EquityData + TradeData CSVs
+- [ ] `core/ingestion/date_utils.py` — IS/OOS period logic, cutoff dates, trading calendar
+- [ ] `core/config.py` + `core/data_types.py`
+- [ ] `ui/pages/01_Import.py` — folder picker, import progress, data preview table
 - [ ] Unit tests for all ingestion code
 
 ### Phase 2 — Portfolio & Summary (1-2 weeks)
-- [ ] `core/portfolio/aggregator.py` — replaces J_Portfolio_Setup
+- [ ] `core/portfolio/aggregator.py` — aggregate strategies into portfolio
 - [ ] `core/portfolio/summary.py` — 80+ metrics per strategy
-- [ ] `ui/pages/02_Portfolio.py` — strategy table with filtering/sorting
-- [ ] Integration test: compare metrics to v1.24 output
+- [ ] `ui/pages/02_Portfolio.py` — strategy table with filter/sort
+- [ ] Integration test: metrics match v1.24
 
 ### Phase 3 — Monte Carlo (1 week)
-- [ ] `core/analytics/monte_carlo.py` — vectorized + Numba JIT
+- [ ] `core/analytics/monte_carlo.py` — Numba JIT inner loop
 - [ ] `ui/pages/03_Monte_Carlo.py`
-- [ ] Unit tests with fixed RNG seed
-- [ ] Regression test vs v1.24
+- [ ] Regression test vs v1.24 output
 
 ### Phase 4 — Correlations + Diversification (1-2 weeks)
 - [ ] `core/analytics/correlations.py` — 3 modes
 - [ ] `core/analytics/diversification.py` — randomized + greedy
-- [ ] `ui/pages/04_Correlations.py`
-- [ ] `ui/pages/05_Diversification.py`
+- [ ] `ui/pages/04_Correlations.py` + `05_Diversification.py`
 
-### Phase 5 — Advanced Analytics (2-3 weeks)
+### Phase 5 — Eligibility Backtest (2-3 weeks) ← NEW FEATURE
+- [ ] `core/analytics/eligibility/rules.py` — all 160 rules as pure functions
+- [ ] `core/analytics/eligibility/rule_backtest.py` — walk-forward rule statistics
+- [ ] `core/analytics/eligibility/portfolio_backtest.py` — portfolio construction
+- [ ] `ui/pages/10_Eligibility_Backtest.py` — both tabs
+- [ ] Unit tests: each rule type, look-ahead bias validation
+
+### Phase 6 — Advanced Analytics (2 weeks)
 - [ ] `core/analytics/leave_one_out.py`
 - [ ] `core/analytics/backtest.py`
 - [ ] `core/analytics/margin.py`
-- [ ] `ui/pages/06_Leave_One_Out.py`
-- [ ] `ui/pages/07_Backtest.py`
-- [ ] `ui/pages/08_Margin_Tracking.py`
+- [ ] Remaining UI pages
 
-### Phase 6 — Polish & Distribution (1-2 weeks)
-- [ ] `core/licensing/` — hardware-bound JWT keys
+### Phase 7 — Licensing + Packaging (1-2 weeks)
+- [ ] `core/licensing/` — JWT hardware-bound keys
+- [ ] Subscription API server (minimal FastAPI)
 - [ ] `core/reporting/excel_export.py` — optional .xlsx export
 - [ ] Settings export/import (replaces Q module)
-- [ ] PyInstaller packaging
-- [ ] Auto-update check
+- [ ] PyInstaller packaging + code signing
+- [ ] Auto-update check on startup
 - [ ] End-to-end regression test suite
 
 ---
@@ -713,21 +973,10 @@ def check_for_updates(current_version: str) -> str | None:
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| MC output doesn't match v1.24 | High — customers notice | Golden dataset regression tests; document RNG difference |
-| IS/OOS date logic bugs | High — corrupts all metrics | Unit test every edge case; mirror VBA's ResolveOOSDates exactly |
-| Correlation mode 3 (drawdown) definition unclear | Medium | Read VBA L_Correlations in full; add integration test |
-| MultiWalk CSV format changes across MW versions | Medium | Version-detect CSV headers; log warnings on parse failure |
-| PyInstaller bloat / antivirus false positives | Medium | Code-sign the executable; test on clean Windows VM |
-| Numba JIT compile time on first run | Low | Pre-compile with `cache=True`; show spinner in UI |
-| Customers uncomfortable leaving Excel | Low | Provide optional .xlsx export from any screen |
-
----
-
-## 13. Open Questions
-
-1. **MultiWalk DLL licensing** — Do you want v2 to still require MultiWalk, or stand alone?
-2. **Pricing model** — One-time purchase with hardware lock, or annual subscription?
-3. **Platform** — Windows-only (PyInstaller .exe) or also Mac/Linux?
-4. **Feature scope** — Any new features to add in v2 beyond parity?
-5. **Data migration** — Do customers need to migrate their Strategies tab config from v1.24?
-6. **MultiWalk CSV format** — Which MultiWalk versions need to be supported?
+| Portfolio backtest has look-ahead bias | Critical — invalidates results | Dedicated unit tests; code review gate before release |
+| MC output doesn't match v1.24 exactly | High | Document RNG difference; golden dataset tests within ±0.5% |
+| IS/OOS date logic bugs | High | Mirror VBA's ResolveOOSDates exactly; unit test every edge case |
+| Eligibility rule 160 definitions mismatch | Medium | Port each rule type from VBA line-by-line; unit test each |
+| PyInstaller + Numba JIT conflict | Medium | Test on clean Windows VM; pre-compile with cache=True |
+| Subscription API downtime blocks startup | Medium | Cache last valid check for 7 days offline grace period |
+| MultiWalk CSV format variations across MW versions | Medium | Header detection; log warnings on parse failure |
