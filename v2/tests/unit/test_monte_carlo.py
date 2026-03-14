@@ -171,9 +171,9 @@ class TestCalcRtd:
         # dd_dollar = 0.25 * 20_000 = 5_000 → rtd = 5_000 / 5_000 = 1.0
         assert abs(rtd - 1.0) < 1e-6
 
-    def test_negligible_drawdown_capped_at_10(self):
+    def test_negligible_drawdown_capped_at_4(self):
         rtd = _calc_rtd(expected_profit=1_000.0, max_drawdown_pct=0.0, starting_equity=10_000.0)
-        assert rtd == 10.0
+        assert rtd == 4.0
 
     def test_high_profit_gives_high_rtd(self):
         rtd = _calc_rtd(expected_profit=50_000.0, max_drawdown_pct=0.10, starting_equity=10_000.0)
@@ -353,9 +353,9 @@ class TestRunMonteCarlo:
         result = run_monte_carlo(pnl, config, 2_000.0, closed_daily=closed)
         assert result.starting_equity > 0
 
-    def test_return_to_drawdown_capped_at_10_for_zero_drawdown(self):
-        """All-positive PnL → near-zero drawdown → RTD capped at 10."""
+    def test_return_to_drawdown_capped_at_4_for_zero_drawdown(self):
+        """All-positive PnL → near-zero drawdown → RTD capped at 4 (VBA: IIf(dd=0, 4, ...))."""
         pnl = pd.Series(np.full(252, 1_000.0), index=pd.bdate_range("2022-01-01", periods=252))
         config = make_mc_config(simulations=50, period="IS+OOS", trade_adjustment=0.0)
         result = run_monte_carlo(pnl, config, 1_000.0)
-        assert result.return_to_drawdown <= 10.0
+        assert result.return_to_drawdown <= 4.0

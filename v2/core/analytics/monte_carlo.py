@@ -105,11 +105,11 @@ def _calc_rtd(
 ) -> float:
     """
     Return-to-drawdown: expected_annual_profit / median_max_drawdown_$.
-    Capped at 10.0 when drawdown is negligible (mirrors VBA cap).
+    Capped at 4.0 when drawdown is negligible (mirrors VBA: IIf(maxDrawdown=0, 4, ...)).
     """
     dd_dollar = max_drawdown_pct * starting_equity
     if dd_dollar < 1e-4:
-        return 10.0
+        return 4.0
     return expected_profit / dd_dollar
 
 
