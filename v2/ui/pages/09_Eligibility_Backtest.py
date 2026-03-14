@@ -1,0 +1,344 @@
+"""
+Eligibility Backtest page — 2 tabs mirroring VBA U_BackTest_Eligibility.
+
+Tab 1 — Rule Statistics
+  Walk-forward: for each month, evaluate all 70 rules and record
+  N / Win% / $/Month / vs-Baseline across horizons 1–12.
+  Displays as a heatmap-coloured table.
+
+Tab 2 — Portfolio Construction Backtest
+  Select rule(s) + settings → walk-forward equity curve vs baseline.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from core.analytics.eligibility.portfolio_backtest import (
+    PortfolioBacktestConfig,
+    PortfolioBacktestResult,
+    run_portfolio_backtest,
+)
+from core.analytics.eligibility.rule_backtest import run_rule_backtest
+from core.analytics.eligibility.rules import build_rule_catalogue
+from core.config import AppConfig, EligibilityConfig
+from core.data_types import PortfolioData
+
+st.set_page_config(page_title="Eligibility Backtest", layout="wide")
+st.title("Eligibility Backtest")
+
+config: AppConfig = st.session_state.get("config", AppConfig.load())
+portfolio: PortfolioData | None = st.session_state.get("portfolio_data")
+imported = st.session_state.get("imported_data")
+
+if imported is None:
+    st.info("No data loaded. Go to **Import** first.")
+    st.stop()
+
+if portfolio is None:
+    st.info("Portfolio not built. Go to **Portfolio** page first.")
+    st.stop()
+
+# ── Shared: build summary with status column ──────────────────────────────────
+@st.cache_data(show_spinner=False)
+def _build_summary_with_status(_portfolio_hash, _imported_hash):
+    """Merge portfolio status into summary_metrics."""
+    summary = portfolio.summary_metrics.copy() if not portfolio.summary_metrics.empty else pd.DataFrame()
+    if summary.empty:
+        return summary
+
+    status_map = {s.name: s.status for s in portfolio.strategies}
+    # Fill strategies missing from portfolio with empty status
+    for name in summary.index:
+        if name not in status_map:
+            status_map[name] = ""
+    summary["status"] = [status_map.get(n, "") for n in summary.index]
+    contracts_map = {s.name: s.contracts for s in portfolio.strategies}
+    summary["contracts"] = [contracts_map.get(n, 1) for n in summary.index]
+    return summary
+
+
+# Use id() as a cheap hash for the cache key
+summary = _build_summary_with_status(id(portfolio), id(imported))
+
+# Fall back if summary is empty or missing required columns
+if summary.empty or "status" not in summary.columns:
+    st.warning(
+        "Summary metrics not available. Run the **Portfolio** page first to build strategy metrics."
+    )
+    st.stop()
+
+rules = build_rule_catalogue()
+rule_map = {r.id: r for r in rules}
+rule_labels = [r.label for r in rules]
+
+# ── Eligibility config sidebar ────────────────────────────────────────────────
+with st.sidebar:
+    st.header("Eligibility Settings")
+
+    status_include = st.multiselect(
+        "Eligible statuses",
+        ["Live", "Paper", "Pass", "Retired"],
+        default=list(config.eligibility.status_include),
+    )
+    days_threshold = st.number_input(
+        "Min OOS days",
+        min_value=0, max_value=730, value=int(config.eligibility.days_threshold_oos),
+        help="Strategy must have ≥ N days of OOS data to be eligible",
+    )
+    dd_cap = st.number_input(
+        "OOS DD / IS DD cap (0 = disabled)",
+        min_value=0.0, max_value=10.0,
+        value=float(config.eligibility.oos_dd_vs_is_cap), step=0.1,
+        help="Exclude strategy if OOS max drawdown > cap × IS max drawdown",
+    )
+    eff_ratio = st.slider(
+        "Efficiency ratio",
+        0.0, 2.0, float(config.eligibility.efficiency_ratio), 0.05,
+        help="Used by threshold rules: ann return ≥ eff_ratio × expected",
+    )
+    date_type = st.radio(
+        "Eligibility date type",
+        ["OOS Start Date", "Incubation Pass Date"],
+        index=0 if config.eligibility.date_type == "OOS Start Date" else 1,
+    )
+
+elig_config = EligibilityConfig(
+    days_threshold_oos=int(days_threshold),
+    oos_dd_vs_is_cap=float(dd_cap),
+    status_include=status_include if status_include else ["Live"],
+    efficiency_ratio=float(eff_ratio),
+    date_type=date_type,
+)
+
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab1, tab2 = st.tabs(["📊 Rule Statistics", "📈 Portfolio Construction"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1: Rule Statistics
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab1:
+    st.subheader("Walk-Forward Rule Statistics")
+    st.caption(
+        "For each calendar month, each rule is evaluated on eligible strategies. "
+        "Forward returns are tracked for horizons 1–12 months. "
+        "**vs Base** = % difference vs 'Baseline (All Eligible)'."
+    )
+
+    col_h, col_metric, col_run = st.columns([1, 1, 1])
+    with col_h:
+        horizon = st.selectbox("Horizon (months)", list(range(1, 13)), index=2)
+    with col_metric:
+        metric = st.selectbox(
+            "Display metric",
+            ["vs_base", "win_pct", "avg_pnl", "N"],
+            format_func=lambda x: {
+                "vs_base": "vs Baseline (%)",
+                "win_pct": "Win % (profitable next period)",
+                "avg_pnl": "Avg $/Strategy",
+                "N":       "N (sample count)",
+            }[x],
+        )
+    with col_run:
+        st.write("")
+        run_btn1 = st.button("Run Rule Backtest", type="primary", use_container_width=True)
+
+    rule_bt_result = st.session_state.get("rule_bt_result")
+    rule_bt_config_key = st.session_state.get("rule_bt_config_key")
+    current_key = (
+        tuple(sorted(status_include)), int(days_threshold),
+        float(dd_cap), float(eff_ratio), date_type,
+    )
+
+    if run_btn1 or (rule_bt_result is None):
+        with st.spinner(f"Running rule backtest on {len(rules)} rules…"):
+            rule_bt_result = run_rule_backtest(
+                daily_pnl=imported.daily_m2m,
+                summary=summary,
+                config=elig_config,
+                rules=rules,
+                max_horizon=12,
+            )
+        st.session_state.rule_bt_result = rule_bt_result
+        st.session_state.rule_bt_config_key = current_key
+
+    if rule_bt_result is not None and not rule_bt_result.empty:
+        col_name = f"{metric}_{horizon}"
+        if col_name not in rule_bt_result.columns:
+            st.error(f"Column '{col_name}' not found in results.")
+        else:
+            display = rule_bt_result[["label", f"N_{horizon}", f"win_pct_{horizon}",
+                                      f"avg_pnl_{horizon}", f"vs_base_{horizon}"]].copy()
+            display.columns = ["Rule", f"N", "Win %", "Avg $/Strat", "vs Base %"]
+            display = display.sort_values("vs Base %", ascending=False).reset_index(drop=True)
+
+            # Colour-code vs_base column
+            def _style_vs_base(val):
+                try:
+                    v = float(val)
+                    if v >= 20:    return "background-color: #1b5e20; color: white"
+                    if v >= 10:    return "background-color: #4caf50; color: white"
+                    if v >= 0:     return "background-color: #c8e6c9"
+                    if v >= -10:   return "background-color: #ffccbc"
+                    return "background-color: #b71c1c; color: white"
+                except Exception:
+                    return ""
+
+            styled = display.style.applymap(_style_vs_base, subset=["vs Base %"])
+            st.dataframe(styled, hide_index=True, use_container_width=True, height=600)
+
+            # Top-10 bar chart
+            top10 = display.head(10)
+            fig = px.bar(
+                top10, x="vs Base %", y="Rule", orientation="h",
+                title=f"Top 10 Rules by vs Baseline% — Horizon {horizon}M",
+                color="vs Base %",
+                color_continuous_scale=["#F44336", "#FFEB3B", "#4CAF50"],
+                color_continuous_midpoint=0,
+            )
+            fig.add_vline(x=0, line_color="black", line_width=1)
+            fig.update_layout(
+                height=350,
+                coloraxis_showscale=False,
+                yaxis={"categoryorder": "total ascending"},
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Click **Run Rule Backtest** to compute statistics.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2: Portfolio Construction Backtest
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab2:
+    st.subheader("Portfolio Construction Backtest")
+    st.caption(
+        "At each month, select strategies that pass the chosen rule(s). "
+        "Track the resulting portfolio's equity curve vs the all-eligible baseline."
+    )
+
+    col_rules, col_opts = st.columns([2, 1])
+
+    with col_rules:
+        selected_rule_labels = st.multiselect(
+            "Rules to test (multi-select)",
+            rule_labels,
+            default=[rule_labels[1]] if len(rule_labels) > 1 else rule_labels[:1],
+            help="Each selected rule generates a separate equity curve",
+        )
+        selected_rule_ids = [r.id for r in rules if r.label in selected_rule_labels]
+
+    with col_opts:
+        max_strats = st.number_input(
+            "Max strategies (0 = all passing)",
+            min_value=0, max_value=100, value=0,
+        )
+        ranking_metric = st.selectbox(
+            "Ranking metric (for top-N cap)",
+            ["oos_pnl", "momentum_3m", "momentum_6m", "expected_return"],
+            format_func=lambda x: {
+                "oos_pnl":          "OOS Total PnL",
+                "momentum_3m":      "Momentum 3M",
+                "momentum_6m":      "Momentum 6M",
+                "expected_return":  "Expected Annual Return",
+            }[x],
+        )
+        weighting = st.radio("Weighting", ["equal", "by_contracts"], horizontal=True)
+
+    run_btn2 = st.button("Run Portfolio Backtest", type="primary")
+
+    pb_results: dict[str, PortfolioBacktestResult] | None = st.session_state.get("pb_results")
+
+    if run_btn2:
+        if not selected_rule_ids:
+            st.error("Select at least one rule.")
+        else:
+            bt_config = PortfolioBacktestConfig(
+                rule_ids=selected_rule_ids,
+                max_strategies=int(max_strats) if max_strats > 0 else None,
+                ranking_metric=ranking_metric,
+                weighting=weighting,
+                include_baseline=True,
+            )
+            with st.spinner("Running portfolio construction backtest…"):
+                pb_results = run_portfolio_backtest(
+                    daily_pnl=imported.daily_m2m,
+                    summary=summary,
+                    config=elig_config,
+                    backtest_config=bt_config,
+                    rules=rules,
+                )
+            st.session_state.pb_results = pb_results
+
+    if pb_results:
+        # ── Equity curve comparison ───────────────────────────────────────────
+        st.subheader("Equity Curves")
+        palette = px.colors.qualitative.Plotly
+
+        fig_eq = go.Figure()
+        for i, (lbl, res) in enumerate(pb_results.items()):
+            is_baseline = lbl.startswith("Baseline")
+            fig_eq.add_trace(go.Scatter(
+                x=res.equity_curve.index,
+                y=res.equity_curve.values,
+                name=lbl,
+                line=dict(
+                    width=3 if is_baseline else 1.5,
+                    dash="dash" if is_baseline else "solid",
+                    color="#546E7A" if is_baseline else palette[i % len(palette)],
+                ),
+            ))
+        fig_eq.update_layout(
+            height=420,
+            xaxis_title="Date",
+            yaxis_title="Cumulative PnL ($)",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        st.plotly_chart(fig_eq, use_container_width=True)
+
+        # ── Summary metrics table ─────────────────────────────────────────────
+        st.subheader("Performance Summary")
+        rows = []
+        for lbl, res in pb_results.items():
+            rows.append({
+                "Rule":            lbl,
+                "Avg Monthly $":   f"${res.avg_monthly_pnl:,.0f}",
+                "Win Rate":        f"{res.win_rate:.1%}",
+                "Max Drawdown $":  f"${res.max_drawdown:,.0f}",
+                "Sharpe":          f"{res.sharpe_ratio:.2f}",
+                "vs Baseline %":   f"{res.vs_baseline_pct:+.1f}%",
+            })
+        summary_df = pd.DataFrame(rows)
+        st.dataframe(summary_df, hide_index=True, use_container_width=True)
+
+        # ── Monthly strategy count ────────────────────────────────────────────
+        with st.expander("Monthly Strategy Count", expanded=False):
+            fig_cnt = go.Figure()
+            for i, (lbl, res) in enumerate(pb_results.items()):
+                if lbl.startswith("Baseline"):
+                    continue
+                fig_cnt.add_trace(go.Scatter(
+                    x=res.monthly_strategy_count.index,
+                    y=res.monthly_strategy_count.values,
+                    name=lbl,
+                    mode="lines+markers",
+                    line=dict(color=palette[i % len(palette)]),
+                ))
+            fig_cnt.update_layout(
+                height=280,
+                xaxis_title="Date",
+                yaxis_title="# Strategies Selected",
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig_cnt, use_container_width=True)
+
+    elif not run_btn2:
+        st.info("Select rule(s) and click **Run Portfolio Backtest**.")
