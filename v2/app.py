@@ -64,7 +64,7 @@ def _show_license_entry(prompt: str) -> None:
             "TradeStation Customer ID",
             min_value=1,
             max_value=9_999_999,
-            value=0,
+            value=1,
             step=1,
         )
         submitted = st.form_submit_button("Activate", type="primary")
