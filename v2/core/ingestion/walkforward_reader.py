@@ -181,17 +181,22 @@ def read_walkforward_csv(
     # Find the row for this strategy
     name_col = _find_col(df, COL_STRATEGY_NAME)
     if name_col is None:
-        return None
-
-    row_mask = df[name_col].str.strip() == strategy_name
-    if not row_mask.any():
-        # Fall back to any row if only one data row (single-strategy WF file)
+        # No Strategy Name column (per-strategy export uses MultiWalk Project).
+        # If there is exactly one data row it must be the right one.
         if len(df) == 1:
             row = df.iloc[0]
         else:
             return None
     else:
-        row = df[row_mask].iloc[0]
+        row_mask = df[name_col].str.strip() == strategy_name
+        if not row_mask.any():
+            # Fall back to any row if only one data row (single-strategy WF file)
+            if len(df) == 1:
+                row = df.iloc[0]
+            else:
+                return None
+        else:
+            row = df[row_mask].iloc[0]
 
     g = _RowGetter(row)
 

@@ -1,0 +1,342 @@
+//
+// MultiWalk Strategy with Optimized Walkforward Parameters
+//
+// DZS2023-09 Breakout with Twist MW [@NG-240min] WF(756-504,U,NPAvgDD,PMx)
+//
+// This strategy is the result of the walkforward process and contains the walkforward optimized parameters for real-time
+// trading.  Copy this strategy code to a new strategy (do not overwrite your MultiWalk version of this strategy). Give
+// it a unique name, such as the name above that uniquely identifies this walkforward strategy.
+//
+// Then add that strategy to a TradeStation chart. Configure the chart using the settings below.
+//
+// Walkforward Strategy Name  : DZS2023-09 Breakout with Twist MW [@NG-240min] WF(756-504,U,NPAvgDD,PMx)
+// Walkforward Strategy File  : DZS2023-09 Breakout with Twist MW [@NG-240min] WF(756-504,U,NPAvgDD,PMx) ELCode.txt
+// MultiWalk Strategy         : DZS2023-09 Breakout with Twist MW
+// MultiWalk Project Folder   : C:\Users\david\Documents\MultiWalk\Portfolio Strategies\1 - Passed Strategies\DZS2023-09 Breakout with Twist MW-[@NG-240min]
+// Code Generation Date       : 02/05/2026
+// MultiWalk Release          : 05/14/2025 (DLL: 05/14/2025)
+//
+// Re-Optimization Information:
+//
+//    Reoptimize every 504 Trading Days
+//    The following dates are an approximation and may not account for holidays, so may be +/- a few days in either direction.
+//
+//    Next approximated re-optimization dates:
+//       04/23/2027
+//       12/05/2028
+//       07/20/2030
+//
+// TRADESTATION CHART SETUP INFORMATION
+//
+// Be sure to configure the chart in TradeStation using the SAME settings that were used in MultiWalk, otherwise
+// your results will not match those found in MultiWalk.  Use the settings below to create your TradeStation chart.
+// ------------------------------------------------------------------------------------------------------------------
+//
+// Symbol Settings
+//
+// Symbol/Interval/Session Data1       : @NG 240min (Regular Session)
+// Symbol/Interval/Session Data2       :  
+// Symbol/Interval/Session Data3       :  
+// Symbol/Interval/Session Data4       :  
+// Begin Date (mm-dd-yyyy)             : 01-01-2007
+// End Date (mm-dd-yyyy)               : 02-04-2026
+// Time Zone                           : Exchange Time
+// Bar Building Method                 : Session Hours
+// For Volume, Use                     : Trade Vol
+// Futures Margin                      : As of 02/05/2026: Overnight Initial ($0), Maint ($0) | Day Initial ($0), Maint ($0)
+//
+// Strategy Settings
+//
+// Slippage                            : $17.5 ($ per share/contract)
+// Commission                          : $2.5 ($ per share/contract)
+// Limit Order Fill Assumption         : Fill order when price exeeds limit price
+// Maximum number of bars (MaxBarsBack): 60
+// Default trade size                  : 1 contracts/shares/lots
+// Maximum trade size                  : 10 contracts/shares/lots
+// Look-Inside-Bar Backtesting (LIBB)  : Yes, using 1 minute bars
+// Multiple position/pyramiding enabled: No
+//
+// OPTIMIZATION/WALKFORWARD INFORMATION
+//
+// The following are the optimzation and walkforward settings used in MultiWalk to create this strategy.  They can
+// be used to create a MultiWalk project for reoptimization.
+// ------------------------------------------------------------------------------------------------------------------
+//
+// Optimization Settings
+//
+// Total number of iterations          : 135
+// Optimized/Fixed Input Parameters (variable name and range/step increments)
+//    period, 10-30x10 
+//    stoploss, 1000-3000x500 
+//    fac, 2-3x0.5 
+//    breakeven, 500-1500x500 
+//
+// Walkforward Settings
+//
+// Anchored/Unanchored                 : Unanchored
+// Fitness Function                    : NP/Avg DD (Best ROA using avg DD (return on account: net profit return / daily average drawdown))
+// In/Out Periods                      : 756/504
+// ReOpt Position Matching Mode        : None
+//
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                  WALKFORWARD OPTIMIZED VARIABLES                                 //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Optimization variables for this walkforward strategy.
+vars:
+    double period(20),
+    double breakeven(500),
+    double stoploss(1000),
+    double fac(2);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                     MultiWalkNumContracts                                        //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// iMultiWalkNumContracts is an input variable that you can use to set the number of contracts to trade when the
+// strategy is applied to a chart.  It will automatically set MultiWalkNumContracts.
+
+// MultiWalkNumContracts is the current number of contracts being traded.  MultiWalk will use this variable for
+// position sizing.  Use MultiWalkNumContracts in your ENTRY buy/sellshort statements.  Do not specify the number.
+// of contracts in your EXIT orders. Let TradeStation exit all currently open orders instead of trying to
+// determine this in the strategy.
+
+// Only use the variable MultiWalkNumContracts in your order statements, not the input var iMultiWalkNumContracts.
+
+inputs:
+    int iMultiWalkNumContracts(1);		// Set this to the number of contracts you are trading.
+
+vars:
+    intrabarpersist int MultiWalkNumContracts(iMultiWalkNumContracts);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                       MULTIWALK VARIABLES                                        //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// These variables are used by MultiWalk.
+
+vars:
+    intrabarpersist string MultiWalkStrategyName(MultiWalkGetStrategyName),
+    intrabarpersist bool MultiWalkStatus(false),
+    intrabarpersist bool MultiWalkUseOptimizedParameters(true),
+    intrabarpersist bool MultiWalkCanTrade(true),
+    intrabarpersist bool MultiWalkIsChart(true),
+    intrabarpersist bool MultiWalkIsOptimizing(false);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                    MULTIWALK INITIALIZATIONS                                     //////////
+//////                         Do not modify or change these initializations.                           //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+once begin
+    MultiWalkIsOptimizing = ( GetAppInfo(aiOptimizing) = 1 );
+    MultiWalkIsChart = ( GetAppInfo(aiApplicationType) = 1 );
+end;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                        CHART SETTINGS CHECKS                                     //////////
+//////                                                                                                  //////////
+////// You can delete this section once you have verified that the chart is set up correctly using the  //////////
+////// same settings that were used in MultiWalk.                                                       //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+inputs:
+    bool EnableChartSettingsChecks(true);
+
+vars:
+    intrabarpersist string MultiWalkSettingsErrors("");
+
+once begin
+    if ( EnableChartSettingsChecks ) then
+    begin
+        // Compare the current chart settings with settings that were used in MultiWalk when the strategy was
+        // generated.
+    
+        MultiWalkSettingsErrors = "";
+
+        if ( SymbolRoot <> "NG" ) then
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Data symbol is not correct" + newline;
+
+        if ( BarType <> 1 ) then
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Symbol bar type (daily/minutes/etc) is not correct" + newline;
+
+        if ( BarInterval <> 240 ) then    
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Symbol bar interval is not correct" + newline;
+
+        if ( not MultiWalkFloatingPointCompareIsEqual( Slippage, 17.5, 0.00001 {compare to 4 decimal places} ) ) then
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Slippage is not correct" + newline;
+
+        if ( not MultiWalkFloatingPointCompareIsEqual( Commission, 2.5, 0.00001 {compare to 4 decimal places} ) ) then
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Commission is not correct" + newline;
+
+        if ( MaxBarsBack <> 60 ) then
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + "       Max bars back is not correct" + newline;
+
+        if ( MultiWalkSettingsErrors <> "" ) then
+        begin
+            MultiWalkSettingsErrors = "Please review and correct or set EnableChartSettingsChecks to " + doublequote + "false" + doublequote + " to bypass these checks." +
+                                      newline + newline + "    Chart Errors:" +
+                                      newline + MultiWalkSettingsErrors;
+
+            MultiWalkSettingsErrors = MultiWalkSettingsErrors + newline + "    MultiWalk Settings:" + newline +
+                                      "       Symbol: @NG 240min" + newline +
+                                      "       Symbol Time Zone: Exchange Time" + newline +
+                                      "       Symbol Session Template: Regular Session" + newline +
+                                      "       Symbol Bar Building Method: Session Hours" + newline +
+                                      "       Symbol For Volume, Use: Trade Vol" + newline +
+                                      "       Slippage: $17.5 per Share/Contract" + newline +
+                                      "       Commission: $2.5 per Share/Contract" + newline +
+                                      "       Maximum number of bars back (MaxBarsBack): 60" + newline +
+                                      "       Backtesting Fill Assumption: Fill order when price exeeds limit price" + newline +
+                                      "       Look-Inside-Bar Backtesting (LIBB): Yes, using 1 minute bars" + newline +
+                                      "       Trade size (contracts/shares/lots): 1" + newline +
+                                      "       Pyramiding/Position Limits enabled: No";
+
+            RaiseRuntimeError( "Strategy has been disabled due to incorrect chart settings." + MultiWalkSettingsErrors );
+        end;
+    end;
+
+end;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////                                    OPTIMIZED WALKFORWARD PERIODS                                 //////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// The variable MultiWalkCanTrade is used to determine when we want to allow new trade entries.  When optimizing,
+// we want to take every trade (MultiWalkCanTrade = true) and optimize according to the INPUT values passed to
+// the strategy.  However, when we are using the walkforward optimized parameters, we want these to override the
+// INPUT values and use our optimized values below.  We do not want to start trading (MultiWalkCanTrade = false)
+// until AFTER the first walkforward optimization period.  MultiWalkCanTrade will be set to true once we are in
+// the walkforward out-of-sample time periods.
+//
+// IMPORTANT: MultiWalk manages and uses the MultiWalkCanTrade value.  Do not modify or change MultiWalkCanTrade
+// value in your code.
+
+MultiWalkCanTrade = true;
+
+if ( MultiWalkIsOptimizing ) then            // If we are optimizing, then we do NOT want to use optimized parameters.
+    MultiWalkUseOptimizedParameters = false
+else
+    MultiWalkUseOptimizedParameters = true;       // Not optimizing, so use optimized date ranges below
+
+if ( MultiWalkUseOptimizedParameters ) then
+begin
+    // Seed initial values for time period BEFORE walkforward optimization.  These values are from the first optimized iteration.
+    period = 20;
+    breakeven = 500;
+    stoploss = 1000;
+    fac = 2;
+
+    if ( date < 1090621 ) then			// Do not trade before the optimization parameters.  Make this date
+        MultiWalkCanTrade = false;		// the date of the first set of optimized parameters.
+
+    // Walkforward dates and optimized paramenters
+    if date >= 1090621 and date < 1110203 then
+    begin
+        period = 20;
+        breakeven = 500;
+        stoploss = 1000;
+        fac = 2;
+    end;
+    if date >= 1110203 and date < 1120918 then
+    begin
+        period = 20;
+        breakeven = 1000;
+        stoploss = 1000;
+        fac = 3;
+    end;
+    if date >= 1120918 and date < 1140501 then
+    begin
+        period = 10;
+        breakeven = 500;
+        stoploss = 1000;
+        fac = 2;
+    end;
+    if date >= 1140501 and date < 1151213 then
+    begin
+        period = 20;
+        breakeven = 500;
+        stoploss = 1500;
+        fac = 3;
+    end;
+    if date >= 1151213 and date < 1170730 then
+    begin
+        period = 10;
+        breakeven = 1500;
+        stoploss = 1000;
+        fac = 2;
+    end;
+    if date >= 1170730 and date < 1190314 then
+    begin
+        period = 20;
+        breakeven = 500;
+        stoploss = 2000;
+        fac = 2;
+    end;
+    if date >= 1190314 and date < 1201026 then
+    begin
+        period = 10;
+        breakeven = 500;
+        stoploss = 3000;
+        fac = 3;
+    end;
+    if date >= 1201026 and date < 1220612 then
+    begin
+        period = 10;
+        breakeven = 1000;
+        stoploss = 1500;
+        fac = 2;
+    end;
+    if date >= 1220612 and date < 1240126 then
+    begin
+        period = 10;
+        breakeven = 1000;
+        stoploss = 1000;
+        fac = 2.5;
+    end;
+    if date >= 1240126 and date < 1250908 then
+    begin
+        period = 20;
+        breakeven = 500;
+        stoploss = 1000;
+        fac = 2;
+    end;
+    // 
+    // Next approximated optimization date based on trading days: 04/23/2027.  This date is an approximation and does not account for exact holidays, so may be +/- a few days in either direction.
+    // 
+    if date >= 1250908 then
+    begin
+        period = 30;
+        breakeven = 1500;
+        stoploss = 1500;
+        fac = 2.5;
+    end;
+
+end;
+
+if ( MultiWalkCanTrade ) then
+begin
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                             MAIN STRATEGY LOGIC                                              //
+///////////////////////////////////////////////////////////////////////////////////////////// CodeBlockBegin /////
+
+Inputs: nConts(1), name("DZS2023-09 Breakout with Twist Exit");
+
+
+If WFSafe_ADX(period) < 20   then Buy ("Breakout Buy") nConts contracts at the next bar at highest(high ,period) stop;
+If WFSafe_ADX(period) < 20 then Sellshort ("Breakout Sell") nConts contracts at the next bar at lowest(low ,period) stop;
+
+
+
+Setstopposition; //calculate the stop loss as dollars per contract
+setstoploss(stoploss*nConts); // $ stop loss per contract
+SetProfitTarget(stoploss*fac*nConts); // $ profit target per contract
+SetBreakeven(breakeven*nConts) ;//if max profit exceeds exit3_beamt, then trail with a breakeven stop
+
+
+//// CodeBlockEnd ////////////////////////////////////////////////////////////////////////////////////////////////
+
+end;
