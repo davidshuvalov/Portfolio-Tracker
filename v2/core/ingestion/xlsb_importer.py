@@ -131,12 +131,11 @@ class MarginTables:
         Args:
             ts_symbol:   Symbol as used by TradeStation (e.g. "ES", "NK").
             source:      "TradeStation" | "InteractiveBrokers"
-            margin_type: "Initial" | "Maintenance"
+            margin_type: "Initial" | "Maintenance" | "Average"
 
         Returns:
             Dollar margin, or None if the symbol is not in the reference data.
         """
-        key = margin_type.lower()  # "initial" | "maintenance"
         if source == "TradeStation":
             entry = self.ts.get(ts_symbol)
         else:
@@ -144,6 +143,11 @@ class MarginTables:
             entry = self.ib.get(ib_sym)
         if entry is None:
             return None
+        if margin_type == "Average":
+            init = entry.initial or 0.0
+            maint = entry.maintenance or 0.0
+            return (init + maint) / 2.0 if (init + maint) > 0 else None
+        key = margin_type.lower()  # "initial" | "maintenance"
         return getattr(entry, key, None)
 
     def resolve_for_symbols(

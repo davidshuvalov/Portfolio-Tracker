@@ -118,8 +118,8 @@ class AppConfig(BaseModel):
         description="Per-symbol margin requirement in $ (e.g. {'ES': 12000, 'NQ': 18000})",
     )
     default_margin: float = 5000.0
-    margin_source: Literal["TradeStation", "InteractiveBrokers", "Manual"] = "TradeStation"
-    margin_type: Literal["Initial", "Maintenance"] = "Maintenance"
+    margin_source: Literal["MultiWalk", "TradeStation", "InteractiveBrokers", "Manual"] = "MultiWalk"
+    margin_type: Literal["Maintenance", "Initial", "Average"] = "Maintenance"
     customer_id: int = 0
     multiwalk_folder: str = ""
 

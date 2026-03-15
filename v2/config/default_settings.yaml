@@ -76,3 +76,6 @@ eligibility:
 corr_normal_threshold: 0.70
 corr_negative_threshold: 0.30
 corr_drawdown_threshold: 0.70
+
+margin_source: "MultiWalk"    # MultiWalk | TradeStation | InteractiveBrokers | Manual
+margin_type: "Maintenance"    # Maintenance | Initial | Average

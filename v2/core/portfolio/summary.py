@@ -173,6 +173,9 @@ def _build_row(
             "annual_sd_isoos": wf.annual_sd_isoos,
             "trading_days_is": wf.trading_days_is,
             "trading_days_isoos": wf.trading_days_isoos,
+            # Margin data from MultiWalk WF CSV (0.0 when column absent)
+            "mw_maint_margin": wf.maint_overnight_margin,
+            "mw_init_margin": wf.init_overnight_margin,
         })
     else:
         # Fill WF-sourced columns with NaN
@@ -571,6 +574,7 @@ _WF_FLOAT_COLS = [
     "expected_annual_profit", "actual_annual_profit", "return_efficiency",
     "total_is_profit", "total_isoos_profit", "annualized_isoos_profit",
     "mw_mc_is", "mw_mc_isoos",
+    "mw_maint_margin", "mw_init_margin",
     "is_win_rate", "oos_win_rate", "overall_win_rate",
     "trades_per_year", "pct_time_in_market", "avg_trade_length",
     "avg_trade", "avg_profitable_trade", "avg_loss_trade",

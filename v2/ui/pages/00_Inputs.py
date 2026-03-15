@@ -506,19 +506,47 @@ st.divider()
 # 8. MARGIN SETTINGS
 # ══════════════════════════════════════════════════════════════════════════════
 st.subheader("Margin Settings")
+st.caption(
+    "Controls which margin data source is used in the Margin Tracking page.  \n"
+    "**MultiWalk** — uses the Overnight Maintenance margin from the Walkforward Details CSV.  \n"
+    "**TradeStation / Interactive Brokers** — looks up from the reference tables imported during migration.  \n"
+    "**Manual** — per-symbol margins entered directly in the Margin Tracking page."
+)
 
 with st.form("margin_form"):
     col_mg1, col_mg2, col_mg3, _ = st.columns(4)
+
+    _m_sources = ["MultiWalk", "TradeStation", "InteractiveBrokers", "Manual"]
+    _m_types   = ["Maintenance", "Initial", "Average"]
+    _safe_ms = config.margin_source if config.margin_source in _m_sources else "MultiWalk"
+    _safe_mt = config.margin_type   if config.margin_type   in _m_types   else "Maintenance"
+
     with col_mg1:
-        m_source = st.selectbox("Margin source", ["TradeStation", "InteractiveBrokers", "Manual"],
-                                index=["TradeStation", "InteractiveBrokers", "Manual"].index(config.margin_source))
+        m_source = st.selectbox(
+            "Margin source",
+            _m_sources,
+            index=_m_sources.index(_safe_ms),
+            help="Mirrors VBA Margin_Source named range.",
+        )
     with col_mg2:
-        m_type = st.selectbox("Margin type", ["Initial", "Maintenance"],
-                              index=0 if config.margin_type == "Initial" else 1)
+        m_type = st.selectbox(
+            "Margin type",
+            _m_types,
+            index=_m_types.index(_safe_mt),
+            help=(
+                "Maintenance = Overnight Maintenance (lower).  "
+                "Initial = Overnight Initial (higher).  "
+                "Average = (Initial + Maintenance) / 2.  "
+                "Mirrors VBA Margin_Choice named range."
+            ),
+        )
     with col_mg3:
-        m_default = st.number_input("Default margin per contract ($)", min_value=0.0,
-                                    max_value=500_000.0, step=500.0, format="%.0f",
-                                    value=float(config.default_margin))
+        m_default = st.number_input(
+            "Default margin per contract ($)",
+            min_value=0.0, max_value=500_000.0, step=500.0, format="%.0f",
+            value=float(config.default_margin),
+            help="Fallback when a symbol is not found in the selected margin source.",
+        )
 
     if st.form_submit_button("Save Margin Settings", type="primary"):
         nc = config.model_copy(deep=True)

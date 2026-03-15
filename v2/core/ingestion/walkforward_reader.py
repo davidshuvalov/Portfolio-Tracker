@@ -87,6 +87,10 @@ COL_ISOOS_SHARPE = "IS+OOS Sharpe Ratio"
 COL_IS_MC = "IS Monte Carlo"
 COL_ISOOS_MC = "IS+OOS Monte Carlo"
 
+# Margin (optional — present in some MultiWalk exports)
+COL_MAINT_MARGIN = "Maint Overnight Margin"
+COL_INIT_MARGIN  = "Initial Overnight Margin"
+
 
 class WalkforwardMetrics(NamedTuple):
     """
@@ -152,6 +156,10 @@ class WalkforwardMetrics(NamedTuple):
     trading_days_is: int
     trading_days_isoos: int
     oos_period_years: float
+
+    # Margin (optional — present in some MultiWalk WF CSV exports)
+    maint_overnight_margin: float = 0.0   # Maint Overnight Margin
+    init_overnight_margin: float = 0.0    # Initial Overnight Margin
 
 
 def read_walkforward_csv(
@@ -327,6 +335,8 @@ def read_walkforward_csv(
         trading_days_is=int(trading_days_is),
         trading_days_isoos=int(trading_days_isoos),
         oos_period_years=oos_period_years,
+        maint_overnight_margin=abs(g.flt(COL_MAINT_MARGIN)),
+        init_overnight_margin=abs(g.flt(COL_INIT_MARGIN)),
     )
 
 

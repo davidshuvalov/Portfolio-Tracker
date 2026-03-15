@@ -71,40 +71,45 @@ all_symbols = sorted({s.symbol for s in portfolio.strategies if s.symbol})
 with st.sidebar:
     st.header("Margin Settings")
 
-    # ── Source selector (only shown when tables are available) ────────────────
-    if tables_available:
-        source = st.selectbox(
-            "Margin source",
-            ["TradeStation", "InteractiveBrokers", "Manual"],
-            index=["TradeStation", "InteractiveBrokers", "Manual"].index(config.margin_source),
-            help=(
-                "TradeStation / InteractiveBrokers: auto-populates margins from "
-                "the reference tables imported during migration.\n\n"
-                "Manual: enter margins manually below."
-            ),
-        )
-        margin_type = st.selectbox(
-            "Margin type",
-            ["Maintenance", "Initial"],
-            index=["Maintenance", "Initial"].index(config.margin_type),
-            help=(
-                "Maintenance: minimum ongoing margin (lower, more conservative estimate).\n"
-                "Initial: margin required to open a position (higher)."
-            ),
-        )
-    else:
-        source = "Manual"
-        margin_type = "Maintenance"
+    # ── Source selector ───────────────────────────────────────────────────────
+    _all_sources = ["MultiWalk", "TradeStation", "InteractiveBrokers", "Manual"]
+    _safe_source = config.margin_source if config.margin_source in _all_sources else "MultiWalk"
+    source = st.selectbox(
+        "Margin source",
+        _all_sources,
+        index=_all_sources.index(_safe_source),
+        help=(
+            "**MultiWalk** — uses the Overnight Maintenance margin exported in "
+            "the Walkforward Details CSV (falls back to default below).\n\n"
+            "**TradeStation / InteractiveBrokers** — auto-populates from the "
+            "reference tables imported during migration.\n\n"
+            "**Manual** — enter margins manually in the table below."
+        ),
+    )
+
+    _all_types = ["Maintenance", "Initial", "Average"]
+    _safe_type = config.margin_type if config.margin_type in _all_types else "Maintenance"
+    margin_type = st.selectbox(
+        "Margin type",
+        _all_types,
+        index=_all_types.index(_safe_type),
+        help=(
+            "**Maintenance** — minimum ongoing margin (lower).  "
+            "**Initial** — margin to open a position (higher).  "
+            "**Average** — average of Initial and Maintenance."
+        ),
+    )
+
+    if not tables_available and source in ("TradeStation", "InteractiveBrokers"):
         st.caption(
-            "No margin reference tables found. "
-            "Run the **Migrate** page with your v1.24 `.xlsb` file to import "
-            "TradeStation / IB margin data automatically."
+            "No TS/IB reference tables found. "
+            "Run the **Migrate** page with your v1.24 `.xlsb` file to import them."
         )
 
     st.divider()
 
-    # ── Auto-populate button ──────────────────────────────────────────────────
-    if tables_available and source != "Manual":
+    # ── Auto-populate button (TS / IB only) ──────────────────────────────────
+    if tables_available and source in ("TradeStation", "InteractiveBrokers"):
         auto_margins = margin_tables.resolve_for_symbols(all_symbols, source, margin_type)
         n_found = len(auto_margins)
         n_missing = len(all_symbols) - n_found
@@ -119,6 +124,44 @@ with st.sidebar:
             config.save()
             st.session_state.config = config
             st.rerun()
+        st.divider()
+
+    # ── MultiWalk auto-populate ───────────────────────────────────────────────
+    if source == "MultiWalk" and portfolio.summary_metrics is not None and not portfolio.summary_metrics.empty:
+        sm = portfolio.summary_metrics
+        mw_col = "mw_maint_margin" if margin_type in ("Maintenance", "Average") else "mw_init_margin"
+        alt_col = "mw_init_margin" if mw_col == "mw_maint_margin" else "mw_maint_margin"
+        mw_margins: dict[str, float] = {}
+        for strat in portfolio.strategies:
+            if not strat.symbol:
+                continue
+            if strat.name in sm.index:
+                row_m = float(sm.loc[strat.name, mw_col] or 0)
+                if row_m <= 0:
+                    row_m = float(sm.loc[strat.name, alt_col] or 0)
+                if margin_type == "Average" and row_m > 0:
+                    init_v = float(sm.loc[strat.name, "mw_init_margin"] or 0)
+                    maint_v = float(sm.loc[strat.name, "mw_maint_margin"] or 0)
+                    row_m = (init_v + maint_v) / 2.0 if (init_v + maint_v) > 0 else row_m
+                if row_m > 0:
+                    mw_margins[strat.symbol] = row_m
+        n_found_mw = len(mw_margins)
+        if n_found_mw > 0:
+            st.caption(
+                f"MultiWalk WF CSV margin data found for **{n_found_mw}/{len(all_symbols)}** symbols."
+            )
+            if st.button("Apply MultiWalk margins", use_container_width=True):
+                config.symbol_margins = mw_margins
+                config.margin_source = source
+                config.margin_type = margin_type
+                config.save()
+                st.session_state.config = config
+                st.rerun()
+        else:
+            st.caption(
+                "No MultiWalk margin data found in WF CSV — enter values manually below "
+                "or switch to TradeStation / InteractiveBrokers source."
+            )
         st.divider()
 
     # ── Default fallback ──────────────────────────────────────────────────────
