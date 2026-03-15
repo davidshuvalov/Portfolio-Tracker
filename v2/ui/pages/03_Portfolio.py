@@ -28,11 +28,23 @@ from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Portfolio", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
+# ── Sidebar: workflow status + portfolio / contract sizing settings ────────────
 try:
     from ui.workflow import render_workflow_sidebar
     with st.sidebar:
         render_workflow_sidebar()
+except Exception:
+    pass
+
+try:
+    from ui.components.settings_sidebar import render_portfolio_sidebar, render_contract_sizing_sidebar
+    _sidebar_cfg = st.session_state.get("config", AppConfig.load())
+    with st.sidebar:
+        st.divider()
+        if render_portfolio_sidebar(_sidebar_cfg):
+            st.rerun()
+        if render_contract_sizing_sidebar(_sidebar_cfg):
+            st.rerun()
 except Exception:
     pass
 

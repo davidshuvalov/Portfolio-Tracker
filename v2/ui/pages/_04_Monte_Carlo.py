@@ -103,12 +103,42 @@ with st.sidebar:
     run_btn = st.button("Run Monte Carlo", type="primary", use_container_width=True)
 
     st.divider()
+    st.caption("**Equity & advanced**")
+    starting_equity = st.number_input(
+        "Starting equity ($)",
+        min_value=10_000.0, max_value=100_000_000.0, step=5_000.0,
+        value=float(config.contract_sizing.starting_equity), format="%.0f",
+        help="Fixed starting equity (ignored when Solve for ROR is on).",
+    )
+    solve_for_ror = st.checkbox(
+        "Solve for ROR target",
+        value=config.monte_carlo.solve_for_ror,
+        help="Iterate equity until ROR matches the target above.",
+    )
+    output_samples = st.number_input(
+        "Output samples",
+        min_value=1, max_value=500, step=5,
+        value=int(config.monte_carlo.output_samples),
+        help="Number of scenario paths to include in results.",
+    )
+    remove_best = st.slider(
+        "Remove best % days",
+        0.0, 0.10, float(config.monte_carlo.remove_best_pct), 0.005,
+        format="%.1%%",
+        help="Trim top-N% days before sampling to stress-test distribution.",
+    )
+
+    st.divider()
     if st.button("Save as defaults", use_container_width=True, help="Persist these settings so they load next session"):
-        config.monte_carlo.simulations      = int(simulations)
-        config.monte_carlo.period           = period
-        config.monte_carlo.risk_ruin_target = risk_ruin_target
-        config.monte_carlo.trade_adjustment = trade_adjustment
-        config.monte_carlo.trade_option     = trade_option
+        config.monte_carlo.simulations           = int(simulations)
+        config.monte_carlo.period                = period
+        config.monte_carlo.risk_ruin_target      = risk_ruin_target
+        config.monte_carlo.trade_adjustment      = trade_adjustment
+        config.monte_carlo.trade_option          = trade_option
+        config.monte_carlo.solve_for_ror         = solve_for_ror
+        config.monte_carlo.output_samples        = int(output_samples)
+        config.monte_carlo.remove_best_pct       = float(remove_best)
+        config.contract_sizing.starting_equity   = float(starting_equity)
         config.save()
         st.session_state.config = config
         st.success("Saved.")

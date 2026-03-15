@@ -19,7 +19,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from core.config import AppConfig
+from core.config import AppConfig, StrategyRankingConfig
 
 st.set_page_config(page_title="Inputs", layout="wide")
 
@@ -555,6 +555,166 @@ with st.form("margin_form"):
         nc.default_margin = float(m_default)
         _save(nc)
         st.success("Saved.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. CONTRACT SIZING SETTINGS
+# ══════════════════════════════════════════════════════════════════════════════
+st.subheader("Contract Sizing Settings")
+st.caption(
+    "Controls how contract counts are sized for portfolio backtests using the volatility "
+    "(ATR) of each strategy.  \n"
+    "**Starting equity** is used as the base for percentage-of-equity sizing.  \n"
+    "**ATR blend** mixes dollar-ATR risk with margin requirement.  "
+    "1.0 = pure ATR, 0.0 = pure margin."
+)
+
+with st.form("contract_sizing_form"):
+    cs = config.contract_sizing
+    col_cs1, col_cs2, col_cs3, col_cs4 = st.columns(4)
+
+    with col_cs1:
+        cs_equity = st.number_input(
+            "Starting equity ($)",
+            min_value=10_000.0, max_value=100_000_000.0, step=5_000.0,
+            value=float(cs.starting_equity), format="%.0f",
+            help="Base equity used for percentage-of-equity contract sizing.",
+        )
+        cs_pct = st.number_input(
+            "Contract size % of equity",
+            min_value=0.001, max_value=0.20, step=0.005, format="%.3f",
+            value=float(cs.contract_size_pct_equity),
+            help="1% of starting equity is allocated per contract (e.g. 0.01).",
+        )
+
+    with col_cs2:
+        cs_cease_type = st.selectbox(
+            "Cease trading type",
+            ["Percentage", "Dollar"],
+            index=0 if cs.cease_type == "Percentage" else 1,
+            help="Stop adding new positions when portfolio drawdown hits this threshold.",
+        )
+        cs_cease_thresh = st.number_input(
+            "Cease trading threshold",
+            min_value=0.0, step=0.01 if cs.cease_type == "Percentage" else 1_000.0,
+            value=float(cs.cease_trading_threshold), format="%.2f",
+            help="0.25 = 25% drawdown from equity peak triggers cease.",
+        )
+
+    with col_cs3:
+        cs_atr_window = st.selectbox(
+            "ATR window",
+            ["ATR Last 3 Months", "ATR Last 6 Months", "ATR Last 12 Months"],
+            index=["ATR Last 3 Months", "ATR Last 6 Months", "ATR Last 12 Months"].index(cs.atr_window),
+            help="Rolling window used to compute dollar ATR from trade MFE+MAE.",
+        )
+        cs_margin_mult = st.slider(
+            "Margin multiple",
+            0.0, 2.0, float(cs.contract_margin_multiple), 0.05,
+            help="Fraction of margin requirement used in sizing (0.50 = 50%).",
+        )
+
+    with col_cs4:
+        cs_blend = st.slider(
+            "ATR vs Margin blend",
+            0.0, 1.0, float(cs.contract_ratio_margin_atr), 0.05,
+            help="0 = pure margin sizing, 1 = pure ATR sizing.",
+        )
+        cs_rw_scope = st.selectbox(
+            "Reweighting scope",
+            ["None", "All", "Index Only"],
+            index=["None", "All", "Index Only"].index(cs.reweight_scope),
+            help="Which strategies' historical contracts are rescaled by ATR ratio.",
+        )
+        cs_rw_gain = st.slider(
+            "Reweight gain",
+            0.5, 3.0, float(cs.reweight_gain), 0.05,
+            disabled=(cs_rw_scope == "None"),
+            help="Multiplier applied on top of ATR reweighting (1.0 = no gain).",
+        )
+
+    if st.form_submit_button("Save Contract Sizing Settings", type="primary"):
+        nc = config.model_copy(deep=True)
+        nc.contract_sizing.starting_equity           = float(cs_equity)
+        nc.contract_sizing.contract_size_pct_equity  = float(cs_pct)
+        nc.contract_sizing.cease_type                = cs_cease_type
+        nc.contract_sizing.cease_trading_threshold   = float(cs_cease_thresh)
+        nc.contract_sizing.atr_window                = cs_atr_window
+        nc.contract_sizing.contract_margin_multiple  = float(cs_margin_mult)
+        nc.contract_sizing.contract_ratio_margin_atr = float(cs_blend)
+        nc.contract_sizing.reweight_scope            = cs_rw_scope
+        nc.contract_sizing.reweight_gain             = float(cs_rw_gain)
+        _save(nc)
+        st.success("Saved.")
+
+st.divider()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. STRATEGY RANKING SETTINGS
+# ══════════════════════════════════════════════════════════════════════════════
+st.subheader("Strategy Ranking Settings")
+st.caption(
+    "Default ranking behaviour for the Eligibility Backtest → Strategy Screener tab.  \n"
+    "Strategies are ranked by the chosen metric and can be grouped by sector."
+)
+
+with st.form("ranking_form"):
+    _RANK_METRIC_LABELS = {
+        "rtd_oos":                "Return-to-Drawdown (OOS)",
+        "rtd_12_months":          "Return-to-Drawdown (12M)",
+        "sharpe_isoos":           "Sharpe IS+OOS",
+        "profit_since_oos_start": "Total OOS Profit ($)",
+        "profit_last_12_months":  "Last 12M Profit ($)",
+        "k_factor":               "K-Factor",
+        "ulcer_index":            "Ulcer Index (lower = better)",
+        "contracts":              "Contracts",
+    }
+    rk = config.ranking
+    col_rk1, col_rk2, col_rk3 = st.columns([2, 1, 1])
+
+    with col_rk1:
+        rk_metric = st.selectbox(
+            "Default ranking metric",
+            list(_RANK_METRIC_LABELS.keys()),
+            index=list(_RANK_METRIC_LABELS.keys()).index(rk.metric),
+            format_func=lambda k: _RANK_METRIC_LABELS[k],
+            help="Primary sort metric for the Strategy Screener.",
+        )
+    with col_rk2:
+        rk_ascending = st.checkbox(
+            "Ascending (lower = better)",
+            value=rk.ascending,
+            help="Enable for Ulcer Index and similar lower-is-better metrics.",
+        )
+        rk_elig_only = st.checkbox(
+            "Eligible strategies only",
+            value=rk.eligible_only,
+            help="Hide ineligible strategies from the ranking view.",
+        )
+    with col_rk3:
+        rk_sector = st.checkbox(
+            "Group by sector",
+            value=rk.group_by_sector,
+            help="Sort and group the ranking table by sector.",
+        )
+        rk_contracts = st.checkbox(
+            "Sub-sort by contracts",
+            value=rk.group_by_contracts,
+            help="Break ties within each sector by contract count.",
+        )
+
+    if st.form_submit_button("Save Ranking Settings", type="primary"):
+        nc = config.model_copy(deep=True)
+        nc.ranking.metric             = rk_metric
+        nc.ranking.ascending          = rk_ascending
+        nc.ranking.eligible_only      = rk_elig_only
+        nc.ranking.group_by_sector    = rk_sector
+        nc.ranking.group_by_contracts = rk_contracts
+        _save(nc)
+        st.success("Saved.")
+
+st.divider()
+
 
 # ── Saved banner ──────────────────────────────────────────────────────────────
 if _any_saved:

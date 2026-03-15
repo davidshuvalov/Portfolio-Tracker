@@ -27,6 +27,7 @@ from core.analytics.eligibility.rule_backtest import run_rule_backtest
 from core.analytics.eligibility.rules import build_rule_catalogue, evaluate_rule
 from core.config import AppConfig, EligibilityConfig
 from core.data_types import PortfolioData
+from ui.components.settings_sidebar import render_ranking_sidebar, render_contract_sizing_sidebar
 
 st.set_page_config(page_title="Eligibility Backtest", layout="wide")
 st.title("Eligibility Backtest")
@@ -145,6 +146,12 @@ with st.sidebar:
         config.save()
         st.session_state.config = config
         st.success("Saved.")
+
+    st.divider()
+    if render_ranking_sidebar(config):
+        st.rerun()
+    if render_contract_sizing_sidebar(config):
+        st.rerun()
 
 elig_config = EligibilityConfig(
     days_threshold_oos=int(days_threshold),
