@@ -48,19 +48,21 @@ if portfolio is None:
 # ── Shared: build summary with status column ──────────────────────────────────
 @st.cache_data(show_spinner=False)
 def _build_summary_with_status(_portfolio_hash, _imported_hash):
-    """Merge portfolio status into summary_metrics."""
+    """Merge portfolio status, contracts and sector into summary_metrics."""
     summary = portfolio.summary_metrics.copy() if not portfolio.summary_metrics.empty else pd.DataFrame()
     if summary.empty:
         return summary
 
-    status_map = {s.name: s.status for s in portfolio.strategies}
-    # Fill strategies missing from portfolio with empty status
+    status_map    = {s.name: s.status    for s in portfolio.strategies}
+    contracts_map = {s.name: s.contracts for s in portfolio.strategies}
+    sector_map    = {s.name: s.sector    for s in portfolio.strategies}
+
     for name in summary.index:
         if name not in status_map:
             status_map[name] = ""
-    summary["status"] = [status_map.get(n, "") for n in summary.index]
-    contracts_map = {s.name: s.contracts for s in portfolio.strategies}
-    summary["contracts"] = [contracts_map.get(n, 1) for n in summary.index]
+    summary["status"]    = [status_map.get(n, "")    for n in summary.index]
+    summary["contracts"] = [contracts_map.get(n, 1)  for n in summary.index]
+    summary["sector"]    = [sector_map.get(n, "")    for n in summary.index]
     return summary
 
 
@@ -394,6 +396,19 @@ with tab2:
 # TAB 3: Strategy Screener — "as of today"
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── Ranking-metric label map (shared between Tab 3 controls and display) ──────
+_RANK_METRIC_LABELS: dict[str, str] = {
+    "rtd_oos":                "RTD (OOS)",
+    "rtd_12_months":          "RTD (12M)",
+    "sharpe_isoos":           "Sharpe IS+OOS",
+    "profit_since_oos_start": "OOS Total ($)",
+    "profit_last_12_months":  "Last 12M ($)",
+    "k_factor":               "K-Factor",
+    "ulcer_index":            "Ulcer Index",
+    "contracts":              "Contracts",
+}
+_rk_default = config.ranking
+
 with tab3:
     st.subheader("Strategy Screener")
     st.caption(
@@ -401,10 +416,43 @@ with tab3:
         "See which strategies currently pass your chosen criteria — independently of the walk-forward backtest."
     )
 
+    # ── Ranking & filter controls ─────────────────────────────────────────────
+    with st.expander("Ranking & Display Options", expanded=True):
+        col_rk1, col_rk2, col_rk3 = st.columns([2, 1, 1])
+        with col_rk1:
+            rank_metric = st.selectbox(
+                "Rank by",
+                list(_RANK_METRIC_LABELS.keys()),
+                index=list(_RANK_METRIC_LABELS.keys()).index(_rk_default.metric),
+                format_func=lambda k: _RANK_METRIC_LABELS[k],
+                help="Metric used to rank strategies. Highest value ranked first unless 'ascending' is checked.",
+            )
+        with col_rk2:
+            rank_ascending = st.checkbox(
+                "Ascending (lower = better)",
+                value=_rk_default.ascending,
+                help="Enable for Ulcer Index and similar 'lower is better' metrics.",
+            )
+            rank_eligible_only = st.checkbox(
+                "Eligible strategies only",
+                value=_rk_default.eligible_only,
+                help="Hide strategies that fail the base eligibility checks.",
+            )
+        with col_rk3:
+            rank_group_sector = st.checkbox(
+                "Group by sector",
+                value=_rk_default.group_by_sector,
+                help="Sort and group the ranking table by sector.",
+            )
+            rank_group_contracts = st.checkbox(
+                "Sub-sort by contracts",
+                value=_rk_default.group_by_contracts,
+                help="Within each sector, break ties by contract count (descending).",
+            )
+
     # ── Rule selector ──────────────────────────────────────────────────────────
     col_sc1, col_sc2 = st.columns([3, 1])
     with col_sc1:
-        # Sensible defaults: OOS Profitable + Last 3M > 0 + Last 6M > 0
         default_screener_labels = [r.label for r in rules if r.id in (1, 6, 10)]
         screener_rule_labels = st.multiselect(
             "Rules to apply",
@@ -414,7 +462,11 @@ with tab3:
         )
     with col_sc2:
         st.write("")
-        show_all = st.checkbox("Show non-eligible strategies too", value=False)
+        show_all = st.checkbox(
+            "Show non-eligible strategies too",
+            value=False,
+            disabled=rank_eligible_only,
+        )
         only_passing = st.checkbox("Show only strategies passing all rules", value=False)
 
     screener_rules = [r for r in rules if r.label in screener_rule_labels]
@@ -432,9 +484,15 @@ with tab3:
 
     # ── Evaluate each strategy ─────────────────────────────────────────────────
     rows = []
+    bh_rows = []      # separate list for B&H strategies
+
     for name in summary.index:
         row = summary.loc[name]
-        status = str(row.get("status", ""))
+        status  = str(row.get("status", ""))
+        sector  = str(row.get("sector", "") or "")
+
+        # --- Buy & Hold detection ---
+        _is_bh = "buy" in status.lower() and "hold" in status.lower()
 
         # --- Base eligibility ---
         status_ok = status in (elig_config.status_include or ["Live"])
@@ -462,7 +520,8 @@ with tab3:
 
         base_eligible = status_ok and days_ok and dd_cap_ok
 
-        if not show_all and not base_eligible:
+        _exclude = not base_eligible and (rank_eligible_only or not show_all)
+        if _exclude and not _is_bh:
             continue
 
         # --- Get monthly PnL array for this strategy ---
@@ -484,16 +543,40 @@ with tab3:
         else:
             oos_idx = 0
 
-        # --- Expected annual ---
+        # --- Expected annual & contracts ---
         exp_annual = float(row.get("expected_annual_profit", 0) or 0)
         contracts  = int(row.get("contracts", 1) or 1)
 
-        # --- Compute display metrics ---
+        # --- Compute PnL display metrics ---
         last_1m  = _ln(m_pnl, 1)  * contracts
         last_3m  = _ln(m_pnl, 3)  * contracts
         last_6m  = _ln(m_pnl, 6)  * contracts
         last_12m = _ln(m_pnl, 12) * contracts
         oos_total = float(m_pnl[oos_idx:].sum()) * contracts if oos_idx < len(m_pnl) else 0.0
+
+        # --- Ranking metric value (from precomputed summary) ---
+        _rank_val = None
+        if rank_metric in ("profit_since_oos_start", "profit_last_12_months"):
+            # Use contract-scaled live values
+            _rank_val = oos_total if rank_metric == "profit_since_oos_start" else last_12m
+        else:
+            raw_val = row.get(rank_metric)
+            _rank_val = float(raw_val) if raw_val is not None and pd.notna(raw_val) else None
+
+        # --- B&H: capture separately, skip from main ranking ---
+        if _is_bh:
+            bh_rows.append({
+                "Strategy":     name,
+                "Symbol":       str(row.get("symbol", "") or ""),
+                "Sector":       sector,
+                "Contracts":    contracts,
+                "OOS Days":     oos_days,
+                "Last 1M ($)":  last_1m,
+                "Last 3M ($)":  last_3m,
+                "Last 12M ($)": last_12m,
+                "OOS Total ($)": oos_total,
+            })
+            continue
 
         # --- Evaluate selected rules ---
         rule_results: dict[str, bool] = {}
@@ -509,22 +592,25 @@ with tab3:
             continue
 
         entry: dict = {
-            "Strategy":    name,
-            "Status":      status,
-            "Eligible":    "✓" if base_eligible else "✗",
-            "OOS Days":    oos_days,
-            "Contracts":   contracts,
-            "Last 1M ($)":  last_1m,
-            "Last 3M ($)":  last_3m,
-            "Last 6M ($)":  last_6m,
-            "Last 12M ($)": last_12m,
+            "Strategy":      name,
+            "Sector":        sector,
+            "Status":        status,
+            "Eligible":      "✓" if base_eligible else "✗",
+            "OOS Days":      oos_days,
+            "Contracts":     contracts,
+            _RANK_METRIC_LABELS[rank_metric]: _rank_val,
+            "Last 1M ($)":   last_1m,
+            "Last 3M ($)":   last_3m,
+            "Last 6M ($)":   last_6m,
+            "Last 12M ($)":  last_12m,
             "OOS Total ($)": oos_total,
         }
         for sr in screener_rules:
             entry[sr.label] = rule_results[sr.label]
         if len(screener_rules) > 1:
             entry["Rules Passed"] = f"{n_passed}/{len(screener_rules)}"
-        entry["_passes_all"] = passes_all
+        entry["_passes_all"]  = passes_all
+        entry["_rank_val"]    = _rank_val if _rank_val is not None else (float("inf") if rank_ascending else float("-inf"))
         rows.append(entry)
 
     if not rows:
@@ -532,15 +618,28 @@ with tab3:
     else:
         df_screen = pd.DataFrame(rows)
         passes_all_col = df_screen.pop("_passes_all")
+        rank_sort_col  = df_screen.pop("_rank_val")
 
-        # Sort: passing-all first, then by OOS Total descending
-        df_screen["_sort"] = passes_all_col.astype(int)
-        df_screen = df_screen.sort_values(["_sort", "OOS Total ($)"], ascending=[False, False])
-        df_screen = df_screen.drop(columns=["_sort"]).reset_index(drop=True)
+        # ── Sort: passing-all first, then by ranking metric ───────────────────
+        df_screen["_pass_sort"] = passes_all_col.astype(int)
+        sort_cols = ["_pass_sort"]
+        sort_asc  = [False]
+        if rank_group_sector:
+            sort_cols.insert(0, "Sector")
+            sort_asc.insert(0, True)
+        sort_cols.append("_rank_col")
+        sort_asc.append(rank_ascending)
+        if rank_group_contracts:
+            sort_cols.append("Contracts")
+            sort_asc.append(False)
+
+        df_screen["_rank_col"] = rank_sort_col.values
+        df_screen = df_screen.sort_values(sort_cols, ascending=sort_asc)
+        df_screen = df_screen.drop(columns=["_pass_sort", "_rank_col"]).reset_index(drop=True)
 
         # ── Summary banner ─────────────────────────────────────────────────────
         n_elig = (df_screen["Eligible"] == "✓").sum()
-        n_pass = passes_all_col.sum() if screener_rules else n_elig
+        n_pass = int(passes_all_col.reindex(df_screen.index, fill_value=False).sum()) if screener_rules else n_elig
         rule_summary = (
             f"**{n_pass}** of **{n_elig}** eligible strategies pass all selected rules."
             if screener_rules
@@ -573,7 +672,6 @@ with tab3:
                         pass
             return styles
 
-        # Format boolean rule columns as ✓/✗ for display
         display_df = df_screen.copy()
         for col in rule_col_names:
             display_df[col] = display_df[col].map({True: "✓", False: "✗"})
@@ -585,24 +683,66 @@ with tab3:
         styled_screen = display_df.style.apply(_style_screener, axis=None)
         st.dataframe(styled_screen, hide_index=True, use_container_width=True, height=550)
 
-        # ── OOS Total bar chart ────────────────────────────────────────────────
+        # ── OOS Total bar chart (coloured by rank metric, grouped by sector) ──
         if not df_screen.empty:
-            chart_df = df_screen[["Strategy", "OOS Total ($)"]].copy()
-            chart_df["pass"] = passes_all_col.values if len(passes_all_col) == len(chart_df) else True
+            chart_df = df_screen[["Strategy", "Sector", "OOS Total ($)"]].copy()
+            chart_df["pass"] = passes_all_col.reindex(df_screen.index, fill_value=False).values
             chart_df["color"] = chart_df["pass"].map({True: "Passes All Rules", False: "Fails a Rule"})
+
+            _color_col = "Sector" if rank_group_sector else "color"
             fig_sc = px.bar(
                 chart_df.sort_values("OOS Total ($)", ascending=True),
                 x="OOS Total ($)",
                 y="Strategy",
                 orientation="h",
-                color="color",
-                color_discrete_map={"Passes All Rules": "#4CAF50", "Fails a Rule": "#EF9A9A"},
-                title="OOS Total PnL per Strategy (current contracts)",
+                color=_color_col,
+                title=f"OOS Total PnL per Strategy — ranked by {_RANK_METRIC_LABELS[rank_metric]}",
+                **({"color_discrete_map": {"Passes All Rules": "#4CAF50", "Fails a Rule": "#EF9A9A"}}
+                   if not rank_group_sector else {}),
             )
             fig_sc.add_vline(x=0, line_color="black", line_width=1)
             fig_sc.update_layout(
                 height=max(300, len(chart_df) * 28 + 100),
                 coloraxis_showscale=False,
-                legend_title_text="",
+                legend_title_text="Sector" if rank_group_sector else "",
             )
             st.plotly_chart(fig_sc, use_container_width=True)
+
+    # ── Buy & Hold panel ──────────────────────────────────────────────────────
+    with st.expander(f"Buy & Hold Strategies ({len(bh_rows)} found)", expanded=bool(bh_rows)):
+        if not bh_rows:
+            st.caption(
+                "No Buy & Hold strategies are currently loaded. "
+                "Add B&H strategies in the Portfolio page and set status to 'Buy & Hold'."
+            )
+        else:
+            st.caption(
+                "B&H strategies are used as benchmarks only — excluded from eligibility "
+                "scoring and rule evaluation."
+            )
+            df_bh = pd.DataFrame(bh_rows)
+            pnl_bh_cols = ["Last 1M ($)", "Last 3M ($)", "Last 12M ($)", "OOS Total ($)"]
+
+            def _style_bh(df: pd.DataFrame):
+                styles = pd.DataFrame("", index=df.index, columns=df.columns)
+                for col in pnl_bh_cols:
+                    if col not in df.columns:
+                        continue
+                    for idx, val in df[col].items():
+                        try:
+                            styles.at[idx, col] = (
+                                "color: #2e7d32" if float(val) >= 0 else "color: #c62828"
+                            )
+                        except Exception:
+                            pass
+                return styles
+
+            display_bh = df_bh.copy()
+            for col in pnl_bh_cols:
+                display_bh[col] = display_bh[col].apply(
+                    lambda v: f"${v:,.0f}" if isinstance(v, (int, float)) and not np.isnan(v) else v
+                )
+            st.dataframe(
+                display_bh.style.apply(_style_bh, axis=None),
+                hide_index=True, use_container_width=True,
+            )

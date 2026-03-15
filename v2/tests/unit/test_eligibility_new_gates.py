@@ -214,8 +214,8 @@ class TestPortfolioContractConfig:
         assert cfg.contract_ratio_margin_atr == pytest.approx(0.50)
         assert cfg.contract_size_pct_equity == pytest.approx(0.01)
         assert cfg.atr_window == "ATR Last 3 Months"
-        assert cfg.reweight_on_atr is True
-        assert cfg.reweight_index_contracts_only is True
+        assert cfg.reweight_scope == "All"
+        assert cfg.reweight_gain == pytest.approx(1.0)
 
     def test_appconfig_has_contract_sizing_field(self):
         cfg = AppConfig()
@@ -237,11 +237,16 @@ class TestPortfolioContractConfig:
         cfg.contract_sizing.starting_equity = 500_000.0
         cfg.contract_sizing.cease_trading_threshold = 0.30
         cfg.contract_sizing.atr_window = "ATR Last 6 Months"
+        cfg.contract_sizing.reweight_scope = "Index Only"
+        cfg.contract_sizing.reweight_gain  = 1.25
         cfg.monte_carlo.output_samples = 100
         cfg.monte_carlo.solve_for_ror = True
         cfg.eligibility.exclude_buy_and_hold = True
         cfg.eligibility.exclude_previously_quit = True
         cfg.eligibility.backtest_data_scope = "IS+OOS"
+        cfg.ranking.metric = "sharpe_isoos"
+        cfg.ranking.group_by_sector = False
+        cfg.ranking.eligible_only = False
 
         # Dump and reload via raw YAML
         data = cfg.model_dump(mode="json")
@@ -252,8 +257,13 @@ class TestPortfolioContractConfig:
 
         assert cfg2.contract_sizing.starting_equity == pytest.approx(500_000.0)
         assert cfg2.contract_sizing.atr_window == "ATR Last 6 Months"
+        assert cfg2.contract_sizing.reweight_scope == "Index Only"
+        assert cfg2.contract_sizing.reweight_gain  == pytest.approx(1.25)
         assert cfg2.monte_carlo.output_samples == 100
         assert cfg2.monte_carlo.solve_for_ror is True
         assert cfg2.eligibility.exclude_buy_and_hold is True
         assert cfg2.eligibility.exclude_previously_quit is True
         assert cfg2.eligibility.backtest_data_scope == "IS+OOS"
+        assert cfg2.ranking.metric == "sharpe_isoos"
+        assert cfg2.ranking.group_by_sector is False
+        assert cfg2.ranking.eligible_only is False

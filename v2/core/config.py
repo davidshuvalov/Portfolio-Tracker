@@ -49,8 +49,29 @@ class PortfolioContractConfig(BaseModel):
         "ATR Last 12 Months",
     ] = "ATR Last 3 Months"
     # Portfolio Backtest Historical Sizing
-    reweight_on_atr: bool = True
-    reweight_index_contracts_only: bool = True
+    reweight_scope: Literal["None", "All", "Index Only"] = "All"
+    reweight_gain: float = 1.0          # Scale factor applied after ATR reweighting (1.0 = no gain)
+
+
+class StrategyRankingConfig(BaseModel):
+    """
+    Controls how strategies are ranked and displayed in the screener.
+    Mirrors VBA Strategy Selection / Ranking tab behaviour.
+    """
+    metric: Literal[
+        "rtd_oos",
+        "rtd_12_months",
+        "sharpe_isoos",
+        "profit_since_oos_start",
+        "profit_last_12_months",
+        "k_factor",
+        "ulcer_index",
+        "contracts",
+    ] = "rtd_oos"
+    ascending: bool = False             # True for metrics where lower = better (ulcer_index)
+    eligible_only: bool = True          # Show only base-eligible strategies in ranking view
+    group_by_sector: bool = True        # Group ranked list by sector
+    group_by_contracts: bool = False    # Sub-sort by contracts within each rank group
 
 
 class IncubationConfig(BaseModel):
@@ -143,6 +164,7 @@ class AppConfig(BaseModel):
     monte_carlo: MCConfig = Field(default_factory=MCConfig)
     eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
     contract_sizing: PortfolioContractConfig = Field(default_factory=PortfolioContractConfig)
+    ranking: StrategyRankingConfig = Field(default_factory=StrategyRankingConfig)
     corr_normal_threshold: float = 0.70
     corr_negative_threshold: float = 0.30
     corr_drawdown_threshold: float = 0.70

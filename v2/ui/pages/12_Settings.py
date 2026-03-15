@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from core.config import AppConfig
+from core.config import AppConfig, StrategyRankingConfig
 from core.reporting.settings_io import (
     default_export_filename,
     export_settings,
@@ -383,17 +383,63 @@ with st.form("preferences_form"):
         )
 
     st.subheader("Portfolio Backtest Historical Sizing")
-    reweight_on_atr = st.checkbox(
-        "Re-weight backtest contracts on historical ATR",
-        value=cs.reweight_on_atr,
-        help="Scale historical contract counts by current_ATR / historical_ATR at each date",
-    )
-    reweight_index_only = st.checkbox(
-        "Re-weight index contracts only",
-        value=cs.reweight_index_contracts_only,
-        disabled=not reweight_on_atr,
-        help="Only apply ATR reweighting to index/benchmark strategies",
-    )
+    col_rw1, col_rw2 = st.columns(2)
+    with col_rw1:
+        reweight_scope = st.selectbox(
+            "ATR reweighting scope",
+            ["None", "All", "Index Only"],
+            index=["None", "All", "Index Only"].index(cs.reweight_scope),
+            help=(
+                "None = no ATR scaling. "
+                "All = scale every strategy's historical contracts by current_ATR / historical_ATR. "
+                "Index Only = restrict scaling to index/benchmark contracts."
+            ),
+        )
+    with col_rw2:
+        reweight_gain = st.slider(
+            "Reweight gain (multiplier)",
+            min_value=0.5, max_value=3.0,
+            value=float(cs.reweight_gain), step=0.05,
+            disabled=(reweight_scope == "None"),
+            help="Scale factor applied on top of ATR reweighting. 1.0 = no additional gain.",
+        )
+
+    # ── Buy & Hold strategies ─────────────────────────────────────────────────
+    _bh_strats = []
+    if portfolio is not None:
+        _bh_strats = [
+            s for s in portfolio.strategies
+            if "buy" in s.status.lower() and "hold" in s.status.lower()
+        ]
+    elif imported is not None:
+        _bh_strats = [
+            s for s in imported.strategies
+            if "buy" in s.status.lower() and "hold" in s.status.lower()
+        ]
+
+    with st.expander(
+        f"Buy & Hold Strategies ({len(_bh_strats)} loaded)",
+        expanded=bool(_bh_strats),
+    ):
+        if not _bh_strats:
+            st.caption("No Buy & Hold strategies found in the current portfolio/imported data.")
+        else:
+            import pandas as pd
+            _bh_rows = [
+                {
+                    "Name":     s.name,
+                    "Symbol":   s.symbol,
+                    "Sector":   s.sector,
+                    "Contracts": s.contracts,
+                    "OOS Start": str(s.oos_start or "—"),
+                }
+                for s in _bh_strats
+            ]
+            st.dataframe(pd.DataFrame(_bh_rows), hide_index=True, use_container_width=True)
+            st.caption(
+                "B&H strategies are benchmarks only — excluded from eligibility scoring "
+                "when 'Exclude Buy & Hold' is enabled in Eligibility Settings."
+            )
 
     st.subheader("Monte Carlo — Additional Settings")
     mc_output_samples = st.number_input(
@@ -408,6 +454,49 @@ with st.form("preferences_form"):
         format="%.1%%",
         help="Trim top-N% best trading days to stress-test the distribution",
     )
+
+    st.subheader("Strategy Ranking defaults")
+    _RANK_METRICS = {
+        "rtd_oos":                "Return-to-Drawdown (OOS)",
+        "rtd_12_months":          "Return-to-Drawdown (12M)",
+        "sharpe_isoos":           "Sharpe IS+OOS",
+        "profit_since_oos_start": "Total OOS Profit ($)",
+        "profit_last_12_months":  "Last 12M Profit ($)",
+        "k_factor":               "K-Factor",
+        "ulcer_index":            "Ulcer Index (lower = better)",
+        "contracts":              "Contracts",
+    }
+    rk = config.ranking
+    rank_metric = st.selectbox(
+        "Default ranking metric",
+        list(_RANK_METRICS.keys()),
+        index=list(_RANK_METRICS.keys()).index(rk.metric),
+        format_func=lambda k: _RANK_METRICS[k],
+        help="Metric used to rank strategies in the Strategy Screener.",
+    )
+    rank_ascending = st.checkbox(
+        "Rank ascending (lower = better)",
+        value=rk.ascending,
+        help="Enable for Ulcer Index or other 'lower is better' metrics.",
+    )
+    rank_eligible_only = st.checkbox(
+        "Ranking: eligible strategies only",
+        value=rk.eligible_only,
+        help="When on, only base-eligible strategies appear in the ranking view.",
+    )
+    col_rk1, col_rk2 = st.columns(2)
+    with col_rk1:
+        rank_group_sector = st.checkbox(
+            "Group ranking by sector",
+            value=rk.group_by_sector,
+            help="Display strategies grouped under their sector header.",
+        )
+    with col_rk2:
+        rank_group_contracts = st.checkbox(
+            "Sub-sort by contracts within sector",
+            value=rk.group_by_contracts,
+            help="Within each sector group, break ties by contract count (descending).",
+        )
 
     st.subheader("Eligibility defaults")
     elig_status = st.multiselect(
@@ -472,8 +561,8 @@ with st.form("preferences_form"):
         config.contract_sizing.contract_margin_multiple  = float(contract_margin_multiple)
         config.contract_sizing.contract_ratio_margin_atr = float(contract_ratio)
         config.contract_sizing.contract_size_pct_equity  = float(contract_pct_equity)
-        config.contract_sizing.reweight_on_atr           = reweight_on_atr
-        config.contract_sizing.reweight_index_contracts_only = reweight_index_only
+        config.contract_sizing.reweight_scope             = reweight_scope
+        config.contract_sizing.reweight_gain              = float(reweight_gain)
 
         # Monte Carlo
         config.monte_carlo.simulations      = int(mc_sims)
@@ -483,6 +572,13 @@ with st.form("preferences_form"):
         config.monte_carlo.solve_for_ror    = solve_for_ror
         config.monte_carlo.output_samples   = int(mc_output_samples)
         config.monte_carlo.remove_best_pct  = float(mc_remove_best)
+
+        # Strategy Ranking
+        config.ranking.metric            = rank_metric
+        config.ranking.ascending         = rank_ascending
+        config.ranking.eligible_only     = rank_eligible_only
+        config.ranking.group_by_sector   = rank_group_sector
+        config.ranking.group_by_contracts = rank_group_contracts
 
         # Eligibility
         config.eligibility.status_include      = elig_status if elig_status else ["Live"]
