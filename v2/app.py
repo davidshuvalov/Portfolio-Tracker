@@ -4,7 +4,8 @@ Portfolio Tracker v2 — Streamlit entrypoint.
 Handles:
 - Session state initialisation
 - License gate (checks MultiWalk DLL; shows customer-ID entry if not configured)
-- Sidebar with data status and nav hints
+- Home page with order-of-operations workflow guide
+- Sidebar with workflow progress status
 """
 
 import streamlit as st
@@ -85,13 +86,14 @@ def main():
     if not _check_license():
         return
 
-    config: AppConfig = st.session_state.config
+    from ui.workflow import step_status, render_workflow_sidebar
 
-    # Sidebar: data status
+    # ── Sidebar ───────────────────────────────────────────────────────────────
     with st.sidebar:
         st.title("Portfolio Tracker")
         st.caption("v2.0.0")
         st.divider()
+        render_workflow_sidebar()
 
         if st.session_state.imported_data is not None:
             data = st.session_state.imported_data
@@ -99,37 +101,99 @@ def main():
             start, end = data.date_range
             st.metric("Strategies loaded", n_strats)
             st.caption(f"{start} → {end}")
-        else:
-            st.info("No data loaded. Go to **Import** to get started.")
 
-        st.divider()
-        st.caption(f"{len(config.folders)} base folder(s) configured")
-
-    # Home page content
+    # ── Home page ─────────────────────────────────────────────────────────────
     st.title("Portfolio Tracker v2")
-    st.markdown("""
-    Welcome. Use the pages in the sidebar to:
+    st.markdown("Follow these four steps to get started. Complete them in order.")
 
-    | Page | Description |
-    |------|-------------|
-    | **Import** | Scan MultiWalk folders and load strategy data |
-    | **Strategies** | Configure strategy status, sector, symbol, contracts |
-    | **Portfolio** | View aggregated portfolio metrics |
-    | **Monte Carlo** | Run MC simulations with risk-of-ruin targeting |
-    | **Correlations** | Analyse strategy correlations (3 modes) |
-    | **Diversification** | Find optimal strategy combinations |
-    | **Leave One Out** | Portfolio sensitivity analysis |
-    | **Backtest** | Historical period performance |
-    | **Eligibility Backtest** | Walk-forward portfolio construction rules |
-    | **Margin Tracking** | Contract margin by symbol and sector |
-    | **Position Check** | Current live positions |
-    | **Settings** | License, export/import settings, Excel export |
-    """)
+    status = step_status()
 
-    if not config.folders:
-        st.info(
-            "**Getting started:** Go to the **Import** page to add your "
-            "MultiWalk base folders."
+    # Determine the current active step (first incomplete)
+    _keys = ["folders", "data", "strategies", "portfolio"]
+    active_step = next((i for i, k in enumerate(_keys) if not status[k]), len(_keys))
+
+    steps = [
+        {
+            "key": "folders",
+            "num": 1,
+            "title": "Add Folders",
+            "desc": "Tell the app where your MultiWalk strategy folders live on disk.",
+            "action": "Open Import",
+            "page": "ui/pages/01_Import.py",
+        },
+        {
+            "key": "data",
+            "num": 2,
+            "title": "Import Data",
+            "desc": "Scan your folders and load all strategy EquityData CSVs into memory.",
+            "action": "Go to Import",
+            "page": "ui/pages/01_Import.py",
+        },
+        {
+            "key": "strategies",
+            "num": 3,
+            "title": "Review Strategies",
+            "desc": "Set each strategy's status (Live/Paper/Retired), contracts, symbol, and sector.",
+            "action": "Open Strategies",
+            "page": "ui/pages/02_Strategies.py",
+        },
+        {
+            "key": "portfolio",
+            "num": 4,
+            "title": "Build Portfolio",
+            "desc": "Aggregate all Live strategies and view combined portfolio metrics.",
+            "action": "Open Portfolio",
+            "page": "ui/pages/03_Portfolio.py",
+        },
+    ]
+
+    cols = st.columns(4)
+    for i, (col, step) in enumerate(zip(cols, steps)):
+        done = status[step["key"]]
+        is_active = i == active_step
+        with col:
+            if done:
+                st.success(f"**Step {step['num']} — {step['title']}** ✅")
+            elif is_active:
+                st.info(f"**Step {step['num']} — {step['title']}**")
+            else:
+                st.markdown(
+                    f"<div style='padding:1em;border:1px solid #444;border-radius:6px;opacity:0.5'>"
+                    f"<b>Step {step['num']} — {step['title']}</b></div>",
+                    unsafe_allow_html=True,
+                )
+                st.write("")  # spacing
+                continue
+
+            st.caption(step["desc"])
+            st.page_link(step["page"], label=step["action"])
+
+    st.divider()
+
+    # Analytics section — only show once all 4 steps are done
+    if active_step == len(_keys):
+        st.markdown("### Analytics")
+        st.markdown("All setup steps complete. Explore your portfolio:")
+
+        analytics = [
+            ("Monte Carlo", "ui/pages/04_Monte_Carlo.py", "Risk-of-ruin simulation"),
+            ("Correlations", "ui/pages/05_Correlations.py", "Strategy correlation analysis"),
+            ("Diversification", "ui/pages/06_Diversification.py", "Sector & symbol breakdown"),
+            ("Leave One Out", "ui/pages/07_Leave_One_Out.py", "Portfolio sensitivity"),
+            ("Backtest", "ui/pages/08_Backtest.py", "Historical period performance"),
+            ("Eligibility Backtest", "ui/pages/09_Eligibility_Backtest.py", "Walk-forward rules"),
+            ("Margin Tracking", "ui/pages/10_Margin_Tracking.py", "Daily margin by symbol"),
+            ("Position Check", "ui/pages/11_Position_Check.py", "Current live positions"),
+        ]
+
+        a_cols = st.columns(4)
+        for j, (label, page, desc) in enumerate(analytics):
+            with a_cols[j % 4]:
+                st.page_link(page, label=f"**{label}**")
+                st.caption(desc)
+    else:
+        st.markdown(
+            f"_Complete step {active_step + 1} above to continue._"
         )
 
 

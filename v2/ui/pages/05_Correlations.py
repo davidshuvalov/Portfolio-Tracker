@@ -36,11 +36,13 @@ portfolio: PortfolioData | None = st.session_state.get("portfolio_data")
 imported = st.session_state.get("imported_data")
 
 if imported is None:
-    st.info("No data loaded. Go to **Import** first.")
+    st.info("No data loaded yet.")
+    st.page_link("ui/pages/01_Import.py", label="Go to Import →")
     st.stop()
 
 if portfolio is None:
-    st.info("Portfolio not built. Go to **Portfolio** page first.")
+    st.info("Portfolio not built yet.")
+    st.page_link("ui/pages/03_Portfolio.py", label="Go to Portfolio →")
     st.stop()
 
 if len(portfolio.strategies) < 2:

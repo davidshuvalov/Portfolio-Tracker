@@ -13,7 +13,17 @@ from core.ingestion.csv_importer import import_all
 from core.portfolio.strategies import load_strategies, save_strategies
 
 st.set_page_config(page_title="Import", layout="wide")
+
+# ── Sidebar workflow status ────────────────────────────────────────────────────
+try:
+    from ui.workflow import render_workflow_sidebar
+    with st.sidebar:
+        render_workflow_sidebar()
+except Exception:
+    pass
+
 st.title("Import")
+st.caption("Steps 1 & 2 of 4 — add folders, then scan and load strategy CSV data.")
 
 config: AppConfig = st.session_state.get("config", AppConfig.load())
 
@@ -71,6 +81,10 @@ with st.form("add_folder_form", clear_on_submit=True):
             st.session_state.config = config
             st.success(f"Added: {p}")
             st.rerun()
+
+# ── Step 1 completion callout ──────────────────────────────────
+if config.folders:
+    st.success("**Step 1 complete** — folders configured. Now scan and import data below.")
 
 st.divider()
 
@@ -224,7 +238,8 @@ if import_clicked and st.session_state.get("scan_result"):
         col3.metric("Date Range", f"{start} → {end}")
         col4.metric("Trades", f"{n_trades:,}")
 
-        st.success("Data imported successfully. Proceed to **Portfolio** to view metrics.")
+        st.success("**Step 2 complete** — data imported successfully.")
+        st.page_link("ui/pages/02_Strategies.py", label="Next: Review Strategies →")
 
     except Exception as e:
         st.error(f"Import failed: {e}")
@@ -240,3 +255,4 @@ if st.session_state.get("imported_data") and not import_clicked:
         f"{len(data.daily_m2m):,} trading days ({start} → {end}). "
         f"Click **Import Data** to reload."
     )
+    st.page_link("ui/pages/02_Strategies.py", label="Next: Review Strategies →")

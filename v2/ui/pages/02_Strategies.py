@@ -11,12 +11,17 @@ from pathlib import Path
 from core.portfolio.strategies import load_strategies, save_strategies
 
 st.set_page_config(page_title="Strategies", layout="wide")
-st.title("Strategies")
 
-st.caption(
-    "Configure strategy status, contracts, and metadata. "
-    "Changes are saved automatically. Run an **Import** first to populate new strategies."
-)
+# ── Sidebar workflow status ────────────────────────────────────────────────────
+try:
+    from ui.workflow import render_workflow_sidebar
+    with st.sidebar:
+        render_workflow_sidebar()
+except Exception:
+    pass
+
+st.title("Strategies")
+st.caption("Step 3 of 4 — set each strategy's status, contracts, symbol, and sector. Mark active strategies as Live.")
 
 
 # ── Load strategies ────────────────────────────────────────────────────────────
@@ -24,10 +29,8 @@ st.caption(
 strategies = load_strategies()
 
 if not strategies:
-    st.info(
-        "No strategies configured yet. "
-        "Go to **Import** → Scan Folders to discover your MultiWalk strategies."
-    )
+    st.info("No strategies found yet. Scan your folders on the Import page first.")
+    st.page_link("ui/pages/01_Import.py", label="Go to Import →")
     st.stop()
 
 
@@ -159,7 +162,10 @@ if st.button("Save Changes", type="primary"):
             merged.append(s)
 
     save_strategies(merged)
+    live_count = sum(1 for r in edited_rows if r.get("status") == "Live")
     st.success(f"Saved {len(edited_rows)} strategy records.")
+    if live_count:
+        st.page_link("ui/pages/03_Portfolio.py", label="Next: Build Portfolio →")
     st.rerun()
 
 

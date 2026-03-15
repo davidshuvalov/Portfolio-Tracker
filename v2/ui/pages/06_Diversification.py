@@ -32,7 +32,8 @@ config: AppConfig = st.session_state.get("config", AppConfig.load())
 portfolio: PortfolioData | None = st.session_state.get("portfolio_data")
 
 if portfolio is None:
-    st.info("Portfolio not built. Go to **Portfolio** page first.")
+    st.info("Portfolio not built yet.")
+    st.page_link("ui/pages/03_Portfolio.py", label="Go to Portfolio →")
     st.stop()
 
 if not portfolio.strategies:

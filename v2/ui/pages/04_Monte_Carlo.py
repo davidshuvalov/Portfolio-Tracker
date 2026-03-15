@@ -28,7 +28,8 @@ imported = st.session_state.get("imported_data")
 portfolio: PortfolioData | None = st.session_state.get("portfolio_data")
 
 if imported is None:
-    st.info("No data loaded. Go to **Import** first.")
+    st.info("No data loaded yet.")
+    st.page_link("ui/pages/01_Import.py", label="Go to Import →")
     st.stop()
 
 # ── Sidebar config ────────────────────────────────────────────────────────────

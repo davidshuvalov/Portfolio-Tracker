@@ -27,7 +27,17 @@ from core.portfolio.aggregator import (
 from core.portfolio.summary import compute_summary
 
 st.set_page_config(page_title="Portfolio", layout="wide")
+
+# ── Sidebar workflow status ────────────────────────────────────────────────────
+try:
+    from ui.workflow import render_workflow_sidebar
+    with st.sidebar:
+        render_workflow_sidebar()
+except Exception:
+    pass
+
 st.title("Portfolio")
+st.caption("Step 4 of 4 — build the portfolio to aggregate all Live strategies.")
 
 config: AppConfig = st.session_state.get("config", AppConfig.load())
 imported = st.session_state.get("imported_data")
@@ -36,11 +46,13 @@ strategies_config = load_strategies()
 # ── Guard: require imported data ──────────────────────────────────────────────
 
 if imported is None:
-    st.info("No data loaded. Go to **Import** to load strategy data first.")
+    st.info("No data loaded yet.")
+    st.page_link("ui/pages/01_Import.py", label="Go to Import →")
     st.stop()
 
 if not strategies_config:
-    st.info("No strategies configured. Go to **Strategies** to set up your strategies.")
+    st.info("No strategies configured yet.")
+    st.page_link("ui/pages/02_Strategies.py", label="Go to Strategies →")
     st.stop()
 
 # ── Check for cached portfolio ────────────────────────────────────────────────
@@ -91,10 +103,8 @@ with col_status:
         )
 
 if portfolio is None or not portfolio.strategies:
-    st.warning(
-        "No live strategies in portfolio. "
-        "Check that at least one strategy has status **Live** on the Strategies page."
-    )
+    st.warning("No live strategies in portfolio.")
+    st.page_link("ui/pages/02_Strategies.py", label="Go to Strategies to mark strategies as Live →")
     st.stop()
 
 
@@ -314,3 +324,22 @@ if not monthly.empty and "Total" in monthly.columns:
     annual_df = annual.reset_index()
     annual_df.columns = ["Year", "Total P&L ($)"]
     st.dataframe(annual_df, use_container_width=True, hide_index=True)
+
+# ── Analytics navigation ────────────────────────────────────────────────────────
+
+st.divider()
+st.markdown("**Portfolio built. Explore analytics:**")
+_a_cols = st.columns(4)
+_analytics = [
+    ("Monte Carlo", "ui/pages/04_Monte_Carlo.py"),
+    ("Correlations", "ui/pages/05_Correlations.py"),
+    ("Diversification", "ui/pages/06_Diversification.py"),
+    ("Leave One Out", "ui/pages/07_Leave_One_Out.py"),
+    ("Backtest", "ui/pages/08_Backtest.py"),
+    ("Eligibility Backtest", "ui/pages/09_Eligibility_Backtest.py"),
+    ("Margin Tracking", "ui/pages/10_Margin_Tracking.py"),
+    ("Position Check", "ui/pages/11_Position_Check.py"),
+]
+for _i, (_label, _page) in enumerate(_analytics):
+    with _a_cols[_i % 4]:
+        st.page_link(_page, label=_label)
