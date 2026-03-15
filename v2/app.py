@@ -350,6 +350,7 @@ def main():
             st.Page("ui/pages/_11_Position_Check.py", title="Position Check"),
             st.Page("ui/pages/12_Settings.py", title="Settings"),
             st.Page("ui/pages/00_Migrate.py", title="Migrate"),
+            st.Page("ui/pages/_Strategy_Detail.py", title="Strategy Detail"),
         ],
         position="hidden",
     )
