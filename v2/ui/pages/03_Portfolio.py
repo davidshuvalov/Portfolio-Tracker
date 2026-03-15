@@ -72,11 +72,17 @@ if _needs_rebuild:
         "Click **Build Portfolio** to continue."
     )
 
-col_rebuild, col_status = st.columns([1, 5])
+col_rebuild, col_snap, col_status = st.columns([1, 1, 4])
 with col_rebuild:
     if st.button("Build Portfolio" if _needs_rebuild else "Rebuild Portfolio",
                  type="primary" if _needs_rebuild else "secondary"):
         _needs_rebuild = True
+with col_snap:
+    _port_snap_btn = st.button(
+        "📸 Set Live Portfolio",
+        help="Save the current Live portfolio as a snapshot and show trading instructions vs the previous baseline.",
+        key="port_set_live_btn",
+    )
 
 if _needs_rebuild:
     with st.spinner("Computing portfolio metrics..."):
@@ -114,6 +120,91 @@ with col_status:
         st.caption(
             f"Portfolio: **{len(portfolio.strategies)}** live strategies active"
         )
+
+# ── Set Live Portfolio handler ─────────────────────────────────────────────────
+if _port_snap_btn:
+    from core.portfolio.snapshot import (
+        compare_portfolios as _port_cmp,
+        list_snapshots as _port_list_snaps,
+        load_snapshot as _port_load_snap,
+        save_snapshot as _port_save_snap,
+    )
+    from datetime import datetime as _port_dt
+    _port_all = load_strategies()
+    _port_snaps = _port_list_snaps()
+    _port_prev = _port_load_snap(_port_snaps[0]["filename"]) if _port_snaps else []
+    _port_result = _port_cmp(_port_all, _port_prev, live_status=config.portfolio.live_status)
+    _port_label = _port_dt.now().strftime("%Y-%m-%d %H:%M")
+    _port_save_snap(_port_all, _port_label)
+    _port_live_n = sum(1 for s in _port_all if s.get("status") == config.portfolio.live_status)
+    st.success(f"📸 Live portfolio saved — {_port_live_n} strategies ({_port_label})")
+
+    if _port_result.has_changes:
+        st.subheader("Trading Instructions vs previous baseline")
+        if _port_result.new_strategies:
+            st.markdown("#### ✅ Enable in trading system")
+            for _ns in _port_result.new_strategies:
+                _c = _ns.get("contracts", 1)
+                st.markdown(f"- **{_ns['name']}**  ({_ns.get('symbol','')}, {_c} contract{'s' if _c != 1 else ''})")
+        if _port_result.removed_strategies:
+            st.markdown("#### ❌ Disable in trading system")
+            for _rs in _port_result.removed_strategies:
+                st.markdown(f"- **{_rs['name']}**  ({_rs.get('symbol','')})")
+        if _port_result.contract_changes:
+            st.markdown("#### 🔄 Adjust contracts")
+            for _chg in _port_result.contract_changes:
+                _arrow = "▲" if _chg["delta"] > 0 else "▼"
+                st.markdown(
+                    f"- **{_chg['name']}** ({_chg['symbol']})  "
+                    f"{_chg['old_contracts']} → **{_chg['new_contracts']}** {_arrow}"
+                )
+    elif _port_snaps:
+        st.info("No changes vs previous baseline.")
+    else:
+        st.info("First baseline saved.")
+
+# ── Quick portfolio add/remove ─────────────────────────────────────────────────
+_live_status = config.portfolio.live_status
+_all_strats_port = load_strategies()
+_live_names_port = [s["name"] for s in _all_strats_port if s.get("status") == _live_status]
+_non_live_names_port = [s["name"] for s in _all_strats_port if s.get("status") != _live_status]
+
+with st.expander("➕ / ➖ Modify Portfolio Composition", expanded=False):
+    _pc1, _pc2 = st.columns(2)
+    with _pc1:
+        st.markdown("**Add to portfolio**")
+        _port_to_add = st.multiselect(
+            "Add strategies as Live",
+            options=_non_live_names_port,
+            key="port_quick_add",
+            placeholder="Search…",
+        )
+        if st.button("➕ Add selected", key="port_add_btn", disabled=not _port_to_add):
+            _updated = [
+                dict(s, status=_live_status) if s.get("name") in _port_to_add else s
+                for s in _all_strats_port
+            ]
+            save_strategies(_updated)
+            st.session_state.portfolio_data = None
+            st.success(f"Added {len(_port_to_add)} strategies. Rebuild portfolio to apply.")
+            st.rerun()
+    with _pc2:
+        st.markdown("**Remove from portfolio**")
+        _port_to_remove = st.multiselect(
+            "Remove Live strategies",
+            options=_live_names_port,
+            key="port_quick_remove",
+            placeholder="Search…",
+        )
+        if st.button("➖ Remove selected", key="port_remove_btn", disabled=not _port_to_remove):
+            _updated = [
+                dict(s, status="Pass") if s.get("name") in _port_to_remove else s
+                for s in _all_strats_port
+            ]
+            save_strategies(_updated)
+            st.session_state.portfolio_data = None
+            st.success(f"Removed {len(_port_to_remove)} strategies (set to Pass). Rebuild portfolio to apply.")
+            st.rerun()
 
 if portfolio and portfolio.strategies:
     with st.sidebar:

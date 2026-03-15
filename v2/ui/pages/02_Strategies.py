@@ -289,9 +289,17 @@ with st.sidebar:
 # Shows per-strategy WF metrics for ALL strategies (not filtered to Live)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_summary:
+    from core.portfolio.snapshot import (
+        compare_portfolios as _cmp_portfolios,
+        list_snapshots as _list_snaps,
+        load_snapshot as _load_snap,
+        save_snapshot as _save_snap,
+    )
+
     st.caption(
-        "Per-strategy performance from Walkforward data — all strategies regardless of status. "
-        "Click **Compute / Refresh** after each import to update."
+        "All strategies with performance metrics. "
+        "Tick **In Portfolio** to include in the Live portfolio. "
+        "Click **Compute / Refresh** after each import to update metrics."
     )
 
     _imported = st.session_state.get("imported_data")
@@ -301,15 +309,23 @@ with tab_summary:
         st.page_link("ui/pages/01_Import.py", label="→ Go to Import")
     else:
         _SUMMARY_KEY = "all_strategies_summary_cache"
+        _LIVE_STATUS = config.portfolio.live_status  # typically "Live"
 
-        _cb1, _cb2, _ = st.columns([1, 1, 6])
-        with _cb1:
+        # ── Toolbar row ────────────────────────────────────────────────────────
+        _tb1, _tb2, _tb3, _tb4 = st.columns([1, 1, 1, 4])
+        with _tb1:
             _do_compute = st.button("Compute / Refresh", type="primary", key="compute_summary_btn")
-        with _cb2:
+        with _tb2:
             if st.session_state.get(_SUMMARY_KEY) is not None:
                 if st.button("Clear Cache", key="clear_summary_btn"):
                     st.session_state[_SUMMARY_KEY] = None
                     st.rerun()
+        with _tb3:
+            _snap_btn = st.button(
+                "📸 Set Live Portfolio",
+                key="set_live_portfolio_btn",
+                help="Save the current Live strategies as a snapshot and show trading instructions vs the previous baseline.",
+            )
 
         if _do_compute:
             from core.config import AppConfig as _AC
@@ -336,21 +352,126 @@ with tab_summary:
                 )
             st.success(f"Summary computed for {len(st.session_state[_SUMMARY_KEY])} strategies.")
 
+        # ── Set Live Portfolio handler ──────────────────────────────────────────
+        if _snap_btn:
+            _current_strats = load_strategies()
+            _snaps = _list_snaps()
+            _prev_ref = _load_snap(_snaps[0]["filename"]) if _snaps else []
+            _result = _cmp_portfolios(_current_strats, _prev_ref, live_status=_LIVE_STATUS)
+
+            from datetime import datetime as _dt
+            _label = _dt.now().strftime("%Y-%m-%d %H:%M")
+            _save_snap(_current_strats, _label)
+
+            _live_now = [s for s in _current_strats if s.get("status") == _LIVE_STATUS]
+            st.success(f"📸 Live portfolio saved — {len(_live_now)} strategies ({_label})")
+
+            if _result.has_changes:
+                st.subheader("Trading Instructions vs previous baseline")
+                st.caption(
+                    "These are the changes you need to make in your trading system "
+                    "to bring it in line with the new portfolio."
+                )
+
+                if _result.new_strategies:
+                    st.markdown("#### ✅ Enable in trading system (new Live strategies)")
+                    for _ns in _result.new_strategies:
+                        _sym = _ns.get("symbol", "")
+                        _c = _ns.get("contracts", 1)
+                        st.markdown(f"- **{_ns['name']}**  ({_sym}, {_c} contract{'s' if _c != 1 else ''})")
+
+                if _result.removed_strategies:
+                    st.markdown("#### ❌ Disable in trading system (removed from portfolio)")
+                    for _rs in _result.removed_strategies:
+                        st.markdown(f"- **{_rs['name']}**  ({_rs.get('symbol', '')})")
+
+                if _result.contract_changes:
+                    st.markdown("#### 🔄 Adjust contracts in trading system")
+                    for _chg in _result.contract_changes:
+                        _arrow = "▲" if _chg["delta"] > 0 else "▼"
+                        st.markdown(
+                            f"- **{_chg['name']}**  ({_chg['symbol']})  "
+                            f"{_chg['old_contracts']} → **{_chg['new_contracts']} contracts** {_arrow}"
+                        )
+            else:
+                if _snaps:
+                    st.info("No changes vs previous baseline — trading system already matches.")
+                else:
+                    st.info("Baseline saved for the first time. Future comparisons will reference this.")
+
+        # ── Quick Portfolio Editor ─────────────────────────────────────────────
+        _all_strats_now = load_strategies()
+        _live_names = [s["name"] for s in _all_strats_now if s.get("status") == _LIVE_STATUS]
+        _non_live_names = [s["name"] for s in _all_strats_now if s.get("status") != _LIVE_STATUS]
+
+        with st.expander(
+            f"Quick Portfolio Editor — {len(_live_names)} Live strategies", expanded=False
+        ):
+            st.caption(
+                "Quickly add or remove strategies from the portfolio. "
+                "Changes are saved immediately. Removed strategies are set to **Pass**."
+            )
+            _qc1, _qc2 = st.columns(2)
+
+            with _qc1:
+                st.markdown("**Add to portfolio**")
+                _to_add = st.multiselect(
+                    "Select strategies to add as Live",
+                    options=_non_live_names,
+                    key="quick_add_select",
+                    placeholder="Search strategies…",
+                )
+                if st.button("➕ Add selected", key="quick_add_btn", disabled=not _to_add):
+                    _updated = []
+                    for _s in _all_strats_now:
+                        if _s.get("name") in _to_add:
+                            _s = dict(_s, status=_LIVE_STATUS)
+                        _updated.append(_s)
+                    save_strategies(_updated)
+                    st.session_state.portfolio_data = None
+                    st.success(f"Added {len(_to_add)} strategies to portfolio.")
+                    st.rerun()
+
+            with _qc2:
+                st.markdown("**Remove from portfolio**")
+                _to_remove = st.multiselect(
+                    "Select Live strategies to remove",
+                    options=_live_names,
+                    key="quick_remove_select",
+                    placeholder="Search strategies…",
+                )
+                if st.button("➖ Remove selected", key="quick_remove_btn", disabled=not _to_remove):
+                    _updated = []
+                    for _s in _all_strats_now:
+                        if _s.get("name") in _to_remove:
+                            _s = dict(_s, status="Pass")
+                        _updated.append(_s)
+                    save_strategies(_updated)
+                    st.session_state.portfolio_data = None
+                    st.success(f"Removed {len(_to_remove)} strategies from portfolio (set to Pass).")
+                    st.rerun()
+
+        # ── Summary metrics table ──────────────────────────────────────────────
         _sm = st.session_state.get(_SUMMARY_KEY)
 
         if _sm is not None and not _sm.empty:
             # Merge status + contracts from config
             _strats_map = {s.get("name"): s for s in strategies}
             _sm2 = _sm.copy()
-            _sm2.insert(0, "status", _sm2.index.map(
-                lambda n: _strats_map.get(n, {}).get("status", "")
+
+            # in_portfolio: True if status == Live (the key editable toggle)
+            _sm2.insert(0, "in_portfolio", _sm2.index.map(
+                lambda n: _strats_map.get(n, {}).get("status", "") == _LIVE_STATUS
             ))
             _sm2.insert(1, "contracts", _sm2.index.map(
                 lambda n: int(_strats_map.get(n, {}).get("contracts") or 1)
             ))
+            _sm2.insert(2, "status", _sm2.index.map(
+                lambda n: _strats_map.get(n, {}).get("status", "")
+            ))
 
             _disp_cols = [c for c in [
-                "status", "contracts", "symbol", "sector",
+                "in_portfolio", "contracts", "status", "symbol", "sector",
                 "oos_begin", "oos_end",
                 "expected_annual_profit", "actual_annual_profit", "return_efficiency",
                 "profit_last_1_month", "profit_last_3_months",
@@ -362,8 +483,7 @@ with tab_summary:
             _disp = _sm2[_disp_cols].reset_index()
             _disp.rename(columns={"strategy_name": "Strategy"}, inplace=True)
 
-            # Columns that are read-only (everything except status + contracts)
-            _readonly_cols = [c for c in _disp.columns if c not in ("status", "contracts")]
+            _readonly_cols = [c for c in _disp.columns if c not in ("in_portfolio", "contracts", "status")]
 
             _edited_summary = st.data_editor(
                 _disp,
@@ -372,6 +492,11 @@ with tab_summary:
                 disabled=_readonly_cols,
                 key="summary_editor",
                 column_config={
+                    "in_portfolio": st.column_config.CheckboxColumn(
+                        "In Portfolio",
+                        help="Tick to include in the Live portfolio. Untick to set to Pass.",
+                        width="small",
+                    ),
                     "status": st.column_config.SelectboxColumn(
                         "Status",
                         options=[
@@ -419,7 +544,11 @@ with tab_summary:
                 },
             )
 
-            if st.button("Save Status & Contracts", type="primary", key="save_summary_btn"):
+            _save_col, _nav_col = st.columns([1, 5])
+            with _save_col:
+                _do_save = st.button("Save Changes", type="primary", key="save_summary_btn")
+
+            if _do_save:
                 _edits_by_name = {
                     r["Strategy"]: r for r in _edited_summary.to_dict(orient="records")
                 }
@@ -429,7 +558,18 @@ with tab_summary:
                     if _nm in _edits_by_name:
                         _e = _edits_by_name[_nm]
                         _s = dict(_s)
-                        _s["status"] = _e.get("status", _s.get("status"))
+                        _in_port = _e.get("in_portfolio", False)
+                        _explicit_status = _e.get("status", _s.get("status", ""))
+                        # in_portfolio checkbox takes precedence:
+                        #   checked  → Live
+                        #   unchecked & was Live  → Pass
+                        #   unchecked & was not Live → keep explicit status
+                        if _in_port:
+                            _s["status"] = _LIVE_STATUS
+                        elif _explicit_status == _LIVE_STATUS and not _in_port:
+                            _s["status"] = "Pass"
+                        else:
+                            _s["status"] = _explicit_status
                         try:
                             _s["contracts"] = int(_e.get("contracts") or 1)
                         except (ValueError, TypeError):
@@ -437,8 +577,11 @@ with tab_summary:
                     _merged.append(_s)
                 save_strategies(_merged)
                 st.session_state.portfolio_data = None
-                _live_n = sum(1 for _s in _merged if _s.get("status") == "Live")
-                st.success(f"Saved. {_live_n} Live strategies — portfolio will rebuild on next visit.")
+                _live_n = sum(1 for _s in _merged if _s.get("status") == _LIVE_STATUS)
+                st.success(
+                    f"Saved — **{_live_n} Live** strategies. "
+                    "Click **📸 Set Live Portfolio** to record this as your trading baseline."
+                )
                 st.rerun()
 
             st.divider()
