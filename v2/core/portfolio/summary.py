@@ -44,6 +44,7 @@ def compute_summary(
     quitting_max_dollars: float = 50_000.0,
     quitting_max_percent: float = 1.5,
     quitting_sd_multiple: float = 1.28,
+    data_scope: str = "OOS",
 ) -> pd.DataFrame:
     """
     Compute per-strategy summary metrics for all strategies in imported.
@@ -100,6 +101,7 @@ def compute_summary(
             quitting_max_dollars=quitting_max_dollars,
             quitting_max_percent=quitting_max_percent,
             quitting_sd_multiple=quitting_sd_multiple,
+            data_scope=data_scope,
         )
 
         row = _build_row(name, wf, dynamic)
@@ -225,6 +227,7 @@ def _compute_dynamic_metrics(
     quitting_max_dollars: float = 50_000.0,
     quitting_max_percent: float = 1.5,
     quitting_sd_multiple: float = 1.28,
+    data_scope: str = "OOS",
 ) -> dict[str, Any]:
     """
     Compute time-windowed and drawdown metrics from the daily PnL series.
@@ -279,7 +282,9 @@ def _compute_dynamic_metrics(
     )
 
     # ── Profit windows ────────────────────────────────────────────────────────
-    window_pnl = oos_pnl.loc[oos_pnl.index <= effective_end_ts]
+    # IS+OOS scope: include full history in rolling P&L windows (not just OOS slice)
+    _window_base = pnl if data_scope == "IS+OOS" else oos_pnl
+    window_pnl = _window_base.loc[_window_base.index <= effective_end_ts]
     windows = {
         "profit_last_1_month":  window_starts["1m"],
         "profit_last_3_months": window_starts["3m"],
@@ -288,11 +293,16 @@ def _compute_dynamic_metrics(
         "profit_last_12_months": window_starts["12m"],
     }
     for key, start_ts in windows.items():
-        if start_ts is not None and start_ts >= oos_begin_ts:
+        # OOS scope: only compute if window start is within the OOS period
+        # IS+OOS scope: allow windows to reach back into IS history
+        _in_scope = start_ts is not None and (
+            data_scope == "IS+OOS" or start_ts >= oos_begin_ts
+        )
+        if _in_scope:
             result[key] = float(
                 window_pnl.loc[window_pnl.index >= start_ts].sum()
             )
-        # else: leave as None (not enough OOS history)
+        # else: leave as None (not enough history in scope)
 
     # ── Efficiency (profit / expected_monthly) ────────────────────────────────
     # expected monthly = expected_annual_profit / 12
@@ -652,9 +662,19 @@ def apply_eligibility_rules(
     Mirrors VBA EligibilityCheck() logic from F_Summary_Tab_Setup.bas.
     All enabled qualifiers must be satisfied; any enabled disqualifier voids eligibility.
     """
-    n = len(summary_df)
     eligible = pd.Series(True, index=summary_df.index)
     ratio = eligibility.efficiency_ratio
+
+    # ── Buy & Hold exclusion gate ─────────────────────────────────────────────
+    if eligibility.exclude_buy_and_hold and "status" in summary_df.columns:
+        _status_lc = summary_df["status"].fillna("").str.lower()
+        _is_bh = _status_lc.str.contains("buy") & _status_lc.str.contains("hold")
+        eligible &= ~_is_bh
+
+    # ── Previously-quit exclusion gate ───────────────────────────────────────
+    # quitting_date being non-null means the strategy ever hit a quit threshold
+    if eligibility.exclude_previously_quit and "quitting_date" in summary_df.columns:
+        eligible &= summary_df["quitting_date"].isna()
 
     def _get(col: str) -> pd.Series:
         if col in summary_df.columns:

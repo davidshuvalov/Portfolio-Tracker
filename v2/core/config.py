@@ -24,6 +24,33 @@ class MCConfig(BaseModel):
     risk_ruin_tolerance: float = 0.01
     trade_adjustment: float = 0.0
     trade_option: Literal["Closed", "M2M"] = "Closed"
+    # Portfolio MC settings (mirrors VBA Portfolio Monte Carlo Settings)
+    output_samples: int = 50            # Number of scenario samples to emit
+    remove_best_pct: float = 0.02       # Remove top 2% best days/weeks before MC
+    solve_for_ror: bool = False         # If False, use contract_sizing.starting_equity directly
+
+
+class PortfolioContractConfig(BaseModel):
+    """
+    Portfolio contract sizing and backtest settings.
+    Mirrors VBA Portfolio Settings + Portfolio Contract Settings sheets.
+    """
+    starting_equity: float = 705_000.0
+    use_percentage: bool = True             # True = cease threshold is % of equity
+    cease_type: Literal["Percentage", "Dollar"] = "Percentage"
+    cease_trading_threshold: float = 0.25   # 25% drawdown → stop adding positions
+    # Contract sizing (Estimated Vol Contract Sizing)
+    contract_margin_multiple: float = 0.50  # Margin multiple (50% of margin requirement)
+    contract_ratio_margin_atr: float = 0.50 # Blend: 50% ATR, 50% margin
+    contract_size_pct_equity: float = 0.01  # 1% of starting equity per contract
+    atr_window: Literal[
+        "ATR Last 3 Months",
+        "ATR Last 6 Months",
+        "ATR Last 12 Months",
+    ] = "ATR Last 3 Months"
+    # Portfolio Backtest Historical Sizing
+    reweight_on_atr: bool = True
+    reweight_index_contracts_only: bool = True
 
 
 class IncubationConfig(BaseModel):
@@ -87,6 +114,11 @@ class EligibilityConfig(BaseModel):
     min_positive_months: int = 8              # EligibilityMinimumMonths
     monthly_profit_operator: Literal[">0", ">=0"] = ">0"  # EligibilityGreaterThan
 
+    # ── Backtest scope / exclusion gates ─────────────────────────────────────
+    backtest_data_scope: Literal["OOS", "IS+OOS"] = "OOS"
+    exclude_buy_and_hold: bool = True       # Auto-exclude B&H strategies from scoring
+    exclude_previously_quit: bool = False   # Exclude strategies that ever hit Quit
+
     # ── Additional user filter ────────────────────────────────────────────────
     additional_user_filter: bool = False          # AdditionalUserFilter
     additional_user_filter_column: str = "MW Monte Carlo (IS + OOS)"
@@ -110,6 +142,7 @@ class AppConfig(BaseModel):
     quitting: QuittingConfig = Field(default_factory=QuittingConfig)
     monte_carlo: MCConfig = Field(default_factory=MCConfig)
     eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
+    contract_sizing: PortfolioContractConfig = Field(default_factory=PortfolioContractConfig)
     corr_normal_threshold: float = 0.70
     corr_negative_threshold: float = 0.30
     corr_drawdown_threshold: float = 0.70

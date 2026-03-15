@@ -110,12 +110,36 @@ with st.sidebar:
     )
 
     st.divider()
+    st.subheader("Backtest Scope")
+
+    data_scope = st.radio(
+        "Data scope",
+        ["OOS", "IS+OOS"],
+        index=0 if config.eligibility.backtest_data_scope == "OOS" else 1,
+        horizontal=True,
+        help="OOS: use only out-of-sample data for P&L windows.\nIS+OOS: include in-sample history in rolling profit calculations.",
+    )
+    exclude_bh = st.checkbox(
+        "Exclude Buy & Hold",
+        value=config.eligibility.exclude_buy_and_hold,
+        help="Buy & Hold strategies are excluded from eligibility scoring and backtest",
+    )
+    exclude_quit = st.checkbox(
+        "Exclude previously quit",
+        value=config.eligibility.exclude_previously_quit,
+        help="Exclude strategies that have ever hit a quitting threshold (quitting_date is set)",
+    )
+
+    st.divider()
     if st.button("Save as defaults", use_container_width=True, help="Persist these settings so they load next session"):
-        config.eligibility.days_threshold_oos = int(days_threshold)
-        config.eligibility.oos_dd_vs_is_cap   = float(dd_cap)
-        config.eligibility.status_include      = status_include if status_include else ["Live"]
-        config.eligibility.efficiency_ratio    = float(eff_ratio)
-        config.eligibility.date_type           = date_type
+        config.eligibility.days_threshold_oos    = int(days_threshold)
+        config.eligibility.oos_dd_vs_is_cap      = float(dd_cap)
+        config.eligibility.status_include        = status_include if status_include else ["Live"]
+        config.eligibility.efficiency_ratio      = float(eff_ratio)
+        config.eligibility.date_type             = date_type
+        config.eligibility.backtest_data_scope   = data_scope
+        config.eligibility.exclude_buy_and_hold  = exclude_bh
+        config.eligibility.exclude_previously_quit = exclude_quit
         config.save()
         st.session_state.config = config
         st.success("Saved.")
@@ -126,6 +150,9 @@ elig_config = EligibilityConfig(
     status_include=status_include if status_include else ["Live"],
     efficiency_ratio=float(eff_ratio),
     date_type=date_type,
+    backtest_data_scope=data_scope,
+    exclude_buy_and_hold=exclude_bh,
+    exclude_previously_quit=exclude_quit,
 )
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────

@@ -324,6 +324,91 @@ with st.form("preferences_form"):
         horizontal=True,
     )
 
+    st.subheader("Portfolio Contract Sizing")
+    cs = config.contract_sizing
+    starting_equity = st.number_input(
+        "Starting equity ($)",
+        min_value=10_000.0, max_value=100_000_000.0, step=5_000.0,
+        value=float(cs.starting_equity), format="%.0f",
+        help="Used as fixed starting equity when 'Solve for ROR' is off.",
+    )
+    solve_for_ror = st.checkbox(
+        "Solve for Risk-of-Ruin target (overrides starting equity)",
+        value=config.monte_carlo.solve_for_ror,
+        help="When on, the MC engine iterates equity until portfolio ROR matches the target.",
+    )
+    col_cease1, col_cease2 = st.columns(2)
+    with col_cease1:
+        cease_type = st.selectbox(
+            "Cease trading type",
+            ["Percentage", "Dollar"],
+            index=0 if cs.cease_type == "Percentage" else 1,
+            help="Stop adding new positions when portfolio drawdown hits threshold.",
+        )
+    with col_cease2:
+        cease_threshold = st.number_input(
+            "Cease trading threshold",
+            min_value=0.0, max_value=1.0 if cease_type == "Percentage" else 10_000_000.0,
+            step=0.01 if cease_type == "Percentage" else 1_000.0,
+            value=float(cs.cease_trading_threshold),
+            format="%.2f" if cease_type == "Percentage" else "%.0f",
+            help="0.25 = 25% drawdown from equity peak triggers cease",
+        )
+
+    st.subheader("Contract Sizing — Estimated Vol (ATR + Margin blend)")
+    col_atr1, col_atr2 = st.columns(2)
+    with col_atr1:
+        atr_window = st.selectbox(
+            "ATR window",
+            ["ATR Last 3 Months", "ATR Last 6 Months", "ATR Last 12 Months"],
+            index=["ATR Last 3 Months", "ATR Last 6 Months", "ATR Last 12 Months"].index(cs.atr_window),
+            help="Rolling window used to compute dollar ATR from trade MFE+MAE",
+        )
+        contract_margin_multiple = st.slider(
+            "Margin multiple",
+            0.0, 2.0, float(cs.contract_margin_multiple), 0.05,
+            help="Fraction of margin requirement used in sizing (0.50 = 50%)",
+        )
+    with col_atr2:
+        contract_ratio = st.slider(
+            "ATR vs Margin ratio",
+            0.0, 1.0, float(cs.contract_ratio_margin_atr), 0.05,
+            help="0 = pure margin sizing, 1 = pure ATR sizing, 0.5 = equal blend",
+        )
+        contract_pct_equity = st.number_input(
+            "Contract size % of equity",
+            min_value=0.001, max_value=0.20, step=0.005,
+            value=float(cs.contract_size_pct_equity), format="%.3f",
+            help="1% of starting equity per contract position (e.g. 0.01)",
+        )
+
+    st.subheader("Portfolio Backtest Historical Sizing")
+    reweight_on_atr = st.checkbox(
+        "Re-weight backtest contracts on historical ATR",
+        value=cs.reweight_on_atr,
+        help="Scale historical contract counts by current_ATR / historical_ATR at each date",
+    )
+    reweight_index_only = st.checkbox(
+        "Re-weight index contracts only",
+        value=cs.reweight_index_contracts_only,
+        disabled=not reweight_on_atr,
+        help="Only apply ATR reweighting to index/benchmark strategies",
+    )
+
+    st.subheader("Monte Carlo — Additional Settings")
+    mc_output_samples = st.number_input(
+        "Output samples",
+        min_value=1, max_value=500, step=5,
+        value=int(config.monte_carlo.output_samples),
+        help="Number of scenario paths to include in output",
+    )
+    mc_remove_best = st.slider(
+        "Remove % best days/weeks before MC",
+        0.0, 0.10, float(config.monte_carlo.remove_best_pct), 0.005,
+        format="%.1%%",
+        help="Trim top-N% best trading days to stress-test the distribution",
+    )
+
     st.subheader("Eligibility defaults")
     elig_status = st.multiselect(
         "Default eligible statuses",
@@ -379,11 +464,25 @@ with st.form("preferences_form"):
         elif not use_cutoff:
             config.portfolio.cutoff_date = None
 
+        # Contract sizing
+        config.contract_sizing.starting_equity           = float(starting_equity)
+        config.contract_sizing.cease_type                = cease_type
+        config.contract_sizing.cease_trading_threshold   = float(cease_threshold)
+        config.contract_sizing.atr_window                = atr_window
+        config.contract_sizing.contract_margin_multiple  = float(contract_margin_multiple)
+        config.contract_sizing.contract_ratio_margin_atr = float(contract_ratio)
+        config.contract_sizing.contract_size_pct_equity  = float(contract_pct_equity)
+        config.contract_sizing.reweight_on_atr           = reweight_on_atr
+        config.contract_sizing.reweight_index_contracts_only = reweight_index_only
+
         # Monte Carlo
         config.monte_carlo.simulations      = int(mc_sims)
         config.monte_carlo.period           = mc_period
         config.monte_carlo.risk_ruin_target = mc_ror / 100.0
         config.monte_carlo.trade_option     = mc_trade_opt
+        config.monte_carlo.solve_for_ror    = solve_for_ror
+        config.monte_carlo.output_samples   = int(mc_output_samples)
+        config.monte_carlo.remove_best_pct  = float(mc_remove_best)
 
         # Eligibility
         config.eligibility.status_include      = elig_status if elig_status else ["Live"]
