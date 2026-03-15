@@ -221,6 +221,20 @@ if import_clicked and st.session_state.get("scan_result"):
                 for w in warnings:
                     st.warning(w)
 
+        # Merge configured metadata (symbol, sector, timeframe, etc.) into
+        # the stub Strategy objects created by import_all
+        _configured_map = {s["name"]: s for s in load_strategies()}
+        for _strat in imported.strategies:
+            _cfg = _configured_map.get(_strat.name, {})
+            if _cfg.get("symbol"):    _strat.symbol    = _cfg["symbol"]
+            if _cfg.get("sector"):    _strat.sector    = _cfg["sector"]
+            if _cfg.get("timeframe"): _strat.timeframe = _cfg["timeframe"]
+            if _cfg.get("type"):      _strat.type      = _cfg["type"]
+            if _cfg.get("horizon"):   _strat.horizon   = _cfg["horizon"]
+            if _cfg.get("status"):    _strat.status    = _cfg["status"]
+            if _cfg.get("contracts"): _strat.contracts = int(_cfg["contracts"])
+            if _cfg.get("notes"):     _strat.notes     = _cfg["notes"]
+
         st.session_state.imported_data = imported
         st.session_state.portfolio_data = None  # Reset downstream cache
 

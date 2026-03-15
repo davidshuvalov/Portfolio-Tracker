@@ -115,14 +115,41 @@ if oos_start is None:
 # ── Title ─────────────────────────────────────────────────────────────────────
 st.title(selected_name)
 
-status    = (_strat_obj.status    if _strat_obj else "") or "—"
-symbol    = (_strat_obj.symbol    if _strat_obj else "") or "—"
-sector    = (_strat_obj.sector    if _strat_obj else "") or "—"
-contracts = int(_strat_obj.contracts if _strat_obj and _strat_obj.contracts else 1)
-timeframe = (_strat_obj.timeframe if _strat_obj else "") or "—"
-s_type    = (_strat_obj.type      if _strat_obj else "") or "—"
-horizon   = (_strat_obj.horizon   if _strat_obj else "") or "—"
-notes     = (_strat_obj.notes     if _strat_obj else "") or ""
+# Fall back to strategies.yaml config when imported.strategies stubs are empty
+from core.portfolio.strategies import load_strategies as _load_strats
+from core.ingestion.folder_scanner import parse_name_parts as _parse_name_parts, _SYMBOL_SECTOR as _SYM_SEC
+_configured_meta = {s["name"]: s for s in _load_strats()}.get(selected_name, {})
+
+def _meta(field: str, obj_val: str) -> str:
+    """Return obj_val if non-empty, else fall back to strategies.yaml config."""
+    if obj_val:
+        return obj_val
+    return _configured_meta.get(field, "") or ""
+
+status    = _meta("status",    (_strat_obj.status    if _strat_obj else "")) or "—"
+symbol    = _meta("symbol",    (_strat_obj.symbol    if _strat_obj else ""))
+timeframe = _meta("timeframe", (_strat_obj.timeframe if _strat_obj else ""))
+sector    = _meta("sector",    (_strat_obj.sector    if _strat_obj else ""))
+s_type    = _meta("type",      (_strat_obj.type      if _strat_obj else "")) or "—"
+horizon   = _meta("horizon",   (_strat_obj.horizon   if _strat_obj else "")) or "—"
+contracts = int(_strat_obj.contracts if _strat_obj and _strat_obj.contracts else
+                _configured_meta.get("contracts", 1) or 1)
+notes     = _meta("notes",     (_strat_obj.notes     if _strat_obj else "")) or ""
+
+# Last-resort: parse symbol/timeframe from strategy name if still empty
+if not symbol or not timeframe:
+    _parsed_sym, _parsed_tf = _parse_name_parts(selected_name)
+    if not symbol:
+        symbol = _parsed_sym
+    if not timeframe:
+        timeframe = _parsed_tf
+# Last-resort: sector from symbol lookup
+if not sector and symbol:
+    sector = _SYM_SEC.get(symbol, "")
+
+symbol    = symbol    or "—"
+timeframe = timeframe or "—"
+sector    = sector    or "—"
 
 # Metadata strip
 mc1, mc2, mc3, mc4, mc5, mc6, mc7 = st.columns(7)
@@ -280,7 +307,7 @@ if not oos_pnl.empty:
 # OOS start vertical line
 if oos_ts is not None:
     fig_eq.add_vline(
-        x=oos_ts, line_dash="dash", line_color="#B71C1C",
+        x=oos_ts.isoformat(), line_dash="dash", line_color="#B71C1C",
         annotation_text="OOS Start", annotation_position="top right",
     )
 
@@ -311,7 +338,7 @@ with st.expander("Drawdown", expanded=False):
             fill="tozeroy", name="OOS DD",
             line=dict(color="#F44336"),
         ))
-        fig_dd.add_vline(x=oos_ts, line_dash="dash", line_color="#B71C1C")
+        fig_dd.add_vline(x=oos_ts.isoformat(), line_dash="dash", line_color="#B71C1C")
     else:
         fig_dd.add_trace(go.Scatter(
             x=dd_ser.index, y=dd_ser.values,

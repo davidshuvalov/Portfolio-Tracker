@@ -14,9 +14,61 @@ Expected folder structure (from VBA analysis):
 """
 
 from __future__ import annotations
+import re
 from pathlib import Path
 
 from core.data_types import ScanResult, StrategyFolder
+
+# ── Auto-population helpers ───────────────────────────────────────────────────
+
+# Common futures symbol → sector mapping
+_SYMBOL_SECTOR: dict[str, str] = {
+    # Indices
+    "ES": "Index", "NQ": "Index", "YM": "Index", "RTY": "Index", "EMD": "Index",
+    "MES": "Index", "MNQ": "Index", "MYM": "Index", "M2K": "Index",
+    # Interest Rates
+    "ZB": "Interest Rate", "ZN": "Interest Rate", "ZF": "Interest Rate",
+    "ZT": "Interest Rate", "ZQ": "Interest Rate", "UB": "Interest Rate",
+    "TN": "Interest Rate", "TU": "Interest Rate", "FV": "Interest Rate",
+    "TY": "Interest Rate", "US": "Interest Rate",
+    # Energy
+    "CL": "Energy", "NG": "Energy", "RB": "Energy", "HO": "Energy",
+    "BZ": "Energy", "QM": "Energy",
+    # Metals
+    "GC": "Metals", "SI": "Metals", "HG": "Metals", "PL": "Metals", "PA": "Metals",
+    "MGC": "Metals",
+    # Currencies
+    "6E": "Currencies", "6J": "Currencies", "6B": "Currencies", "6A": "Currencies",
+    "6C": "Currencies", "6S": "Currencies", "6N": "Currencies", "6M": "Currencies",
+    "DX": "Currencies",
+    # Agriculture
+    "ZC": "Agriculture", "ZW": "Agriculture", "ZS": "Agriculture",
+    "ZL": "Agriculture", "ZM": "Agriculture", "ZO": "Agriculture", "ZR": "Agriculture",
+    # Softs
+    "KC": "Soft", "CT": "Soft", "CC": "Soft", "SB": "Soft", "OJ": "Soft",
+    # Meats
+    "LE": "Meats", "GF": "Meats", "HE": "Meats",
+    # Crypto
+    "BTC": "Crypto", "ETH": "Crypto", "MBT": "Crypto", "MET": "Crypto",
+    # Volatility
+    "VX": "Volatility",
+    # Eurex
+    "FDAX": "Eurex Index", "FESX": "Eurex Index", "FDXM": "Eurex Index",
+    "FGBL": "Eurex Interest Rate", "FGBM": "Eurex Interest Rate",
+    "FGBS": "Eurex Interest Rate", "FGBX": "Eurex Interest Rate",
+}
+
+
+def parse_name_parts(name: str) -> tuple[str, str]:
+    """
+    Extract symbol and timeframe from a MultiWalk strategy name.
+    Expects the pattern [@SYMBOL-TIMEFRAME], e.g. [@TU-60min] → ('TU', '60min').
+    Returns ('', '') if pattern not found.
+    """
+    m = re.search(r"\[@([A-Z0-9]+)-([^\]]+)\]", name)
+    if m:
+        return m.group(1), m.group(2)
+    return "", ""
 
 WALKFORWARD_DIR = "Walkforward Files"
 EQUITY_SUFFIX = " EquityData.csv"
@@ -182,17 +234,30 @@ def reconcile_statuses(
 
     # Add newly discovered strategies not yet in config
     for name in sorted(found_names - configured_names):
+        sym, tf = parse_name_parts(name)
+        sector = _SYMBOL_SECTOR.get(sym, "")
         result.append({
             "name": name,
             "status": "New",
             "contracts": 1,
-            "symbol": "",
-            "sector": "",
-            "timeframe": "",
+            "symbol": sym,
+            "sector": sector,
+            "timeframe": tf,
             "type": "",
             "horizon": "",
             "other": "",
             "notes": "",
         })
+
+    # Back-fill symbol/timeframe/sector for existing entries that are still empty
+    for s in result:
+        if not s.get("symbol") or not s.get("timeframe"):
+            sym, tf = parse_name_parts(s["name"])
+            if not s.get("symbol"):
+                s["symbol"] = sym
+            if not s.get("timeframe"):
+                s["timeframe"] = tf
+        if not s.get("sector") and s.get("symbol"):
+            s["sector"] = _SYMBOL_SECTOR.get(s["symbol"], "")
 
     return result
