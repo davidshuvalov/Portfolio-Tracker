@@ -527,6 +527,205 @@ else:
 st.divider()
 
 
+# ── 3b. Metric charts by strategy / symbol / sector ───────────────────────────
+
+st.subheader("Metric Analysis")
+
+_CHARTABLE_METRICS: dict[str, str] = {
+    "max_oos_drawdown":       "Max OOS Drawdown ($)",
+    "avg_oos_drawdown":       "Avg OOS Drawdown ($)",
+    "profit_last_12_months":  "Last 12M P&L ($)",
+    "profit_last_6_months":   "Last 6M P&L ($)",
+    "profit_last_3_months":   "Last 3M P&L ($)",
+    "profit_since_oos_start": "OOS Total P&L ($)",
+    "rtd_oos":                "RTD OOS",
+    "rtd_12_months":          "RTD 12M",
+    "expected_annual_profit": "Expected Annual ($)",
+    "actual_annual_profit":   "Actual Annual ($)",
+    "return_efficiency":      "Return Efficiency",
+    "sharpe_isoos":           "Sharpe IS+OOS",
+    "k_factor":               "K-Factor",
+    "ulcer_index":            "Ulcer Index",
+    "contracts":              "Contracts",
+}
+
+_DOLLAR_METRICS = {
+    "max_oos_drawdown", "avg_oos_drawdown",
+    "profit_last_12_months", "profit_last_6_months", "profit_last_3_months",
+    "profit_since_oos_start", "expected_annual_profit", "actual_annual_profit",
+}
+_PCT_METRICS = {"return_efficiency"}
+
+_SECTOR_PALETTE = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
+]
+
+# Determine which chartable metrics are actually in the data
+if not portfolio.summary_metrics.empty:
+    _sm_chart = portfolio.summary_metrics.copy()
+
+    # Ensure symbol/sector present (add from strategies_config if missing)
+    _strats_lookup = {s["name"]: s for s in strategies_config}
+    for _col in ("symbol", "sector"):
+        if _col not in _sm_chart.columns:
+            _sm_chart[_col] = _sm_chart.index.map(
+                lambda n: _strats_lookup.get(n, {}).get(_col, "")
+            )
+    if "contracts" not in _sm_chart.columns:
+        _sm_chart["contracts"] = _sm_chart.index.map(
+            lambda n: float(_strats_lookup.get(n, {}).get("contracts", 1) or 1)
+        )
+
+    _avail = {k: v for k, v in _CHARTABLE_METRICS.items() if k in _sm_chart.columns}
+
+    if _avail:
+        _mc1, _mc2, _mc3 = st.columns([2, 1, 3])
+        with _mc1:
+            _chart_metric_key = "port_chart_metric"
+            _default_metric = next(
+                (k for k in ("max_oos_drawdown", "profit_last_12_months", "rtd_oos") if k in _avail),
+                next(iter(_avail)),
+            )
+            _sel_metric = st.selectbox(
+                "Metric to chart",
+                list(_avail.keys()),
+                index=list(_avail.keys()).index(_default_metric),
+                format_func=lambda k: _avail[k],
+                key=_chart_metric_key,
+            )
+        with _mc2:
+            _sel_agg = st.selectbox(
+                "Group aggregate",
+                ["Sum", "Average", "Max", "Min"],
+                key="port_chart_agg",
+                help="Used when grouping by Symbol or Sector.",
+            )
+
+        _agg_fn_name = {"Sum": "sum", "Average": "mean", "Max": "max", "Min": "min"}[_sel_agg]
+
+        # Build chart DataFrame
+        _cdf = _sm_chart[[_sel_metric, "symbol", "sector"]].copy()
+        _cdf.index.name = "Strategy"
+        _cdf = _cdf.reset_index()
+        _cdf["symbol"] = _cdf["symbol"].fillna("?")
+        _cdf["sector"] = _cdf["sector"].fillna("Other").replace("", "Other")
+        _cdf = _cdf[_cdf[_sel_metric].notna()].copy()
+        _cdf[_sel_metric] = _cdf[_sel_metric].astype(float)
+
+        # Value formatter
+        def _fmt(v: float) -> str:
+            if _sel_metric in _DOLLAR_METRICS:
+                return f"-${abs(v):,.0f}" if v < 0 else f"${v:,.0f}"
+            if _sel_metric in _PCT_METRICS:
+                return f"{v:.1%}"
+            return f"{v:.2f}"
+
+        # Sector → colour mapping
+        _unique_sectors = sorted(_cdf["sector"].unique())
+        _sec_color = {s: _SECTOR_PALETTE[i % len(_SECTOR_PALETTE)]
+                      for i, s in enumerate(_unique_sectors)}
+
+        _tab_strat, _tab_sym, _tab_sec = st.tabs(["By Strategy", "By Symbol", "By Sector"])
+
+        # ── By Strategy ───────────────────────────────────────────────────
+        with _tab_strat:
+            _strat_df = _cdf.sort_values(_sel_metric, ascending=True)
+            _colors = [_sec_color.get(s, "#888") for s in _strat_df["sector"]]
+
+            # Add invisible dummy traces for sector legend
+            _legend_traces = []
+            for _sec in _unique_sectors:
+                if _sec in _strat_df["sector"].values:
+                    _legend_traces.append(go.Bar(
+                        x=[None], y=[None],
+                        name=_sec,
+                        marker_color=_sec_color[_sec],
+                        showlegend=True,
+                    ))
+
+            _fig_strat = go.Figure()
+            for _lt in _legend_traces:
+                _fig_strat.add_trace(_lt)
+
+            _fig_strat.add_trace(go.Bar(
+                y=_strat_df["Strategy"],
+                x=_strat_df[_sel_metric],
+                orientation="h",
+                marker_color=_colors,
+                text=[_fmt(v) for v in _strat_df[_sel_metric]],
+                textposition="outside",
+                showlegend=False,
+                hovertemplate="%{y}: %{text}<extra></extra>",
+            ))
+            _fig_strat.update_layout(
+                xaxis_title=_avail[_sel_metric],
+                height=max(350, len(_strat_df) * 22 + 80),
+                margin=dict(l=0, r=80, t=10, b=0),
+                legend=dict(
+                    title="Sector",
+                    orientation="v",
+                    x=1.01, y=1,
+                ),
+            )
+            st.plotly_chart(_fig_strat, use_container_width=True)
+
+        # ── By Symbol ─────────────────────────────────────────────────────
+        with _tab_sym:
+            _sym_grp = (
+                _cdf.groupby("symbol")[_sel_metric]
+                .agg(_agg_fn_name)
+                .reset_index()
+                .sort_values(_sel_metric, ascending=False)
+            )
+            _fig_sym = go.Figure(go.Bar(
+                x=_sym_grp["symbol"],
+                y=_sym_grp[_sel_metric],
+                text=[_fmt(v) for v in _sym_grp[_sel_metric]],
+                textposition="outside",
+                marker_color="#1f77b4",
+                hovertemplate="%{x}: %{text}<extra></extra>",
+            ))
+            _fig_sym.update_layout(
+                xaxis_title="Symbol",
+                yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
+                height=400,
+                margin=dict(l=0, r=0, t=10, b=0),
+            )
+            st.plotly_chart(_fig_sym, use_container_width=True)
+
+        # ── By Sector ─────────────────────────────────────────────────────
+        with _tab_sec:
+            _sec_grp = (
+                _cdf.groupby("sector")[_sel_metric]
+                .agg(_agg_fn_name)
+                .reset_index()
+                .sort_values(_sel_metric, ascending=False)
+            )
+            _sec_bar_colors = [_sec_color.get(s, "#888") for s in _sec_grp["sector"]]
+            _fig_sec = go.Figure(go.Bar(
+                x=_sec_grp["sector"],
+                y=_sec_grp[_sel_metric],
+                text=[_fmt(v) for v in _sec_grp[_sel_metric]],
+                textposition="outside",
+                marker_color=_sec_bar_colors,
+                hovertemplate="%{x}: %{text}<extra></extra>",
+            ))
+            _fig_sec.update_layout(
+                xaxis_title="Sector",
+                yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
+                height=400,
+                margin=dict(l=0, r=0, t=10, b=0),
+            )
+            st.plotly_chart(_fig_sec, use_container_width=True)
+
+    else:
+        st.info("No chartable metrics available — compute strategy summary to populate metric charts.")
+
+st.divider()
+
+
 # ── 4. Monthly P&L heatmap ────────────────────────────────────────────────────
 
 st.subheader("Monthly P&L — Total Portfolio")
