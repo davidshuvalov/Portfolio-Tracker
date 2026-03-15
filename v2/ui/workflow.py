@@ -66,28 +66,36 @@ def step_status() -> dict[str, bool]:
 def render_workflow_sidebar() -> None:
     """Render compact workflow progress in the sidebar."""
     status = step_status()
-    labels = {
-        "folders": "Add folders",
-        "data": "Import data",
-        "strategies": "Review strategies",
-        "portfolio": "Build portfolio",
-    }
-    pages = {
-        "folders": "ui/pages/01_Import.py",
-        "data": "ui/pages/01_Import.py",
-        "strategies": "ui/pages/02_Strategies.py",
-        "portfolio": "ui/pages/03_Portfolio.py",
-    }
+    steps = [
+        ("folders",    "Add Folders",        "ui/pages/01_Import.py"),
+        ("data",       "Import Data",        "ui/pages/01_Import.py"),
+        ("strategies", "Review Strategies",  "ui/pages/02_Strategies.py"),
+        ("portfolio",  "Build Portfolio",    "ui/pages/03_Portfolio.py"),
+    ]
 
-    st.markdown("**Setup**")
+    st.markdown(
+        '<p style="color:#64748b;font-size:0.72rem;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin:0 0 0.4rem 0">Setup</p>',
+        unsafe_allow_html=True,
+    )
+
     all_done = all(status.values())
-    for key, label in labels.items():
+    for key, label, page in steps:
         done = status[key]
-        icon = "✅" if done else "⬜"
-        if not done:
-            st.page_link(pages[key], label=f"{icon} {label}")
+        if done:
+            st.markdown(
+                f'<div style="color:#10b981;font-size:0.85rem;padding:2px 0">'
+                f'✓ {label}</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f"{icon} {label}")
+            st.page_link(page, label=f"○ {label}")
+
     if all_done:
-        st.caption("Ready to explore analytics")
+        st.markdown(
+            '<p style="color:#3b82f6;font-size:0.78rem;margin-top:0.4rem">'
+            "● All steps complete</p>",
+            unsafe_allow_html=True,
+        )
+
     st.divider()
