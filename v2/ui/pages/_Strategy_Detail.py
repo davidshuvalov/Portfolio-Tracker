@@ -14,7 +14,11 @@ Sections:
 
 from __future__ import annotations
 
+import os
+import platform
+import subprocess
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -339,6 +343,80 @@ if not monthly_pnl.empty:
     annual = monthly_pnl.resample("YE").sum()
     ann_df = pd.DataFrame({"Year": annual.index.year, "Total P&L ($)": annual.values.round(0).astype(int)})
     st.dataframe(ann_df.sort_values("Year", ascending=False), hide_index=True, use_container_width=True)
+
+# ── Files & Folder ─────────────────────────────────────────────────────────────
+# Mirror of VBA H_Open_Code_Tab.bas — open strategy folder or code files
+
+def _open_path(path: Path) -> None:
+    """Open a file or folder in the OS default application (local desktop app)."""
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(path))
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception as exc:
+        st.error(f"Could not open: {exc}")
+
+# Find the strategy's folder from scan_result or Strategy.folder
+_folder_path: Path | None = None
+_scan_result = st.session_state.get("scan_result")
+if _scan_result:
+    for _sf in _scan_result.strategies:
+        if _sf.name == selected_name:
+            _folder_path = _sf.path
+            break
+if _folder_path is None and _strat_obj is not None and _strat_obj.folder:
+    _folder_path = Path(_strat_obj.folder)
+
+# Known MultiWalk / MultiCharts code file extensions
+_CODE_EXTENSIONS = {".mex", ".eld", ".els", ".pla", ".c", ".cpp", ".py"}
+
+_code_files: list[Path] = []
+_data_files: dict[str, Path] = {}
+if _folder_path and _folder_path.exists():
+    for _f in sorted(_folder_path.iterdir()):
+        if _f.suffix.lower() in _CODE_EXTENSIONS:
+            _code_files.append(_f)
+        elif _f.suffix.lower() == ".csv":
+            _data_files[_f.name] = _f
+
+with st.expander("Files & Folder", expanded=False):
+    if _folder_path is None:
+        st.info("Folder path not available. Import data first.")
+    else:
+        # Folder path (copy-paste friendly)
+        st.caption("Strategy folder")
+        st.code(str(_folder_path), language=None)
+        if _folder_path.exists():
+            if st.button("📂 Open Folder", key="open_folder_btn"):
+                _open_path(_folder_path)
+        else:
+            st.warning(f"Folder not found on disk: `{_folder_path}`")
+
+        # Code files
+        if _code_files:
+            st.caption("Code files")
+            for _cf in _code_files:
+                col_name, col_btn = st.columns([5, 1])
+                col_name.markdown(f"`{_cf.name}`")
+                if col_btn.button("Open", key=f"open_code_{_cf.name}"):
+                    _open_path(_cf)
+        else:
+            st.caption("No code files (.mex / .eld / .pla / .els) found in this folder.")
+
+        # Data files summary
+        if _data_files:
+            st.caption("Data files (CSV)")
+            for _name, _path in _data_files.items():
+                try:
+                    size_kb = _path.stat().st_size / 1024
+                    st.markdown(f"- `{_name}` — {size_kb:.0f} KB")
+                except Exception:
+                    st.markdown(f"- `{_name}`")
+
+st.divider()
 
 # ── Trade list ─────────────────────────────────────────────────────────────────
 if not imported.trades.empty and "strategy" in imported.trades.columns:
