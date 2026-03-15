@@ -307,7 +307,7 @@ if not oos_pnl.empty:
 # OOS start vertical line
 if oos_ts is not None:
     fig_eq.add_vline(
-        x=oos_ts.isoformat(), line_dash="dash", line_color="#B71C1C",
+        x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C",
         annotation_text="OOS Start", annotation_position="top right",
     )
 
@@ -338,7 +338,7 @@ with st.expander("Drawdown", expanded=False):
             fill="tozeroy", name="OOS DD",
             line=dict(color="#F44336"),
         ))
-        fig_dd.add_vline(x=oos_ts.isoformat(), line_dash="dash", line_color="#B71C1C")
+        fig_dd.add_vline(x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C")
     else:
         fig_dd.add_trace(go.Scatter(
             x=dd_ser.index, y=dd_ser.values,
