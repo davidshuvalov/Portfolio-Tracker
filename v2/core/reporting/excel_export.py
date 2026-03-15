@@ -103,7 +103,9 @@ def export_portfolio(
         # Prepend Status + Contracts from Strategy objects
         status_map    = {s.name: s.status    for s in portfolio_data.strategies}
         contracts_map = {s.name: s.contracts for s in portfolio_data.strategies}
-        df = summary.copy().reset_index().rename(columns={"index": "Strategy"})
+        df = summary.copy()
+        df.index.name = "Strategy"
+        df = df.reset_index()
         df.insert(1, "Status",    [status_map.get(n, "")    for n in df["Strategy"]])
         df.insert(2, "Contracts", [contracts_map.get(n, 1) for n in df["Strategy"]])
 
