@@ -161,11 +161,15 @@ def _call_dll(folder: str, customer_id: int) -> tuple[bool, str]:
         fn = dll["_MultiWalkIsLicensePro"]
         fn.restype = ctypes.c_int
         fn.argtypes = [
-            ctypes.c_wchar_p,   # program_folder
+            ctypes.c_char_p,    # program_folder (ANSI, matches VBA ByVal String)
             ctypes.c_long,      # ts_customer_id
-            ctypes.c_wchar_p,   # app_name
+            ctypes.c_char_p,    # app_name (ANSI, matches VBA ByVal String)
         ]
-        rc = fn(folder, ctypes.c_long(customer_id), _APP_NAME)
+        rc = fn(
+            folder.encode("mbcs"),
+            ctypes.c_long(customer_id),
+            _APP_NAME.encode("mbcs"),
+        )
     except Exception as e:
         return False, f"DLL call failed: {e}"
 
