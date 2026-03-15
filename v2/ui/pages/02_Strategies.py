@@ -289,12 +289,15 @@ with st.sidebar:
 # Shows per-strategy WF metrics for ALL strategies (not filtered to Live)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_summary:
+    from core.config import AppConfig as _AC
     from core.portfolio.snapshot import (
         compare_portfolios as _cmp_portfolios,
         list_snapshots as _list_snaps,
         load_snapshot as _load_snap,
         save_snapshot as _save_snap,
     )
+
+    config = st.session_state.get("config", _AC.load())
 
     st.caption(
         "All strategies with performance metrics. "
@@ -328,12 +331,11 @@ with tab_summary:
             )
 
         if _do_compute:
-            from core.config import AppConfig as _AC
             from core.ingestion.folder_scanner import scan_folders as _scan_f
             from core.portfolio.summary import compute_summary as _cs
             from datetime import date as _date
 
-            _cfg = st.session_state.get("config", _AC.load())
+            _cfg = config
             with st.spinner("Computing strategy metrics..."):
                 _scan_res = _scan_f(_cfg.folders) if _cfg.folders else None
                 _sfl = _scan_res.strategies if _scan_res else []
