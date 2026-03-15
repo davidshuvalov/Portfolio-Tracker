@@ -24,14 +24,13 @@ def build_label_map(strategies: list[Strategy]) -> dict[str, str]:
     """
     Return {strategy_name: short_code} for every strategy.
 
-    Short code format:  S{n} ×{c}
-      n = 1-based position (no zero-padding — keeps labels compact)
-      c = contract count
+    Short code format:  S{n} {symbol}   (symbol omitted when not set)
+      n = 1-based position
 
-    Example: "ES_Trend_H4_v3" with 2 contracts → "S3 ×2"
+    Example: "ES_Trend_H4_v3" trading TU → "S3 TU"
     """
     return {
-        s.name: f"S{i + 1} ×{s.contracts if s.contracts else 1}"
+        s.name: f"S{i + 1} {s.symbol}" if s.symbol else f"S{i + 1}"
         for i, s in enumerate(strategies)
     }
 
@@ -43,7 +42,7 @@ def build_label_df(strategies: list[Strategy]) -> pd.DataFrame:
     """
     rows = []
     for i, s in enumerate(strategies):
-        code = f"S{i + 1} ×{s.contracts if s.contracts else 1}"
+        code = f"S{i + 1} {s.symbol}" if s.symbol else f"S{i + 1}"
         rows.append({
             "#":          i + 1,
             "Code":       code,

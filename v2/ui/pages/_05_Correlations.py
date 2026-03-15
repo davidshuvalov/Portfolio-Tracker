@@ -115,15 +115,18 @@ labeled_matrix = relabel_matrix(matrix, label_map)
 st.subheader(f"Correlation Matrix — {mode_label} Mode")
 
 n = len(labeled_matrix)
+# Blank out diagonal (self-correlation = 1) in the text overlay
+_vals = labeled_matrix.values.copy().astype(float)
+_text = np.where(np.eye(n, dtype=bool), "", np.round(_vals, 2).astype(str))
 # Colour scale: green (negative) → white (zero) → red (positive)
 fig = go.Figure(go.Heatmap(
-    z=labeled_matrix.values,
+    z=_vals,
     x=list(labeled_matrix.columns),
     y=list(labeled_matrix.index),
     colorscale="RdYlGn_r",
     zmin=-1.0,
     zmax=1.0,
-    text=np.round(labeled_matrix.values, 2),
+    text=_text,
     texttemplate="%{text}",
     textfont={"size": 10 if n <= 15 else 8},
     hovertemplate="%{y} × %{x}: %{z:.3f}<extra></extra>",
