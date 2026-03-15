@@ -297,3 +297,60 @@ class TestComputeAllModes:
         # Off-diagonal values may differ
         # (they will differ for random data with mixed signs)
         assert not np.allclose(normal, negative, atol=1e-3)
+
+
+# ── Sprint 1.1: time-period window ────────────────────────────────────────────
+
+class TestCorrelationWindow:
+    """Verify start_date parameter correctly restricts the data window."""
+
+    def _make_split_series(self) -> pd.DataFrame:
+        """
+        200 days. First half: A and B are strongly positive-correlated.
+        Second half: A and B are strongly negative-correlated.
+        Allows us to check that windowing changes the result significantly.
+        """
+        n = 200
+        idx = pd.bdate_range("2020-01-01", periods=n)
+        vals_a = np.ones(n) * 100.0
+        # First 100 days: B = A (positive corr); second 100: B = -A (negative corr)
+        vals_b = np.concatenate([np.ones(100) * 100.0, np.ones(100) * -100.0])
+        # Add tiny noise so not perfectly constant
+        rng = np.random.default_rng(0)
+        vals_a = vals_a + rng.normal(0, 1, n)
+        vals_b = vals_b + rng.normal(0, 1, n)
+        return pd.DataFrame({"A": vals_a, "B": vals_b}, index=idx)
+
+    def test_start_date_none_uses_all_data(self):
+        df = make_daily_pnl(n_days=100)
+        full = compute_correlation_matrix(df, CorrelationMode.NORMAL, start_date=None)
+        also_full = compute_correlation_matrix(df, CorrelationMode.NORMAL)
+        np.testing.assert_allclose(full.values, also_full.values, atol=1e-10)
+
+    def test_start_date_restricts_rows(self):
+        df = self._make_split_series()
+        # With all data, positive + negative halves → correlation near 0
+        full = compute_correlation_matrix(df, CorrelationMode.NORMAL)
+        # With only second half (negative correlation), result should be negative
+        second_half_start = pd.Timestamp("2020-08-01")
+        windowed = compute_correlation_matrix(
+            df, CorrelationMode.NORMAL, start_date=second_half_start
+        )
+        # Full data correlation should be closer to 0 than windowed
+        assert windowed.loc["A", "B"] < full.loc["A", "B"]
+
+    def test_compute_all_modes_with_start_date(self):
+        df = make_daily_pnl(n_days=200)
+        start = pd.Timestamp("2022-06-01")
+        result = compute_all_modes(df, start_date=start)
+        assert set(result.keys()) == {"normal", "negative", "drawdown"}
+        for matrix in result.values():
+            assert matrix.shape == (3, 3)
+
+    def test_windowed_vs_manual_slice_match(self):
+        """start_date window gives same result as manually slicing the DataFrame."""
+        df = make_daily_pnl(n_days=200)
+        start = pd.Timestamp("2022-06-01")
+        windowed = compute_correlation_matrix(df, CorrelationMode.NORMAL, start_date=start)
+        manual = compute_correlation_matrix(df[df.index >= start], CorrelationMode.NORMAL)
+        np.testing.assert_allclose(windowed.values, manual.values, atol=1e-10)

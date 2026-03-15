@@ -23,7 +23,7 @@ from core.portfolio.aggregator import (
     monthly_portfolio_pnl,
     portfolio_summary_stats,
 )
-from core.portfolio.summary import compute_summary
+from core.portfolio.summary import apply_eligibility_rules, compute_summary
 from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Portfolio", layout="wide")
@@ -112,6 +112,11 @@ if _needs_rebuild:
             quitting_max_percent=config.quitting.max_percent_drawdown,
             quitting_sd_multiple=config.quitting.sd_multiple,
         )
+
+        # Apply eligibility rules and add as a column
+        if not summary_df.empty:
+            elig = apply_eligibility_rules(summary_df, config.eligibility)
+            summary_df["eligibility_status"] = elig.map({True: "Yes", False: "No"})
 
         portfolio = build_portfolio(
             imported=imported,
@@ -312,6 +317,7 @@ if not portfolio.summary_metrics.empty:
     # Select key display columns
     display_cols = [
         c for c in [
+            "eligibility_status",
             "contracts", "symbol", "sector",
             "oos_begin", "oos_end", "oos_period_years",
             "expected_annual_profit", "actual_annual_profit", "return_efficiency",
@@ -325,7 +331,9 @@ if not portfolio.summary_metrics.empty:
             "rtd_oos", "rtd_12_months",
             "count_profit_months",
             "incubation_status", "incubation_date",
-            "quitting_status", "quitting_date",
+            "quitting_status", "quitting_date", "profit_since_quit",
+            "k_factor", "ulcer_index",
+            "best_month", "worst_month", "max_consecutive_loss_months",
         ]
         if c in sm.columns
     ]
@@ -348,6 +356,10 @@ if not portfolio.summary_metrics.empty:
             disabled=_readonly,
             key="portfolio_metrics_editor",
             column_config={
+                "eligibility_status": st.column_config.TextColumn(
+                    "Eligible",
+                    help="Yes = meets all configured eligibility rules; No = one or more rules failed.",
+                ),
                 "contracts": st.column_config.NumberColumn(
                     "Contr.", format="%d", min_value=0, max_value=999, step=1
                 ),
@@ -418,6 +430,30 @@ if not portfolio.summary_metrics.empty:
                     help="Continue / Quit / Coming Back / Recovered / N/A"
                 ),
                 "quitting_date": st.column_config.DateColumn("Quit Date"),
+                "profit_since_quit": st.column_config.NumberColumn(
+                    "P&L Since Quit ($)", format="$%.0f",
+                    help="Cumulative OOS P&L from the date the strategy entered 'Quit' status to now.",
+                ),
+                "k_factor": st.column_config.NumberColumn(
+                    "K-Factor",
+                    format="%.2f",
+                    help="(Win rate / Loss rate) × (Avg win / Avg loss) — monthly P&L.",
+                ),
+                "ulcer_index": st.column_config.NumberColumn(
+                    "Ulcer Index",
+                    format="%.2f",
+                    help="RMS % drawdown over OOS period (Peter Martin, 1987). Lower = smoother equity curve.",
+                ),
+                "best_month": st.column_config.NumberColumn(
+                    "Best Month ($)", format="$%.0f"
+                ),
+                "worst_month": st.column_config.NumberColumn(
+                    "Worst Month ($)", format="$%.0f"
+                ),
+                "max_consecutive_loss_months": st.column_config.NumberColumn(
+                    "Max Loss Streak", format="%d",
+                    help="Maximum consecutive losing months in the OOS period."
+                ),
             },
         )
 

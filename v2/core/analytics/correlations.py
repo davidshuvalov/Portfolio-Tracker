@@ -29,19 +29,23 @@ class CorrelationMode(Enum):
 def compute_correlation_matrix(
     daily_pnl: pd.DataFrame,
     mode: CorrelationMode,
+    start_date: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """
     Compute pairwise Pearson correlation matrix for all strategy columns.
 
     Args:
-        daily_pnl: DataFrame (index=DatetimeIndex, columns=strategy names)
-                   with daily PnL values (M2M or closed-trade).
-        mode:      CorrelationMode — controls which days are included.
+        daily_pnl:  DataFrame (index=DatetimeIndex, columns=strategy names)
+                    with daily PnL values (M2M or closed-trade).
+        mode:       CorrelationMode — controls which days are included.
+        start_date: If provided, restrict to rows on or after this date.
 
     Returns:
         Symmetric DataFrame (n×n) with 1.0 on diagonal.
         Returns NaN for pairs with insufficient shared data (< 2 valid days).
     """
+    if start_date is not None:
+        daily_pnl = daily_pnl[daily_pnl.index >= start_date]
     strats = list(daily_pnl.columns)
     n = len(strats)
     matrix = np.eye(n)
@@ -160,13 +164,19 @@ def average_correlation(matrix: pd.DataFrame) -> float:
 
 def compute_all_modes(
     daily_pnl: pd.DataFrame,
+    start_date: pd.Timestamp | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     Convenience: compute all three correlation matrices at once.
     Returns {"normal": df, "negative": df, "drawdown": df}.
+
+    Args:
+        daily_pnl:  DataFrame (index=DatetimeIndex, columns=strategy names).
+        start_date: If provided, restrict to rows on or after this date
+                    (mirrors VBA Correl_Short_Period / Correl_Long_Period).
     """
     return {
-        "normal":   compute_correlation_matrix(daily_pnl, CorrelationMode.NORMAL),
-        "negative": compute_correlation_matrix(daily_pnl, CorrelationMode.NEGATIVE),
-        "drawdown": compute_correlation_matrix(daily_pnl, CorrelationMode.DRAWDOWN),
+        "normal":   compute_correlation_matrix(daily_pnl, CorrelationMode.NORMAL, start_date),
+        "negative": compute_correlation_matrix(daily_pnl, CorrelationMode.NEGATIVE, start_date),
+        "drawdown": compute_correlation_matrix(daily_pnl, CorrelationMode.DRAWDOWN, start_date),
     }

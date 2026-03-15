@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from core.analytics.leave_one_out import run_leave_one_out
+from core.analytics.leave_one_out import run_leave_one_out, run_leave_one_out_chronological
 from core.config import AppConfig, MCConfig
 from core.data_types import PortfolioData
 from ui.strategy_labels import render_strategy_picker
@@ -47,39 +47,59 @@ if len(portfolio.strategies) < 2:
 with st.sidebar:
     st.header("LOO Settings")
 
-    simulations = st.number_input(
-        "Simulations per LOO run",
-        min_value=500,
-        max_value=20_000,
-        value=min(int(config.monte_carlo.simulations), 2_000),
-        step=500,
-        help="Fewer simulations = faster runs. 2,000 gives stable results.",
+    loo_mode = st.radio(
+        "Mode",
+        ["Chronological", "Monte Carlo"],
+        help=(
+            "**Chronological** — replay actual historical data in order. "
+            "Fast, deterministic, no randomisation. "
+            "Shows exact historical impact of removing each strategy.\n\n"
+            "**Monte Carlo** — resample trades randomly. "
+            "Matches the MC page methodology; requires more compute."
+        ),
     )
 
-    margin_threshold = st.number_input(
-        "Margin threshold ($)",
-        min_value=0,
-        max_value=10_000_000,
-        value=5_000,
-        step=500,
-        help="Same ruin threshold as Monte Carlo page.",
-    )
+    if loo_mode == "Monte Carlo":
+        simulations = st.number_input(
+            "Simulations per LOO run",
+            min_value=500,
+            max_value=20_000,
+            value=min(int(config.monte_carlo.simulations), 2_000),
+            step=500,
+            help="Fewer simulations = faster runs. 2,000 gives stable results.",
+        )
 
-    trade_option = st.radio(
-        "Trade data",
-        ["M2M", "Closed"],
-        horizontal=True,
-    )
+        margin_threshold = st.number_input(
+            "Margin threshold ($)",
+            min_value=0,
+            max_value=10_000_000,
+            value=5_000,
+            step=500,
+            help="Same ruin threshold as Monte Carlo page.",
+        )
 
-    trade_adj_pct = st.slider("Trade adjustment %", -50, 50, 0, 1)
-    trade_adjustment = trade_adj_pct / 100.0
+        trade_option = st.radio(
+            "Trade data",
+            ["M2M", "Closed"],
+            horizontal=True,
+        )
 
-    risk_ruin_pct = st.slider(
-        "Risk-of-ruin target %",
-        1, 30,
-        int(config.monte_carlo.risk_ruin_target * 100),
-        1,
-    )
+        trade_adj_pct = st.slider("Trade adjustment %", -50, 50, 0, 1)
+        trade_adjustment = trade_adj_pct / 100.0
+
+        risk_ruin_pct = st.slider(
+            "Risk-of-ruin target %",
+            1, 30,
+            int(config.monte_carlo.risk_ruin_target * 100),
+            1,
+        )
+    else:
+        # Chronological mode — no MC params needed
+        simulations = 0
+        margin_threshold = 5_000
+        trade_option = "M2M"
+        trade_adjustment = 0.0
+        risk_ruin_pct = 10
 
     run_btn = st.button(
         f"Run LOO ({len(portfolio.strategies)} strategies)",
@@ -104,49 +124,61 @@ with st.sidebar:
 loo_result: pd.DataFrame | None = st.session_state.get("loo_result")
 
 if run_btn:
-    mc_config = MCConfig(
-        simulations=int(simulations),
-        period="IS+OOS",
-        risk_ruin_target=risk_ruin_pct / 100.0,
-        risk_ruin_tolerance=config.monte_carlo.risk_ruin_tolerance,
-        trade_adjustment=trade_adjustment,
-        trade_option=trade_option,
-    )
-
     n = len(portfolio.strategies)
-    progress = st.progress(0, text=f"Running LOO for {n} strategies…")
 
-    # Monkey-patch progress into run_leave_one_out by calling it with a custom loop
-    # We import the internal helpers directly for progress tracking
-    from core.analytics.leave_one_out import _analyse_portfolio, _remove_strategy
-    from core.analytics.monte_carlo import run_monte_carlo
-    from core.portfolio.aggregator import portfolio_total_pnl
+    if loo_mode == "Chronological":
+        with st.spinner(f"Running chronological LOO for {n} strategies…"):
+            loo_result = run_leave_one_out_chronological(portfolio)
+        # Compute base stats for header cards
+        _base_pnl = portfolio.daily_pnl.sum(axis=1)
+        from core.analytics.leave_one_out import _chron_stats
+        _base = _chron_stats(_base_pnl)
+        st.session_state.loo_base_profit = _base["annual_profit"]
+        st.session_state.loo_base_sharpe = _base["sharpe"]
+        st.session_state.loo_mode = "Chronological"
 
-    base = _analyse_portfolio(portfolio, mc_config, float(margin_threshold))
-    rows = []
-    for idx, strategy in enumerate(portfolio.strategies):
-        progress.progress(
-            (idx + 1) / (n + 1),
-            text=f"Removing {strategy.name} ({idx + 1}/{n})…",
+    else:
+        mc_config = MCConfig(
+            simulations=int(simulations),
+            period="IS+OOS",
+            risk_ruin_target=risk_ruin_pct / 100.0,
+            risk_ruin_tolerance=config.monte_carlo.risk_ruin_tolerance,
+            trade_adjustment=trade_adjustment,
+            trade_option=trade_option,
         )
-        reduced = _remove_strategy(portfolio, strategy.name)
-        result = _analyse_portfolio(reduced, mc_config, float(margin_threshold))
-        rows.append({
-            "strategy":       strategy.name,
-            "delta_profit":   result.expected_profit - base.expected_profit,
-            "delta_sharpe":   result.sharpe_ratio - base.sharpe_ratio,
-            "delta_drawdown": result.max_drawdown_pct - base.max_drawdown_pct,
-            "delta_rtd":      result.return_to_drawdown - base.return_to_drawdown,
-            "delta_ror":      result.risk_of_ruin - base.risk_of_ruin,
-            "base_profit":    base.expected_profit,
-            "result_profit":  result.expected_profit,
-        })
 
-    progress.progress(1.0, text="Done.")
-    loo_result = pd.DataFrame(rows).sort_values("delta_profit", ascending=True).reset_index(drop=True)
+        progress = st.progress(0, text=f"Running LOO for {n} strategies…")
+
+        from core.analytics.leave_one_out import _analyse_portfolio, _remove_strategy
+
+        base = _analyse_portfolio(portfolio, mc_config, float(margin_threshold))
+        rows = []
+        for idx, strategy in enumerate(portfolio.strategies):
+            progress.progress(
+                (idx + 1) / (n + 1),
+                text=f"Removing {strategy.name} ({idx + 1}/{n})…",
+            )
+            reduced = _remove_strategy(portfolio, strategy.name)
+            result = _analyse_portfolio(reduced, mc_config, float(margin_threshold))
+            rows.append({
+                "strategy":       strategy.name,
+                "delta_profit":   result.expected_profit - base.expected_profit,
+                "delta_annual":   result.expected_profit - base.expected_profit,
+                "delta_sharpe":   result.sharpe_ratio - base.sharpe_ratio,
+                "delta_drawdown": result.max_drawdown_pct - base.max_drawdown_pct,
+                "delta_rtd":      result.return_to_drawdown - base.return_to_drawdown,
+                "delta_ror":      result.risk_of_ruin - base.risk_of_ruin,
+                "base_annual":    base.expected_profit,
+                "result_annual":  result.expected_profit,
+            })
+
+        progress.progress(1.0, text="Done.")
+        loo_result = pd.DataFrame(rows).sort_values("delta_annual", ascending=True).reset_index(drop=True)
+        st.session_state.loo_base_profit = base.expected_profit
+        st.session_state.loo_base_sharpe = base.sharpe_ratio
+        st.session_state.loo_mode = "Monte Carlo"
+
     st.session_state.loo_result = loo_result
-    st.session_state.loo_base_profit = base.expected_profit
-    st.session_state.loo_base_sharpe = base.sharpe_ratio
 
 # ── Display ───────────────────────────────────────────────────────────────────
 if loo_result is None:
@@ -155,32 +187,35 @@ if loo_result is None:
 
 base_profit = st.session_state.get("loo_base_profit", 0.0)
 base_sharpe = st.session_state.get("loo_base_sharpe", 0.0)
+_loo_mode_display = st.session_state.get("loo_mode", loo_mode)
 
 # Summary cards
-c1, c2, c3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Strategies Analysed", len(loo_result))
-c2.metric("Base Portfolio Expected Profit", f"${base_profit:,.0f}")
+c2.metric("Base Portfolio Annual Profit", f"${base_profit:,.0f}")
 c3.metric("Base Portfolio Sharpe", f"{base_sharpe:.2f}")
+c4.metric("Mode", _loo_mode_display)
 
 st.divider()
 
 # ── Results table ─────────────────────────────────────────────────────────────
 st.subheader("LOO Results Table")
-st.caption("Sort by any column. Rows in **red** = strategy hurts portfolio (positive delta_profit).")
+st.caption("Sort by any column. Negative delta = strategy adds value to portfolio.")
 
-display = loo_result[[
-    "strategy", "delta_profit", "delta_sharpe",
-    "delta_drawdown", "delta_rtd", "delta_ror",
-]].copy()
-display["delta_profit"]   = display["delta_profit"].round(0).astype(int)
+_has_ror = "delta_ror" in loo_result.columns
+_display_cols = ["strategy", "delta_annual", "delta_sharpe", "delta_drawdown", "delta_rtd"]
+if _has_ror:
+    _display_cols.append("delta_ror")
+display = loo_result[[c for c in _display_cols if c in loo_result.columns]].copy()
+display["delta_annual"]   = display["delta_annual"].round(0).astype(int)
 display["delta_sharpe"]   = display["delta_sharpe"].round(3)
 display["delta_drawdown"] = display["delta_drawdown"].apply(lambda x: f"{x:+.1%}")
 display["delta_rtd"]      = display["delta_rtd"].round(2)
-display["delta_ror"]      = display["delta_ror"].apply(lambda x: f"{x:+.1%}")
-display.columns = [
-    "Strategy", "ΔProfit ($)", "ΔSharpe",
-    "ΔDrawdown", "ΔRTD", "ΔRoR",
-]
+_col_names = ["Strategy", "ΔAnnual Profit ($)", "ΔSharpe", "ΔDrawdown", "ΔRTD"]
+if _has_ror:
+    display["delta_ror"] = display["delta_ror"].apply(lambda x: f"{x:+.1%}")
+    _col_names.append("ΔRoR")
+display.columns = _col_names
 
 st.dataframe(display, hide_index=True, use_container_width=True)
 
@@ -191,13 +226,13 @@ col_left, col_right = st.columns(2)
 
 with col_left:
     fig = px.bar(
-        loo_result.sort_values("delta_profit"),
-        x="delta_profit",
+        loo_result.sort_values("delta_annual"),
+        x="delta_annual",
         y="strategy",
         orientation="h",
-        title="ΔExpected Profit when Strategy Removed",
-        labels={"delta_profit": "ΔProfit ($)", "strategy": ""},
-        color="delta_profit",
+        title="ΔAnnual Profit when Strategy Removed",
+        labels={"delta_annual": "ΔAnnual Profit ($)", "strategy": ""},
+        color="delta_annual",
         color_continuous_scale=["#4CAF50", "#FFEB3B", "#F44336"],
         color_continuous_midpoint=0,
     )

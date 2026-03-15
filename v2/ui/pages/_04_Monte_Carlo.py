@@ -44,16 +44,21 @@ with st.sidebar:
         help="Run MC on total portfolio PnL or a single strategy",
     )
 
+    _period_opts = ["OOS", "IS", "IS+OOS"]
+    _safe_period = config.monte_carlo.period if config.monte_carlo.period in _period_opts else "OOS"
     period = st.selectbox(
         "Period",
-        ["OOS", "IS", "IS+OOS"],
-        index=0,
+        _period_opts,
+        index=_period_opts.index(_safe_period),
         help="Data period to sample trade PnL from",
     )
 
+    _trade_opts = ["M2M", "Closed"]
+    _safe_trade = config.monte_carlo.trade_option if config.monte_carlo.trade_option in _trade_opts else "Closed"
     trade_option = st.radio(
         "Trade data",
-        ["M2M", "Closed"],
+        _trade_opts,
+        index=_trade_opts.index(_safe_trade),
         horizontal=True,
         help="M2M: daily mark-to-market  |  Closed: closed-trade PnL",
     )

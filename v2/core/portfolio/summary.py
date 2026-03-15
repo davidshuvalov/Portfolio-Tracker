@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from core.config import EligibilityConfig
 from core.data_types import ImportedData, StrategyFolder
 from core.ingestion.date_utils import resolve_oos_dates
 from core.ingestion.walkforward_reader import WalkforwardMetrics, read_walkforward_csv
@@ -249,6 +250,14 @@ def _compute_dynamic_metrics(
         "incubation_date": None,
         "quitting_status": "",
         "quitting_date": None,
+        # Sprint 3.1 metrics
+        "k_factor": None,
+        "ulcer_index": None,
+        "best_month": None,
+        "worst_month": None,
+        "max_consecutive_loss_months": None,
+        # Sprint 3.2 metrics
+        "profit_since_quit": None,
     }
 
     if oos_begin is None or oos_end is None:
@@ -322,6 +331,40 @@ def _compute_dynamic_metrics(
         recent = monthly.iloc[-eligibility_months:]
         result["count_profit_months"] = int((recent > 0).sum())
 
+    # ── Sprint 3.1: additional metrics ───────────────────────────────────────
+    monthly = oos_pnl.resample("ME").sum()
+    if not monthly.empty:
+        result["best_month"] = float(monthly.max())
+        result["worst_month"] = float(monthly.min())
+
+        # Max consecutive losing months
+        losing_streak = 0
+        max_streak = 0
+        for v in monthly:
+            if v < 0:
+                losing_streak += 1
+                max_streak = max(max_streak, losing_streak)
+            else:
+                losing_streak = 0
+        result["max_consecutive_loss_months"] = max_streak
+
+        # K-Factor: ratio of (profit_months / total_months) × (avg_win / abs(avg_loss))
+        profit_months_vals = monthly[monthly > 0]
+        loss_months_vals = monthly[monthly < 0]
+        if len(profit_months_vals) > 0 and len(loss_months_vals) > 0:
+            win_rate = len(profit_months_vals) / len(monthly)
+            avg_win = float(profit_months_vals.mean())
+            avg_loss = abs(float(loss_months_vals.mean()))
+            result["k_factor"] = (win_rate / (1.0 - win_rate)) * (avg_win / avg_loss) if avg_loss > 0 else None
+
+    # Ulcer Index: RMS of % drawdown over OOS period (Peter Martin, 1987)
+    if not oos_pnl.empty:
+        oos_eq = oos_pnl.cumsum()
+        oos_peak = oos_eq.cummax()
+        # % drawdown at each point (avoid division by zero)
+        pct_dd = np.where(oos_peak > 1e-9, (oos_peak - oos_eq) / oos_peak * 100.0, 0.0)
+        result["ulcer_index"] = float(np.sqrt(np.mean(pct_dd ** 2)))
+
     # ── Incubation status ─────────────────────────────────────────────────────
     inc_status, inc_date = _calc_incubation(
         oos_pnl,
@@ -345,6 +388,12 @@ def _compute_dynamic_metrics(
     )
     result["quitting_status"] = quit_status
     result["quitting_date"] = quit_date
+
+    # Sprint 3.2: profit since last quit point
+    if quit_date is not None:
+        quit_ts = pd.Timestamp(quit_date)
+        after_quit = oos_pnl[oos_pnl.index > quit_ts]
+        result["profit_since_quit"] = float(after_quit.sum()) if not after_quit.empty else 0.0
 
     return result
 
@@ -588,3 +637,95 @@ _WF_STR_COLS = [
 ]
 _WF_DATE_COLS = ["is_begin", "oos_begin", "oos_end", "next_opt_date", "last_opt_date"]
 _WF_INT_COLS = ["trading_days_is", "trading_days_isoos"]
+
+
+# ── Eligibility evaluation ────────────────────────────────────────────────────
+
+def apply_eligibility_rules(
+    summary_df: pd.DataFrame,
+    eligibility: EligibilityConfig,
+) -> pd.Series:
+    """
+    Apply all configured eligibility rules to the summary DataFrame.
+    Returns a boolean Series (True = eligible) indexed by strategy name.
+
+    Mirrors VBA EligibilityCheck() logic from F_Summary_Tab_Setup.bas.
+    All enabled qualifiers must be satisfied; any enabled disqualifier voids eligibility.
+    """
+    n = len(summary_df)
+    eligible = pd.Series(True, index=summary_df.index)
+    ratio = eligibility.efficiency_ratio
+
+    def _get(col: str) -> pd.Series:
+        if col in summary_df.columns:
+            return summary_df[col].fillna(0.0)
+        return pd.Series(0.0, index=summary_df.index)
+
+    def _val(row_series: pd.Series, threshold: float, op: str) -> pd.Series:
+        if op == ">":
+            return row_series > threshold
+        return row_series >= threshold
+
+    # ── Qualifiers (must all pass if enabled) ────────────────────────────────
+    qualifier_map = {
+        "profit_1m":  ("profit_last_1_month",  ">", 0.0),
+        "profit_3m":  ("profit_last_3_months", ">", 0.0),
+        "profit_6m":  ("profit_last_6_months", ">", 0.0),
+        "profit_9m":  ("profit_last_9_months", ">", 0.0),
+        "profit_12m": ("profit_last_12_months", ">", 0.0),
+        "profit_oos": ("profit_since_oos_start", ">", 0.0),
+        "efficiency_1m":  ("efficiency_last_1_month",  ">", ratio),
+        "efficiency_3m":  ("efficiency_last_3_months", ">", ratio),
+        "efficiency_6m":  ("efficiency_last_6_months", ">", ratio),
+        "efficiency_9m":  ("efficiency_last_9_months", ">", ratio),
+        "efficiency_12m": ("efficiency_last_12_months", ">", ratio),
+        "efficiency_oos": ("return_efficiency", ">", ratio),
+    }
+    for attr, (col, op, threshold) in qualifier_map.items():
+        if getattr(eligibility, attr, False):
+            eligible &= _val(_get(col), threshold, op)
+
+    # ── Special: 3M OR 6M profit > 0 ─────────────────────────────────────────
+    if eligibility.profit_3or6m:
+        p3 = _get("profit_last_3_months")
+        p6 = _get("profit_last_6_months")
+        eligible &= (p3 > 0) | (p6 > 0)
+
+    # ── Disqualifiers (any triggered → ineligible) ────────────────────────────
+    disqualifier_map = {
+        "loss_1m":  "profit_last_1_month",
+        "loss_3m":  "profit_last_3_months",
+        "loss_6m":  "profit_last_6_months",
+    }
+    for attr, col in disqualifier_map.items():
+        if getattr(eligibility, attr, False):
+            eligible &= ~(_get(col) < 0)
+
+    eff_loss_map = {
+        "efficiency_loss_1m": "efficiency_last_1_month",
+        "efficiency_loss_3m": "efficiency_last_3_months",
+        "efficiency_loss_6m": "efficiency_last_6_months",
+    }
+    for attr, col in eff_loss_map.items():
+        if getattr(eligibility, attr, False):
+            eligible &= ~(_get(col) < -ratio)
+
+    # ── Incubation gate ───────────────────────────────────────────────────────
+    if eligibility.use_incubation:
+        inc_status = summary_df["incubation_status"] if "incubation_status" in summary_df.columns else pd.Series("", index=summary_df.index)
+        eligible &= inc_status.isin(["Passed", ""])
+
+    # ── Quitting gate ─────────────────────────────────────────────────────────
+    if eligibility.use_quitting:
+        quit_status = summary_df["quitting_status"] if "quitting_status" in summary_df.columns else pd.Series("", index=summary_df.index)
+        eligible &= ~quit_status.isin(["Quit", "Coming Back"])
+
+    # ── Count profitable months ───────────────────────────────────────────────
+    if eligibility.use_count_monthly_profits:
+        count_months = _get("count_profit_months")
+        if eligibility.monthly_profit_operator == ">0":
+            eligible &= count_months > eligibility.min_positive_months
+        else:  # ">=0"
+            eligible &= count_months >= eligibility.min_positive_months
+
+    return eligible

@@ -85,6 +85,18 @@ with st.sidebar:
         0.0, 1.0, float(config.corr_drawdown_threshold), 0.05,
     )
 
+    st.divider()
+    period_label = st.radio(
+        "Lookback period",
+        ["All Data", "1 Year", "3 Years", "5 Years"],
+        help=(
+            "Restrict the correlation calculation to the most recent window. "
+            "Mirrors VBA Correl_Short_Period / Correl_Long_Period named ranges."
+        ),
+    )
+    _period_years_map = {"All Data": None, "1 Year": 1, "3 Years": 3, "5 Years": 5}
+    period_years = _period_years_map[period_label]
+
     compute_btn = st.button("Compute Correlations", type="primary", use_container_width=True)
 
     st.divider()
@@ -98,11 +110,24 @@ threshold_map = {
 
 # ── Compute ───────────────────────────────────────────────────────────────────
 corr_cache = st.session_state.get("corr_matrices")
+corr_cache_period = st.session_state.get("corr_cache_period")
+
+# Determine start_date from period window
+_end = portfolio.daily_pnl.index.max() if not portfolio.daily_pnl.empty else None
+if period_years is not None and _end is not None:
+    _start_date = _end - pd.DateOffset(years=period_years)
+else:
+    _start_date = None
+
+# Invalidate cache when period changes
+if corr_cache_period != period_label:
+    corr_cache = None
 
 if compute_btn or corr_cache is None:
     with st.spinner("Computing correlation matrices…"):
-        corr_cache = compute_all_modes(portfolio.daily_pnl)
+        corr_cache = compute_all_modes(portfolio.daily_pnl, start_date=_start_date)
     st.session_state.corr_matrices = corr_cache
+    st.session_state.corr_cache_period = period_label
 
 matrix = corr_cache[mode.value]
 threshold = threshold_map[mode]
@@ -115,9 +140,11 @@ labeled_matrix = relabel_matrix(matrix, label_map)
 st.subheader(f"Correlation Matrix — {mode_label} Mode")
 
 n = len(labeled_matrix)
-# Blank out diagonal (self-correlation = 1) in the text overlay
+# Set diagonal to NaN in z-values so cells appear white (not dark red)
+# and blank out diagonal text overlay (self-correlation is trivially 1)
 _vals = labeled_matrix.values.copy().astype(float)
-_text = np.where(np.eye(n, dtype=bool), "", np.round(_vals, 2).astype(str))
+np.fill_diagonal(_vals, float("nan"))
+_text = np.where(np.eye(n, dtype=bool), "", np.round(labeled_matrix.values, 2).astype(str))
 # Colour scale: green (negative) → white (zero) → red (positive)
 fig = go.Figure(go.Heatmap(
     z=_vals,
