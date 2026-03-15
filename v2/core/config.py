@@ -74,6 +74,66 @@ class StrategyRankingConfig(BaseModel):
     group_by_contracts: bool = False    # Sub-sort by contracts within each rank group
 
 
+class PortfolioOptimizerConfig(BaseModel):
+    """
+    Configures the Portfolio Optimizer workflow — which steps run and in what
+    order, plus all constraint thresholds.
+
+    ``workflow_steps`` is an ordered list of step-type keys.  Toggle a step
+    off by removing it from the list (or using ``enabled_steps``).
+    """
+    # Ordered workflow (step type keys; order matters)
+    workflow_steps: list[str] = Field(
+        default_factory=lambda: [
+            "filter_eligibility",
+            "filter_excluded_symbols",
+            "size_contracts",
+            "filter_contract_size",
+            "rank",
+            "select_strategies",
+            "adjust_correlations",
+            "adjust_gross_margins",
+            "adjust_drawdowns",
+        ]
+    )
+    # Set of currently-enabled step keys (subset of workflow_steps)
+    enabled_steps: list[str] = Field(
+        default_factory=lambda: [
+            "filter_eligibility",
+            "filter_excluded_symbols",
+            "size_contracts",
+            "filter_contract_size",
+            "rank",
+            "select_strategies",
+            "adjust_correlations",
+            "adjust_gross_margins",
+            "adjust_drawdowns",
+        ]
+    )
+    # ── Filter step params ─────────────────────────────────────────────────
+    excluded_symbols: list[str] = Field(default_factory=list)
+    min_contract_size_threshold: float = 0.65   # below this → too large, exclude
+    # ── Rank step ──────────────────────────────────────────────────────────
+    rank_metric: str = "rtd_oos"
+    rank_ascending: bool = False
+    # ── Contract sizing ────────────────────────────────────────────────────
+    min_contract_fraction: float = 0.1          # smallest fractional contract allowed
+    # ── Select step ────────────────────────────────────────────────────────
+    max_strategies: int = 60
+    max_margin_pct: float = 0.75                # max total margin as fraction of equity
+    per_symbol_first: bool = True               # add best-per-symbol before fill
+    # ── Correlation adjustment ─────────────────────────────────────────────
+    max_correlation: float = 0.70
+    max_negative_correlation: float = 0.50
+    # ── Gross margin limits ────────────────────────────────────────────────
+    max_single_contract_margin_pct: float = 0.125   # 12.5% of portfolio margin
+    max_sector_margin_pct: float = 0.25             # 25% of portfolio margin
+    # ── Drawdown controls ──────────────────────────────────────────────────
+    max_avg_drawdown_pct: float = 0.05          # 5% of equity
+    max_single_drawdown_pct: float = 0.125      # 12.5% of equity
+    max_single_trade_loss_pct: float = 0.05     # 5% of equity
+
+
 class IncubationConfig(BaseModel):
     months: int = 6             # Minimum OOS months before incubation check
     min_profit_ratio: float = 1.0  # Profit target as multiple of expected rate
@@ -165,6 +225,7 @@ class AppConfig(BaseModel):
     eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
     contract_sizing: PortfolioContractConfig = Field(default_factory=PortfolioContractConfig)
     ranking: StrategyRankingConfig = Field(default_factory=StrategyRankingConfig)
+    optimizer: PortfolioOptimizerConfig = Field(default_factory=PortfolioOptimizerConfig)
     corr_normal_threshold: float = 0.70
     corr_negative_threshold: float = 0.30
     corr_drawdown_threshold: float = 0.70
