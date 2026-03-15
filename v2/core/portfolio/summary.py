@@ -39,6 +39,10 @@ def compute_summary(
     incubation_months: int = DEFAULT_INCUBATION_MONTHS,
     min_incubation_ratio: float = DEFAULT_MIN_INCUBATION_RATIO,
     eligibility_months: int = DEFAULT_ELIGIBILITY_MONTHS,
+    quitting_method: str = "Drawdown",
+    quitting_max_dollars: float = 50_000.0,
+    quitting_max_percent: float = 1.5,
+    quitting_sd_multiple: float = 1.28,
 ) -> pd.DataFrame:
     """
     Compute per-strategy summary metrics for all strategies in imported.
@@ -86,10 +90,15 @@ def compute_summary(
             oos_end=oos_end,
             expected_annual_profit=wf.expected_annual_profit if wf else 0.0,
             annual_sd_is=wf.annual_sd_is if wf else 0.0,
+            is_max_drawdown=wf.max_drawdown_is if wf else 0.0,
             days_threshold=days_threshold,
             incubation_months=incubation_months,
             min_incubation_ratio=min_incubation_ratio,
             eligibility_months=eligibility_months,
+            quitting_method=quitting_method,
+            quitting_max_dollars=quitting_max_dollars,
+            quitting_max_percent=quitting_max_percent,
+            quitting_sd_multiple=quitting_sd_multiple,
         )
 
         row = _build_row(name, wf, dynamic)
@@ -203,10 +212,15 @@ def _compute_dynamic_metrics(
     oos_end: date | None,
     expected_annual_profit: float,
     annual_sd_is: float,
+    is_max_drawdown: float,
     days_threshold: int,
     incubation_months: int,
     min_incubation_ratio: float,
     eligibility_months: int,
+    quitting_method: str = "Drawdown",
+    quitting_max_dollars: float = 50_000.0,
+    quitting_max_percent: float = 1.5,
+    quitting_sd_multiple: float = 1.28,
 ) -> dict[str, Any]:
     """
     Compute time-windowed and drawdown metrics from the daily PnL series.
@@ -230,6 +244,8 @@ def _compute_dynamic_metrics(
         "count_profit_months": 0,
         "incubation_status": "",
         "incubation_date": None,
+        "quitting_status": "",
+        "quitting_date": None,
     }
 
     if oos_begin is None or oos_end is None:
@@ -312,6 +328,20 @@ def _compute_dynamic_metrics(
     )
     result["incubation_status"] = inc_status
     result["incubation_date"] = inc_date
+
+    # ── Quitting status ───────────────────────────────────────────────────────
+    quit_status, quit_date = _calc_quitting_status(
+        oos_pnl,
+        expected_annual_profit,
+        annual_sd_is,
+        is_max_drawdown,
+        quitting_method,
+        quitting_max_dollars,
+        quitting_max_percent,
+        quitting_sd_multiple,
+    )
+    result["quitting_status"] = quit_status
+    result["quitting_date"] = quit_date
 
     return result
 
@@ -400,7 +430,12 @@ def _calc_incubation(
     Determine incubation status.
     Mirrors VBA: after incubation_months of OOS data, check if cumulative profit
     has reached (expected_daily_rate × days × min_incubation_ratio).
-    Returns ("Passed", date) or ("Incubating", None) or ("", None).
+
+    Returns:
+        ("Passed", date)      — target hit; date is when it first passed
+        ("Not Passed", None)  — enough OOS history but target never reached
+        ("Incubating", None)  — OOS period not long enough yet to evaluate
+        ("", None)            — no OOS data / no expected profit to compare
     """
     if oos_pnl.empty or expected_annual_profit <= 0:
         return "", None
@@ -409,15 +444,125 @@ def _calc_incubation(
     expected_daily = expected_annual_profit / 365.25
 
     cum = oos_pnl.cumsum()
+    reached_threshold = False
 
     for i, (ts, cum_val) in enumerate(cum.items()):
         days_elapsed = i + 1
         if days_elapsed >= incubation_days:
+            reached_threshold = True
             target = expected_daily * days_elapsed * min_incubation_ratio
             if cum_val >= target:
                 return "Passed", ts.date()
 
+    if reached_threshold:
+        return "Not Passed", None
     return "Incubating", None
+
+
+def _calc_quitting_status(
+    oos_pnl: pd.Series,
+    expected_annual_profit: float,
+    annual_sd_is: float,
+    is_max_drawdown: float,
+    quitting_method: str,
+    max_dollars: float,
+    max_percent: float,
+    sd_multiple: float,
+) -> tuple[str, date | None]:
+    """
+    Compute strategy quitting status — mirrors VBA CalculateProfitAndDrawdown()
+    quitting state machine.
+
+    States: "" | "Continue" | "Quit" | "Coming Back" | "Recovered" | "N/A"
+    Strategy must have > 21 OOS days before quitting is evaluated.
+
+    Method "Drawdown":
+        quitting_point = MIN(max_dollars, max_percent × |IS_max_drawdown|)
+        Quit when: current_equity < peak_equity - quitting_point
+
+    Method "Standard Deviation":
+        quit_equity = expected_daily×days − sqrt(days)×(annual_sd/sqrt(365.25))×sd_multiple
+        Quit when: current_equity < quit_equity
+    """
+    if oos_pnl.empty or quitting_method == "None":
+        return "N/A" if quitting_method == "None" else "", None
+
+    if quitting_method not in ("Drawdown", "Standard Deviation"):
+        return "N/A", None
+
+    # Pre-compute quitting threshold for Drawdown method
+    if quitting_method == "Drawdown":
+        if is_max_drawdown <= 0 and max_dollars <= 0:
+            return "", None
+        quitting_point = min(max_dollars, max_percent * abs(is_max_drawdown))
+    else:
+        if expected_annual_profit <= 0 or annual_sd_is <= 0:
+            return "", None
+        expected_daily = expected_annual_profit / 365.25
+        sd_daily = annual_sd_is / (365.25 ** 0.5)
+
+    expected_daily_base = expected_annual_profit / 365.25 if expected_annual_profit > 0 else 0.0
+
+    status = "Continue"
+    quit_date: date | None = None
+    peak_equity = 0.0
+    current_equity = 0.0
+    last_quit_equity_high = 0.0
+
+    for day_idx, (ts, daily_pnl) in enumerate(oos_pnl.items()):
+        current_equity += float(daily_pnl)
+        if current_equity > peak_equity:
+            peak_equity = current_equity
+
+        days_elapsed = day_idx + 1
+
+        # Compute quit equity threshold
+        if quitting_method == "Drawdown":
+            quit_equity = peak_equity - quitting_point
+        else:  # Standard Deviation
+            quit_equity = (
+                expected_daily_base * days_elapsed
+                - (days_elapsed ** 0.5) * sd_daily * sd_multiple
+            )
+
+        # Recovery point (mirrors VBA recoveryPoint logic)
+        incubation_target = expected_daily_base * days_elapsed
+        recovery_point = (
+            incubation_target if peak_equity < incubation_target else last_quit_equity_high
+        )
+
+        # Only evaluate quitting after 21 days
+        if days_elapsed <= 21:
+            continue
+
+        if status == "Continue":
+            if current_equity < quit_equity:
+                status = "Quit"
+                quit_date = ts.date()
+                last_quit_equity_high = peak_equity
+
+        elif status == "Quit":
+            midpoint = (recovery_point + quit_equity) / 2.0
+            if current_equity > recovery_point:
+                status = "Recovered"
+            elif current_equity > midpoint:
+                status = "Coming Back"
+
+        elif status == "Coming Back":
+            midpoint = (recovery_point + quit_equity) / 2.0
+            if current_equity > recovery_point:
+                status = "Recovered"
+            elif current_equity < midpoint:
+                status = "Quit"
+                last_quit_equity_high = peak_equity
+
+        elif status == "Recovered":
+            if current_equity < quit_equity:
+                status = "Quit"
+                quit_date = ts.date()
+                last_quit_equity_high = peak_equity
+
+    return status, quit_date
 
 
 # ── Column group definitions (for NaN-fill when WF missing) ───────────────────

@@ -26,15 +26,71 @@ class MCConfig(BaseModel):
     trade_option: Literal["Closed", "M2M"] = "Closed"
 
 
+class IncubationConfig(BaseModel):
+    months: int = 6             # Minimum OOS months before incubation check
+    min_profit_ratio: float = 1.0  # Profit target as multiple of expected rate
+
+
+class QuittingConfig(BaseModel):
+    """Mirrors VBA Quitting_Method / Quit_Dollar / Quit_percent / Quitting_SD_Multiple."""
+    method: Literal["Drawdown", "Standard Deviation", "None"] = "Drawdown"
+    max_dollars: float = 50_000.0       # Quit_Dollar named range
+    max_percent_drawdown: float = 1.5   # Quit_percent (1.5 = 150% of IS max DD)
+    sd_multiple: float = 1.28           # Quitting_SD_Multiple named range
+
+
 class EligibilityConfig(BaseModel):
+    # Window / threshold settings
     days_threshold_oos: int = 0
+    eligibility_months: int = 12        # EligibilityTotalMonths — lookback for profit count
     oos_dd_vs_is_cap: float = 1.5       # 0 = disabled
-    status_include: list[str] = Field(default_factory=lambda: ["Live"])
-    efficiency_ratio: float = 0.5
+    efficiency_ratio: float = 0.15      # EfficiencyRatio (15%)
     date_type: Literal["OOS Start Date", "Incubation Pass Date"] = "OOS Start Date"
     enable_sector_analysis: bool = True
     enable_symbol_analysis: bool = True
     max_horizon: int = 12
+    status_include: list[str] = Field(default_factory=lambda: ["Live"])
+
+    # ── Profit > $0 checks (Yes/No toggles) ──────────────────────────────────
+    profit_1m: bool = False             # Eligibility1MonthProfit
+    profit_3m: bool = False             # Eligibility3MonthProfit
+    profit_6m: bool = False             # Eligibility6MonthProfit
+    profit_3or6m: bool = True           # Eligibility3or6MonthProfit (3M OR 6M > 0)
+    profit_9m: bool = False             # Eligibility9MonthProfit
+    profit_12m: bool = True             # Eligibility12MonthProfit
+    profit_oos: bool = False            # EligibilityOOSMonthProfit
+
+    # ── Efficiency > ratio checks ─────────────────────────────────────────────
+    efficiency_1m: bool = False         # Eligibility1MonthEff
+    efficiency_3m: bool = False         # Eligibility3MonthEff
+    efficiency_6m: bool = False         # Eligibility6MonthEff
+    efficiency_9m: bool = False         # Eligibility9MonthEff
+    efficiency_12m: bool = False        # Eligibility12MonthEff
+    efficiency_oos: bool = True         # EligibilityOOSMonthEff
+
+    # ── Profit < $0 disqualifiers ─────────────────────────────────────────────
+    loss_1m: bool = False               # Eligibility1MonthLosses
+    loss_3m: bool = False               # Eligibility3MonthLosses
+    loss_6m: bool = False               # Eligibility6MonthLosses
+
+    # ── Efficiency < ratio disqualifiers ─────────────────────────────────────
+    efficiency_loss_1m: bool = False    # Eligibility1MonthEffLosses
+    efficiency_loss_3m: bool = False    # Eligibility3MonthEffLosses
+    efficiency_loss_6m: bool = False    # Eligibility6MonthEffLosses
+
+    # ── Incubation / quitting status gates ───────────────────────────────────
+    use_incubation: bool = True         # EligibilityIncubation
+    use_quitting: bool = True           # EligibilityQuitting
+
+    # ── Count-profitable-months check ────────────────────────────────────────
+    use_count_monthly_profits: bool = False   # EligibilityCountMonthlyProfits
+    min_positive_months: int = 8              # EligibilityMinimumMonths
+    monthly_profit_operator: Literal[">0", ">=0"] = ">0"  # EligibilityGreaterThan
+
+    # ── Additional user filter ────────────────────────────────────────────────
+    additional_user_filter: bool = False          # AdditionalUserFilter
+    additional_user_filter_column: str = "MW Monte Carlo (IS + OOS)"
+    additional_user_filter_min_value: float = 1.5
 
 
 class PortfolioConfig(BaseModel):
@@ -50,6 +106,8 @@ class AppConfig(BaseModel):
     folders: list[Path] = Field(default_factory=list)
     date_format: Literal["DMY", "MDY"] = "DMY"
     portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
+    incubation: IncubationConfig = Field(default_factory=IncubationConfig)
+    quitting: QuittingConfig = Field(default_factory=QuittingConfig)
     monte_carlo: MCConfig = Field(default_factory=MCConfig)
     eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
     corr_normal_threshold: float = 0.70

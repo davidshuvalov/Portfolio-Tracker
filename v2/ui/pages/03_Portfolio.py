@@ -12,7 +12,6 @@ Sections:
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import date
 
 from core.config import AppConfig
@@ -105,6 +104,13 @@ if _needs_rebuild:
             date_format=config.date_format,
             use_cutoff=config.portfolio.use_cutoff,
             cutoff_date=cutoff,
+            incubation_months=config.incubation.months,
+            min_incubation_ratio=config.incubation.min_profit_ratio,
+            eligibility_months=config.eligibility.eligibility_months,
+            quitting_method=config.quitting.method,
+            quitting_max_dollars=config.quitting.max_dollars,
+            quitting_max_percent=config.quitting.max_percent_drawdown,
+            quitting_sd_multiple=config.quitting.sd_multiple,
         )
 
         portfolio = build_portfolio(
@@ -306,14 +312,20 @@ if not portfolio.summary_metrics.empty:
     # Select key display columns
     display_cols = [
         c for c in [
-            "contracts", "symbol", "sector", "oos_begin", "oos_end",
+            "contracts", "symbol", "sector",
+            "oos_begin", "oos_end", "oos_period_years",
             "expected_annual_profit", "actual_annual_profit", "return_efficiency",
             "trades_per_year", "overall_win_rate",
-            "max_drawdown_isoos", "sharpe_isoos",
+            "sharpe_isoos", "sharpe_is",
+            "max_drawdown_isoos", "max_drawdown_is",
             "profit_last_1_month", "profit_last_3_months", "profit_last_6_months",
-            "profit_last_12_months", "profit_since_oos_start",
-            "max_oos_drawdown", "rtd_oos",
-            "incubation_status",
+            "profit_last_9_months", "profit_last_12_months",
+            "profit_since_oos_start",
+            "max_oos_drawdown", "avg_oos_drawdown",
+            "rtd_oos", "rtd_12_months",
+            "count_profit_months",
+            "incubation_status", "incubation_date",
+            "quitting_status", "quitting_date",
         ]
         if c in sm.columns
     ]
@@ -378,6 +390,34 @@ if not portfolio.summary_metrics.empty:
                 "rtd_oos": st.column_config.NumberColumn(
                     "R:DD OOS", format="%.2f"
                 ),
+                "profit_last_9_months": st.column_config.NumberColumn(
+                    "Last 9M ($)", format="$%.0f"
+                ),
+                "avg_oos_drawdown": st.column_config.NumberColumn(
+                    "Avg OOS DD ($)", format="$%.0f"
+                ),
+                "rtd_12_months": st.column_config.NumberColumn(
+                    "R:DD 12M", format="%.2f"
+                ),
+                "count_profit_months": st.column_config.NumberColumn(
+                    "Profit Months", format="%d",
+                    help="# of profitable months in the eligibility lookback window."
+                ),
+                "oos_period_years": st.column_config.NumberColumn(
+                    "OOS Years", format="%.1f"
+                ),
+                "sharpe_is": st.column_config.NumberColumn(
+                    "Sharpe IS", format="%.2f"
+                ),
+                "max_drawdown_is": st.column_config.NumberColumn(
+                    "Max DD IS ($)", format="$%.0f"
+                ),
+                "incubation_date": st.column_config.DateColumn("Incub. Date"),
+                "quitting_status": st.column_config.TextColumn(
+                    "Quit Status",
+                    help="Continue / Quit / Coming Back / Recovered / N/A"
+                ),
+                "quitting_date": st.column_config.DateColumn("Quit Date"),
             },
         )
 
@@ -459,18 +499,30 @@ if not monthly.empty and "Total" in monthly.columns:
     pivot = pivot.reindex(columns=[m for m in month_order if m in pivot.columns])
     pivot = pivot.sort_index(ascending=False)
 
-    fig_hm = px.imshow(
-        pivot,
-        color_continuous_scale="RdYlGn",
-        color_continuous_midpoint=0,
-        text_auto=".0f",
-        aspect="auto",
-        labels={"color": "P&L ($)"},
-    )
+    _hm_vals = pivot.values.astype(float)
+    # Format each cell as "$12,345" or "-$12,345"; blank for NaN
+    def _fmt_pnl(v: float) -> str:
+        return f"-${abs(v):,.0f}" if v < 0 else f"${v:,.0f}"
+    _hm_text = [
+        [_fmt_pnl(v) if not pd.isna(v) else "" for v in row]
+        for row in _hm_vals
+    ]
+    fig_hm = go.Figure(go.Heatmap(
+        z=_hm_vals,
+        x=list(pivot.columns),
+        y=[str(y) for y in pivot.index],
+        colorscale="RdYlGn",
+        zmid=0,
+        text=_hm_text,
+        texttemplate="%{text}",
+        textfont={"size": 11},
+        hovertemplate="%{y} %{x}: %{text}<extra></extra>",
+        colorbar=dict(title="P&L ($)"),
+    ))
     fig_hm.update_layout(
         height=max(200, len(pivot) * 40 + 100),
         margin=dict(l=0, r=0, t=10, b=0),
-        coloraxis_showscale=False,
+        yaxis=dict(autorange="reversed"),
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
