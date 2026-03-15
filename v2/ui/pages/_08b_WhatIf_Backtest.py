@@ -174,6 +174,38 @@ st.caption(
     f"Period: **{start_date}** → **{end_date}** · {n_days} trading days · "
     f"{n_strats} strateg{'y' if n_strats == 1 else 'ies'} · {total_contracts} total contracts"
 )
+
+_wi_exp_col, _ = st.columns([1, 5])
+with _wi_exp_col:
+    if st.button("Export to Excel", key="wi_export_btn"):
+        from core.reporting.excel_export import (
+            export_whatif_backtest,
+            whatif_backtest_export_filename,
+        )
+        _wi_metrics = {
+            "Total Return ($)":   round(total_return, 2),
+            "Annual Return ($)":  round(ann_return,   2),
+            "Max Drawdown ($)":   round(max_dd,       2),
+            "Avg Drawdown ($)":   round(avg_dd,       2),
+            "Monthly Win Rate":   f"{win_rate:.1%}",
+            "Sharpe (Monthly)":   round(sharpe,       3),
+            "Strategies":         n_strats,
+            "Total Contracts":    total_contracts,
+            "Period Start":       str(start_date),
+            "Period End":         str(end_date),
+            "Trading Days":       n_days,
+        }
+        _xlsx = export_whatif_backtest(
+            window, total_pnl, start_date, end_date, _wi_metrics, contracts_override
+        )
+        st.download_button(
+            "📥 Download",
+            data=_xlsx,
+            file_name=whatif_backtest_export_filename(),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_wi_xlsx",
+        )
+
 st.divider()
 
 # ── Equity curve ──────────────────────────────────────────────────────────────

@@ -280,6 +280,19 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
+_eq_exp_col, _ = st.columns([1, 5])
+with _eq_exp_col:
+    if st.button("Export Equity Curves to Excel", key="export_equity_btn"):
+        from core.reporting.excel_export import export_equity_curves, equity_curves_export_filename
+        _xlsx = export_equity_curves(portfolio.daily_pnl)
+        st.download_button(
+            "📥 Download Equity Curves",
+            data=_xlsx,
+            file_name=equity_curves_export_filename(),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_equity_xlsx",
+        )
+
 st.divider()
 
 
@@ -368,7 +381,22 @@ if not portfolio.summary_metrics.empty:
             },
         )
 
-        if st.button("Save Contracts", key="save_contracts_btn"):
+        _sc_col, _em_col, _ = st.columns([1, 1, 4])
+        with _sc_col:
+            _save_contracts_clicked = st.button("Save Contracts", key="save_contracts_btn")
+        with _em_col:
+            if st.button("Export Metrics to Excel", key="export_port_metrics_btn"):
+                from core.reporting.excel_export import export_portfolio, portfolio_export_filename
+                _xlsx = export_portfolio(portfolio, config)
+                st.download_button(
+                    "📥 Download Portfolio Metrics",
+                    data=_xlsx,
+                    file_name=portfolio_export_filename(),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_port_metrics_xlsx",
+                )
+
+        if _save_contracts_clicked:
             from core.portfolio.strategies import load_strategies, save_strategies as _save
             _all_strats = load_strategies()
             _contracts_edit = {

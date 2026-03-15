@@ -236,6 +236,24 @@ if _summary_row is not None:
         wc6.metric("Win Rate (all)",  f"{win_r:.1%}"     if win_r    else "—")
         wc7.metric("OOS Max DD ($)",  f"${wf_dd:,.0f}"   if wf_dd    else "—")
 
+_sd_exp_col, _ = st.columns([1, 5])
+with _sd_exp_col:
+    if st.button("Export to Excel", key="sd_export_btn"):
+        from core.reporting.excel_export import (
+            export_strategy_detail,
+            strategy_detail_export_filename,
+        )
+        _xlsx = export_strategy_detail(
+            selected_name, scaled_pnl, oos_start, _summary_row
+        )
+        st.download_button(
+            "📥 Download",
+            data=_xlsx,
+            file_name=strategy_detail_export_filename(selected_name),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_sd_xlsx",
+        )
+
 st.divider()
 
 # ── Equity curve ───────────────────────────────────────────────────────────────

@@ -544,9 +544,23 @@ with tab_summary:
                 },
             )
 
-            _save_col, _nav_col = st.columns([1, 5])
+            _save_col, _export_col, _nav_col = st.columns([1, 1, 4])
             with _save_col:
                 _do_save = st.button("Save Changes", type="primary", key="save_summary_btn")
+            with _export_col:
+                if st.button("Export to Excel", key="export_summary_xlsx_btn"):
+                    from core.reporting.excel_export import (
+                        export_summary_metrics,
+                        summary_metrics_export_filename,
+                    )
+                    _xlsx = export_summary_metrics(_sm2.drop(columns=["in_portfolio"], errors="ignore"), strategies)
+                    st.download_button(
+                        "📥 Download",
+                        data=_xlsx,
+                        file_name=summary_metrics_export_filename(),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_summary_xlsx",
+                    )
 
             if _do_save:
                 _edits_by_name = {

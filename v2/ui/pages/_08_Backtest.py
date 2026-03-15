@@ -119,6 +119,36 @@ c5.metric("Monthly Win Rate",   f"{win_rate:.1%}")
 c6.metric("Sharpe (Monthly)",   f"{sharpe:.2f}")
 
 st.caption(f"Period: **{start_date}** → **{end_date}** · {n_days} trading days")
+
+_bt_exp_col, _ = st.columns([1, 5])
+with _bt_exp_col:
+    if st.button("Export to Excel", key="bt_export_btn"):
+        from core.reporting.excel_export import (
+            export_backtest_period,
+            backtest_period_export_filename,
+        )
+        _bt_metrics = {
+            "Total Return ($)":   round(total_return, 2),
+            "Annual Return ($)":  round(ann_return,   2),
+            "Max Drawdown ($)":   round(max_dd,       2),
+            "Avg Drawdown ($)":   round(avg_dd,       2),
+            "Monthly Win Rate":   f"{win_rate:.1%}",
+            "Sharpe (Monthly)":   round(sharpe,       3),
+            "Period Start":       str(start_date),
+            "Period End":         str(end_date),
+            "Trading Days":       n_days,
+        }
+        _xlsx = export_backtest_period(
+            pnl_window, port_pnl_window, start_date, end_date, _bt_metrics
+        )
+        st.download_button(
+            "📥 Download",
+            data=_xlsx,
+            file_name=backtest_period_export_filename(start_date, end_date),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_bt_xlsx",
+        )
+
 st.divider()
 
 # ── Equity curve ──────────────────────────────────────────────────────────────
