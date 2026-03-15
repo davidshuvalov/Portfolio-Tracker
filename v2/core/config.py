@@ -63,6 +63,7 @@ class AppConfig(BaseModel):
     margin_source: Literal["TradeStation", "InteractiveBrokers", "Manual"] = "TradeStation"
     margin_type: Literal["Initial", "Maintenance"] = "Maintenance"
     customer_id: int = 0
+    multiwalk_folder: str = ""
 
     @field_validator("folders", mode="before")
     @classmethod

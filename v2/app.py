@@ -45,7 +45,7 @@ def _check_license() -> bool:
 
     try:
         from core.licensing.license_manager import validate_full
-        valid, message = validate_full(customer_id)
+        valid, message = validate_full(customer_id, config.multiwalk_folder)
     except Exception as e:
         valid, message = False, str(e)
 
@@ -60,21 +60,34 @@ def _show_license_entry(prompt: str) -> None:
     render_logo()
     st.divider()
     st.warning(prompt)
-    st.markdown(
-        "Enter your **TradeStation Customer ID** (the number you use to log in to "
-        "TradeStation). This is verified against the MultiWalk license DLL."
-    )
+
+    config: AppConfig = st.session_state.config
+
     with st.form("license_form"):
+        st.markdown("**TradeStation Customer ID**")
+        st.caption("The number you use to log in to TradeStation — verified against the MultiWalk license DLL.")
         cid = st.number_input(
-            "TradeStation Customer ID",
+            "Customer ID",
             min_value=1,
             max_value=9_999_999,
-            value=1,
+            value=int(config.customer_id) if config.customer_id else 1,
             step=1,
+            label_visibility="collapsed",
         )
+
+        st.markdown("**MultiWalk Program Folder**")
+        st.caption("Folder containing `MultiWalkLicense64.dll`. Leave blank to auto-detect from registry.")
+        folder = st.text_input(
+            "MultiWalk Program Folder",
+            value=config.multiwalk_folder or "",
+            placeholder=r"e.g. C:\Users\you\Documents\MultiWalk\Program",
+            label_visibility="collapsed",
+        )
+
         submitted = st.form_submit_button("Activate", type="primary")
         if submitted and cid:
             st.session_state.config.customer_id = int(cid)
+            st.session_state.config.multiwalk_folder = folder.strip()
             st.session_state.config.save()
             st.rerun()
 

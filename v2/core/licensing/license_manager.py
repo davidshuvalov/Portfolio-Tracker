@@ -181,13 +181,14 @@ def is_known_customer(customer_id: int) -> bool:
     return customer_id in _VALID_CUSTOMER_IDS
 
 
-def validate_full(customer_id: int) -> tuple[bool, str]:
+def validate_full(customer_id: int, multiwalk_folder: str = "") -> tuple[bool, str]:
     """
     Full license validation — mirrors IsLicenseValid() in B_Licencing_Checks.bas.
 
     Steps:
       1. Check customer_id against the known-customer list.
-      2. Read MultiWalk program folder from registry.
+      2. Resolve MultiWalk program folder: use multiwalk_folder if provided,
+         otherwise read from the Windows registry.
       3. Call MultiWalkIsLicensePro via ctypes.
 
     Returns:
@@ -203,11 +204,11 @@ def validate_full(customer_id: int) -> tuple[bool, str]:
             "Please contact david@portfoliotracker.com for access."
         )
 
-    folder = get_multiwalk_folder()
-    if folder is None:
+    folder = multiwalk_folder.strip() if multiwalk_folder else get_multiwalk_folder()
+    if not folder:
         return False, (
-            "MultiWalk program folder not found. "
-            "Is MultiWalk installed on this machine?"
+            "MultiWalk program folder not found in the Windows registry. "
+            "Enter it manually below."
         )
 
     return _call_dll(folder, customer_id)
