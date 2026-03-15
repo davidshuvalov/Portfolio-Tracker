@@ -176,14 +176,14 @@ def main():
         st.markdown("All setup steps complete. Explore your portfolio:")
 
         analytics = [
-            ("Monte Carlo", "ui/pages/04_Monte_Carlo.py", "Risk-of-ruin simulation"),
-            ("Correlations", "ui/pages/05_Correlations.py", "Strategy correlation analysis"),
-            ("Diversification", "ui/pages/06_Diversification.py", "Sector & symbol breakdown"),
-            ("Leave One Out", "ui/pages/07_Leave_One_Out.py", "Portfolio sensitivity"),
-            ("Backtest", "ui/pages/08_Backtest.py", "Historical period performance"),
-            ("Eligibility Backtest", "ui/pages/09_Eligibility_Backtest.py", "Walk-forward rules"),
-            ("Margin Tracking", "ui/pages/10_Margin_Tracking.py", "Daily margin by symbol"),
-            ("Position Check", "ui/pages/11_Position_Check.py", "Current live positions"),
+            ("Monte Carlo", "ui/pages/_04_Monte_Carlo.py", "Risk-of-ruin simulation"),
+            ("Correlations", "ui/pages/_05_Correlations.py", "Strategy correlation analysis"),
+            ("Diversification", "ui/pages/_06_Diversification.py", "Sector & symbol breakdown"),
+            ("Leave One Out", "ui/pages/_07_Leave_One_Out.py", "Portfolio sensitivity"),
+            ("Backtest", "ui/pages/_08_Backtest.py", "Historical period performance"),
+            ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py", "Walk-forward rules"),
+            ("Margin Tracking", "ui/pages/_10_Margin_Tracking.py", "Daily margin by symbol"),
+            ("Position Check", "ui/pages/_11_Position_Check.py", "Current live positions"),
         ]
 
         a_cols = st.columns(4)

@@ -60,9 +60,16 @@ if not strategies_config:
 portfolio = st.session_state.get("portfolio_data")
 _needs_rebuild = portfolio is None
 
+if _needs_rebuild:
+    st.warning(
+        "Portfolio has not been built yet, or strategy changes require a rebuild. "
+        "Click **Build Portfolio** to continue."
+    )
+
 col_rebuild, col_status = st.columns([1, 5])
 with col_rebuild:
-    if st.button("Rebuild Portfolio", type="primary" if _needs_rebuild else "secondary"):
+    if st.button("Build Portfolio" if _needs_rebuild else "Rebuild Portfolio",
+                 type="primary" if _needs_rebuild else "secondary"):
         _needs_rebuild = True
 
 if _needs_rebuild:
@@ -331,14 +338,14 @@ st.divider()
 st.markdown("**Portfolio built. Explore analytics:**")
 _a_cols = st.columns(4)
 _analytics = [
-    ("Monte Carlo", "ui/pages/04_Monte_Carlo.py"),
-    ("Correlations", "ui/pages/05_Correlations.py"),
-    ("Diversification", "ui/pages/06_Diversification.py"),
-    ("Leave One Out", "ui/pages/07_Leave_One_Out.py"),
-    ("Backtest", "ui/pages/08_Backtest.py"),
-    ("Eligibility Backtest", "ui/pages/09_Eligibility_Backtest.py"),
-    ("Margin Tracking", "ui/pages/10_Margin_Tracking.py"),
-    ("Position Check", "ui/pages/11_Position_Check.py"),
+    ("Monte Carlo", "ui/pages/_04_Monte_Carlo.py"),
+    ("Correlations", "ui/pages/_05_Correlations.py"),
+    ("Diversification", "ui/pages/_06_Diversification.py"),
+    ("Leave One Out", "ui/pages/_07_Leave_One_Out.py"),
+    ("Backtest", "ui/pages/_08_Backtest.py"),
+    ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py"),
+    ("Margin Tracking", "ui/pages/_10_Margin_Tracking.py"),
+    ("Position Check", "ui/pages/_11_Position_Check.py"),
 ]
 for _i, (_label, _page) in enumerate(_analytics):
     with _a_cols[_i % 4]:

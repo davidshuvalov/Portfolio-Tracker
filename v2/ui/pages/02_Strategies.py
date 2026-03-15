@@ -162,10 +162,12 @@ if st.button("Save Changes", type="primary"):
             merged.append(s)
 
     save_strategies(merged)
+    # Invalidate cached portfolio — status changes require a rebuild
+    st.session_state.portfolio_data = None
     live_count = sum(1 for r in edited_rows if r.get("status") == "Live")
-    st.success(f"Saved {len(edited_rows)} strategy records.")
+    st.success(f"Saved {len(edited_rows)} strategy records. Portfolio will need to be rebuilt.")
     if live_count:
-        st.page_link("ui/pages/03_Portfolio.py", label="Next: Build Portfolio →")
+        st.page_link("ui/pages/03_Portfolio.py", label="Rebuild Portfolio →")
     st.rerun()
 
 
