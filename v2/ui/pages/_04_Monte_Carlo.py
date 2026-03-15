@@ -209,29 +209,28 @@ if result is None:
 
 st.subheader(f"Results — {mc_target_label}")
 
-# Metric cards
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-c1.metric(
+# Metric cards — two rows of 3 to avoid label/value truncation
+_ror_val = f"{result.risk_of_ruin:.1%}" if not np.isnan(result.risk_of_ruin) else "N/A"
+_row1 = st.columns(3)
+_row1[0].metric(
     "Starting Equity",
     f"${result.starting_equity:,.0f}",
     help="Capital required to achieve the target risk-of-ruin probability",
 )
-c2.metric(
-    "Expected Annual Profit",
-    f"${result.expected_profit:,.0f}",
-)
-c3.metric(
+_row1[1].metric("Expected Annual Profit", f"${result.expected_profit:,.0f}")
+_row1[2].metric(
     "Risk of Ruin",
-    f"{result.risk_of_ruin:.1%}" if not np.isnan(result.risk_of_ruin) else "N/A",
+    _ror_val,
     help="Probability equity fell below margin threshold",
 )
-c4.metric(
-    "Max Drawdown",
+_row2 = st.columns(3)
+_row2[0].metric(
+    "Max Drawdown (median)",
     f"{result.max_drawdown_pct:.1%}",
     help="Median max peak-to-trough drawdown across scenarios",
 )
-c5.metric("Sharpe Ratio", f"{result.sharpe_ratio:.2f}")
-c6.metric("Return / Drawdown", f"{result.return_to_drawdown:.2f}")
+_row2[1].metric("Sharpe Ratio", f"{result.sharpe_ratio:.2f}")
+_row2[2].metric("Return / Max Drawdown", f"{result.return_to_drawdown:.2f}")
 
 st.divider()
 
