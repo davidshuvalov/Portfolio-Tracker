@@ -153,6 +153,54 @@ def contract_size_from_atr(
     return max(1, math.floor(raw))
 
 
+def estimate_contracts(
+    trades_df: pd.DataFrame,
+    strategies: list[dict],
+    config: object,
+) -> dict[str, int]:
+    """
+    Estimate contract counts for a list of strategies using the configured
+    ATR/margin blend and starting equity.
+
+    For each strategy:
+        dollar_risk = atr * ratio + margin * (1 - ratio)
+        contracts   = floor(equity * pct / dollar_risk)
+
+    Strategies with no trade data or zero effective risk default to 1 contract.
+
+    Args:
+        trades_df:  DataFrame with columns [strategy, date, pnl, mae, mfe].
+                    May be None or empty (all strategies default to 1).
+        strategies: List of strategy dicts with at least ``"name"`` and
+                    optionally ``"symbol"`` keys.
+        config:     AppConfig instance (or compatible object) providing
+                    ``contract_sizing`` and ``symbol_margins`` / ``default_margin``.
+
+    Returns:
+        ``{strategy_name: contracts}`` dict — all values ≥ 1.
+    """
+    cs = config.contract_sizing
+    current_atr: pd.Series = compute_atr(trades_df, cs.atr_window) if (
+        trades_df is not None and not trades_df.empty
+    ) else pd.Series(dtype=float)
+
+    result: dict[str, int] = {}
+    for s in strategies:
+        name   = s.get("name", "")
+        symbol = s.get("symbol", "")
+        atr_val = float(current_atr.get(name, 0.0))
+        raw_margin = float(config.symbol_margins.get(symbol, config.default_margin))
+        margin = raw_margin * cs.contract_margin_multiple
+        result[name] = contract_size_from_atr(
+            equity=cs.starting_equity,
+            contract_size_pct=cs.contract_size_pct_equity,
+            atr_dollars=atr_val,
+            margin=margin,
+            ratio=cs.contract_ratio_margin_atr,
+        )
+    return result
+
+
 def reweight_contracts_by_atr(
     base_contracts: pd.Series,
     atr_series: pd.DataFrame,

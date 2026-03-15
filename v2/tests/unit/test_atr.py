@@ -21,6 +21,7 @@ from core.analytics.atr import (
     compute_atr,
     compute_atr_series,
     contract_size_from_atr,
+    estimate_contracts,
     reweight_contracts_by_atr,
 )
 
@@ -344,3 +345,127 @@ class TestReweightContractsByAtr:
         # B: floor(4 * 100/200) = 2
         assert result.loc[dates[0], "A"] == pytest.approx(4.0)
         assert result.loc[dates[0], "B"] == pytest.approx(2.0)
+
+
+# ── estimate_contracts ────────────────────────────────────────────────────────
+
+class _FakeContractSizing:
+    starting_equity       = 500_000.0
+    contract_size_pct_equity = 0.01     # 1% per contract
+    atr_window            = "ATR Last 3 Months"
+    contract_ratio_margin_atr = 1.0     # pure ATR
+    contract_margin_multiple  = 1.0     # use margin as-is
+
+
+class _FakeConfig:
+    contract_sizing  = _FakeContractSizing()
+    symbol_margins   = {"ES": 12_000.0}
+    default_margin   = 5_000.0
+
+
+class TestEstimateContracts:
+    """Tests for estimate_contracts() end-to-end sizing."""
+
+    def _make_trades(self, strategy: str, atr_per_day: float, n: int = 70) -> pd.DataFrame:
+        """Build trades_df where ATR ≈ atr_per_day (equal MFE = MAE = atr/2)."""
+        dates = pd.bdate_range("2022-01-03", periods=n)
+        half = atr_per_day / 2.0
+        return pd.DataFrame({
+            "strategy": strategy,
+            "date": dates,
+            "pnl": 0.0,
+            "mae": half,
+            "mfe": half,
+        })
+
+    def test_returns_all_strategies(self):
+        strats = [{"name": "A", "symbol": "ES"}, {"name": "B", "symbol": "NQ"}]
+        result = estimate_contracts(pd.DataFrame(), strats, _FakeConfig())
+        assert set(result.keys()) == {"A", "B"}
+
+    def test_minimum_one_contract_no_trade_data(self):
+        """No trade data → ATR=0, effective_risk=0 → defaults to 1."""
+        strats = [{"name": "A", "symbol": "ES"}]
+        result = estimate_contracts(None, strats, _FakeConfig())
+        assert result["A"] == 1
+
+    def test_minimum_one_contract_empty_trades(self):
+        strats = [{"name": "A", "symbol": "ES"}]
+        result = estimate_contracts(pd.DataFrame(), strats, _FakeConfig())
+        assert result["A"] == 1
+
+    def test_pure_atr_sizing(self):
+        """ratio=1 (pure ATR): contracts = floor(equity * pct / atr)."""
+        # ATR per day = 1000, equity = 500_000, pct = 0.01
+        # dollar_risk = 1000, raw = 5000/1000 = 5
+        trades = self._make_trades("A", atr_per_day=1_000.0)
+        strats = [{"name": "A", "symbol": "ES"}]
+        result = estimate_contracts(trades, strats, _FakeConfig())
+        assert result["A"] == 5
+
+    def test_symbol_margin_used_when_atr_zero(self):
+        """Strategy with no trades uses default_margin via margin-only sizing.
+
+        Config has ratio=1.0 (pure ATR), ATR=0 → effective_risk=0 → returns 1.
+        Switch config to ratio=0 to force margin path.
+        """
+        class _MarginOnly(_FakeContractSizing):
+            contract_ratio_margin_atr = 0.0  # pure margin
+
+        class _CfgMargin(_FakeConfig):
+            contract_sizing = _MarginOnly()
+
+        # No trades → ATR = 0, margin for ES = 12_000
+        # dollar_risk = 12_000 * 1.0 = 12_000
+        # raw = 500_000 * 0.01 / 12_000 ≈ 0.4167 → floor = 0 → max(1, 0) = 1
+        strats = [{"name": "A", "symbol": "ES"}]
+        result = estimate_contracts(pd.DataFrame(), strats, _CfgMargin())
+        assert result["A"] == 1
+
+    def test_default_margin_used_for_unknown_symbol(self):
+        """Symbol not in symbol_margins → default_margin (5000) applied."""
+        class _MarginOnly(_FakeContractSizing):
+            contract_ratio_margin_atr = 0.0  # force margin path
+
+        class _CfgMargin(_FakeConfig):
+            contract_sizing = _MarginOnly()
+            symbol_margins  = {}  # no symbol data
+            default_margin  = 1_000.0
+
+        # dollar_risk = 1_000 * 1.0 = 1_000
+        # raw = 500_000 * 0.01 / 1_000 = 5.0
+        strats = [{"name": "A", "symbol": "ZZ"}]
+        result = estimate_contracts(pd.DataFrame(), strats, _CfgMargin())
+        assert result["A"] == 5
+
+    def test_contract_margin_multiple_applied(self):
+        """contract_margin_multiple scales margin before sizing."""
+        class _Half(_FakeContractSizing):
+            contract_ratio_margin_atr = 0.0
+            contract_margin_multiple  = 0.5  # half-margin
+
+        class _CfgHalf(_FakeConfig):
+            contract_sizing = _Half()
+            symbol_margins  = {}
+            default_margin  = 2_000.0
+
+        # effective_margin = 2_000 * 0.5 = 1_000
+        # raw = 500_000 * 0.01 / 1_000 = 5
+        strats = [{"name": "A", "symbol": "X"}]
+        result = estimate_contracts(pd.DataFrame(), strats, _CfgHalf())
+        assert result["A"] == 5
+
+    def test_multiple_strategies_sized_independently(self):
+        """Each strategy is sized from its own ATR."""
+        # Strategy A: ATR=500 → 10 contracts; Strategy B: ATR=1000 → 5 contracts
+        trades_a = self._make_trades("A", atr_per_day=500.0)
+        trades_b = self._make_trades("B", atr_per_day=1_000.0)
+        trades = pd.concat([trades_a, trades_b], ignore_index=True)
+        strats = [{"name": "A", "symbol": "ES"}, {"name": "B", "symbol": "NQ"}]
+        result = estimate_contracts(trades, strats, _FakeConfig())
+        assert result["A"] == 10
+        assert result["B"] == 5
+
+    def test_empty_strategy_list(self):
+        result = estimate_contracts(pd.DataFrame(), [], _FakeConfig())
+        assert result == {}

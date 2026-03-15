@@ -182,13 +182,43 @@ with tab_config:
             index=0,
             key="bulk_status",
         )
+        bulk_contract_mode = st.radio(
+            "Contracts for new strategies",
+            options=["Estimated", "1", "Custom"],
+            horizontal=True,
+            key="bulk_contract_mode",
+            help="Estimated uses ATR/margin blend from Contract Sizing settings.",
+        )
+        bulk_custom_contracts = 1
+        if bulk_contract_mode == "Custom":
+            bulk_custom_contracts = st.number_input(
+                "Contracts", min_value=1, max_value=999, value=1, step=1,
+                key="bulk_custom_contracts",
+            )
         if bulk_status and st.button("Apply to New strategies"):
+            _cfg_bulk = st.session_state.get("config", None)
+            if _cfg_bulk is None:
+                from core.config import AppConfig as _ACB
+                _cfg_bulk = _ACB.load()
+            _imported_bulk = st.session_state.get("imported_data")
+            _new_strats = [s for s in strategies if s.get("status") == "New"]
+            if bulk_contract_mode == "Estimated" and _imported_bulk is not None and _new_strats:
+                from core.analytics.atr import estimate_contracts as _est_c
+                _bulk_estimated = _est_c(_imported_bulk.trades, _new_strats, _cfg_bulk)
+            else:
+                _bulk_estimated = {}
             updated = []
             changed = 0
             for s in strategies:
                 if s.get("status") == "New":
                     s = dict(s)
                     s["status"] = bulk_status
+                    if bulk_contract_mode == "Estimated":
+                        s["contracts"] = _bulk_estimated.get(s.get("name", ""), 1)
+                    elif bulk_contract_mode == "1":
+                        s["contracts"] = 1
+                    else:
+                        s["contracts"] = int(bulk_custom_contracts)
                     changed += 1
                 updated.append(s)
             save_strategies(updated)
@@ -423,11 +453,38 @@ with tab_summary:
                     key="quick_add_select",
                     placeholder="Search strategies…",
                 )
+                _contract_mode = st.radio(
+                    "Contract count for new strategies",
+                    options=["Estimated", "1", "Custom"],
+                    horizontal=True,
+                    key="quick_add_contract_mode",
+                    help="Estimated uses the ATR/margin blend from Contract Sizing settings.",
+                )
+                _custom_contracts = 1
+                if _contract_mode == "Custom":
+                    _custom_contracts = st.number_input(
+                        "Contracts", min_value=1, max_value=999, value=1, step=1,
+                        key="quick_add_custom_contracts",
+                    )
                 if st.button("➕ Add selected", key="quick_add_btn", disabled=not _to_add):
+                    _cfg_now = st.session_state.get("config", _AC.load())
+                    _imported_now = st.session_state.get("imported_data")
+                    if _contract_mode == "Estimated" and _imported_now is not None:
+                        from core.analytics.atr import estimate_contracts as _est_contracts
+                        _to_add_dicts = [s for s in _all_strats_now if s.get("name") in _to_add]
+                        _estimated = _est_contracts(_imported_now.trades, _to_add_dicts, _cfg_now)
+                    else:
+                        _estimated = {}
                     _updated = []
                     for _s in _all_strats_now:
                         if _s.get("name") in _to_add:
                             _s = dict(_s, status=_LIVE_STATUS)
+                            if _contract_mode == "Estimated":
+                                _s["contracts"] = _estimated.get(_s["name"], 1)
+                            elif _contract_mode == "1":
+                                _s["contracts"] = 1
+                            else:
+                                _s["contracts"] = int(_custom_contracts)
                         _updated.append(_s)
                     save_strategies(_updated)
                     st.session_state.portfolio_data = None
