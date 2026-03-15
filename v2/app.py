@@ -140,10 +140,7 @@ def _step_card(
             st.markdown(f"**{title}**")
             st.caption(desc)
             if done or active:
-                st.markdown(
-                    f'<span style="color:#3b82f6;font-size:0.85rem">{action}</span>',
-                    unsafe_allow_html=True,
-                )
+                st.page_link(page, label=action)
 
 
 # ── Analytics card renderer ───────────────────────────────────────────────────
@@ -155,27 +152,10 @@ def _analytics_card(col, title: str, desc: str, page: str) -> None:
             st.page_link(page, label="Open →")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-def main():
-    if not _check_license():
-        return
+# ── Home page content ─────────────────────────────────────────────────────────
+def _home_page() -> None:
+    from ui.workflow import step_status
 
-    from ui.workflow import step_status, render_workflow_sidebar
-
-    # ── Sidebar ───────────────────────────────────────────────────────────────
-    with st.sidebar:
-        render_sidebar_logo()
-        st.divider()
-        render_workflow_sidebar()
-
-        if st.session_state.imported_data is not None:
-            data = st.session_state.imported_data
-            n_strats = len(data.strategy_names)
-            start, end = data.date_range
-            st.metric("Strategies loaded", n_strats)
-            st.caption(f"{start} → {end}")
-
-    # ── Hero ──────────────────────────────────────────────────────────────────
     render_logo()
     st.markdown(
         '<p style="color:#64748b;font-size:0.95rem;margin-top:0.25rem;margin-bottom:0">'
@@ -349,6 +329,50 @@ Once all four steps are complete, eight analytics modules unlock:
 - The **Buy & Hold** folder provides current ATR values across all markets,
   useful for volatility-adjusted position sizing.
 """)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main():
+    # Register all pages so st.page_link() can resolve file paths (Streamlit 1.37+)
+    pg = st.navigation(
+        [
+            st.Page(_home_page, title="Home", url_path=""),
+            st.Page("ui/pages/01_Import.py", title="Import"),
+            st.Page("ui/pages/02_Strategies.py", title="Strategies"),
+            st.Page("ui/pages/03_Portfolio.py", title="Portfolio"),
+            st.Page("ui/pages/_04_Monte_Carlo.py", title="Monte Carlo"),
+            st.Page("ui/pages/_05_Correlations.py", title="Correlations"),
+            st.Page("ui/pages/_06_Diversification.py", title="Diversification"),
+            st.Page("ui/pages/_07_Leave_One_Out.py", title="Leave One Out"),
+            st.Page("ui/pages/_08_Backtest.py", title="Backtest"),
+            st.Page("ui/pages/_09_Eligibility_Backtest.py", title="Eligibility Backtest"),
+            st.Page("ui/pages/_10_Margin_Tracking.py", title="Margin Tracking"),
+            st.Page("ui/pages/_11_Position_Check.py", title="Position Check"),
+            st.Page("ui/pages/12_Settings.py", title="Settings"),
+            st.Page("ui/pages/00_Migrate.py", title="Migrate"),
+        ],
+        position="hidden",
+    )
+
+    if not _check_license():
+        return
+
+    from ui.workflow import render_workflow_sidebar
+
+    # ── Sidebar ───────────────────────────────────────────────────────────────
+    with st.sidebar:
+        render_sidebar_logo()
+        st.divider()
+        render_workflow_sidebar()
+
+        if st.session_state.imported_data is not None:
+            data = st.session_state.imported_data
+            n_strats = len(data.strategy_names)
+            start, end = data.date_range
+            st.metric("Strategies loaded", n_strats)
+            st.caption(f"{start} → {end}")
+
+    pg.run()
 
 
 if __name__ == "__main__":
