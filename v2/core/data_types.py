@@ -59,6 +59,7 @@ class StrategyFolder:
     equity_csv: Path
     trade_csv: Path | None              # Optional
     walkforward_csv: Path | None        # Optional
+    base_folder: Path | None = None     # The root base folder this strategy was found under
 
 
 @dataclass

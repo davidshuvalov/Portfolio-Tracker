@@ -72,15 +72,14 @@ def import_all(
 
     Returns (ImportedData, warnings).
 
+    Supports two EquityData.csv layouts:
+      Single-strategy: col 0 = Date, col 1 = M2M, col 2 = Long, col 3 = Short, col 5 = Closed
+      Multi-strategy:  col 0 = Name, col 1 = Date, col 2 = M2M, col 3 = Long, col 4 = Short, col 6 = Closed
+    Multi-strategy files (e.g. Buy & Hold benchmarks) produce one column per sub-strategy.
+
     Args:
         progress_cb: Optional callable(idx, total, name) called after each
                      strategy CSV is read, for progress-bar updates.
-
-    Mirrors VBA OptimizeDataProcessing:
-    1. Read each strategy's EquityData.csv into per-strategy date→value dicts
-    2. Collect the full union of dates
-    3. Build aligned matrices (zeros for missing dates)
-    4. Read TradeData.csv for trade-level analysis
     """
     warnings: list[str] = []
     strategy_data: list[_StrategyEquity] = []
@@ -89,13 +88,22 @@ def import_all(
     for idx, sf in enumerate(strategy_folders):
         if progress_cb is not None:
             progress_cb(idx, total, sf.name)
-        equity = _read_equity_csv(sf.equity_csv, sf.name, date_format, warnings)
-        if equity is None:
-            continue
-        strategy_data.append(equity)
+        equities = _read_equity_csv(sf.equity_csv, sf.name, date_format, warnings)
+        strategy_data.extend(equities)
 
     if not strategy_data:
         raise ValueError("No valid EquityData.csv files found in any strategy folder.")
+
+    # Deduplicate strategy names (last one wins for multi-file collisions)
+    seen: dict[str, _StrategyEquity] = {}
+    for sd in strategy_data:
+        if sd.name in seen:
+            warnings.append(
+                f"Duplicate strategy name '{sd.name}' in multiple files — keeping first occurrence."
+            )
+        else:
+            seen[sd.name] = sd
+    strategy_data = list(seen.values())
 
     # Build union of all dates across strategies
     all_dates_set: set = set()
@@ -140,10 +148,25 @@ def import_all(
     trades = _read_all_trades(strategy_folders, date_format, warnings)
 
     # Build placeholder strategies list (metadata merged later from config)
+    # For multi-strategy files, sub-strategy names differ from the folder name —
+    # map them back to the folder that produced them.
+    imported_names = {sd.name for sd in strategy_data}
+    _folder_by_name: dict[str, Path] = {}
+    for sf in strategy_folders:
+        # Single-strategy: folder name == strategy name
+        if sf.name in imported_names:
+            _folder_by_name[sf.name] = sf.path
+    # Sub-strategies from multi-strategy files get the parent folder path
+    for sd in strategy_data:
+        if sd.name not in _folder_by_name:
+            # Find the StrategyFolder whose equity_csv produced this sub-strategy
+            # (the folder's equity_csv is the same file that produced the sub-strategy)
+            # We use the first folder as fallback
+            _folder_by_name[sd.name] = strategy_folders[0].path if strategy_folders else Path(".")
+
     strategies = [
-        Strategy(name=sf.name, folder=sf.path, status="")
-        for sf in strategy_folders
-        if any(sd.name == sf.name for sd in strategy_data)
+        Strategy(name=sd.name, folder=_folder_by_name[sd.name], status="")
+        for sd in strategy_data
     ]
 
     imported = ImportedData(
@@ -157,30 +180,90 @@ def import_all(
     return imported, warnings
 
 
+def _is_multi_strategy_file(csv_path: Path, date_format: str = "DMY") -> bool:
+    """
+    Quick probe: return True if csv_path is a multi-strategy EquityData.csv
+    (col 0 is a name string, col 1 is a date).
+    Used by the Import UI to flag multi-strategy folders at scan time.
+    """
+    try:
+        raw = pd.read_csv(csv_path, header=None, dtype=str,
+                          nrows=3, encoding_errors="replace")
+    except Exception:
+        return False
+    if raw.shape[0] < 1 or raw.shape[1] < 2:
+        return False
+    # Skip potential header
+    probe_idx = 0
+    if not _is_numeric(raw.iloc[0, 1] if raw.shape[1] > 1 else raw.iloc[0, 0]):
+        probe_idx = 1
+    if probe_idx >= raw.shape[0]:
+        return False
+    probe = raw.iloc[probe_idx]
+    col0_is_date = parse_csv_date(str(probe.iloc[0]), date_format) is not None
+    col1_is_date = parse_csv_date(str(probe.iloc[1]), date_format) is not None
+    return not col0_is_date and col1_is_date
+
+
 def _read_equity_csv(
     csv_path: Path,
     strategy_name: str,
     date_format: str,
     warnings: list[str],
-) -> _StrategyEquity | None:
+) -> list[_StrategyEquity]:
     """
     Read one EquityData.csv file.
 
-    Returns _StrategyEquity with per-date lists, or None on failure.
+    Returns a list of _StrategyEquity (one for single-strategy files,
+    one per named sub-strategy for multi-strategy files).
+
+    Multi-strategy detection:
+      If the first data column (col 0) is NOT parseable as a date but col 1 IS,
+      the file is treated as multi-strategy. Col 0 is the strategy name, and
+      the data columns shift right by one:
+        col 0 = Name, col 1 = Date, col 2 = M2M, col 3 = Long, col 4 = Short,
+        col 5 = (unused), col 6 = Closed
+
     Mirrors VBA ProcessEquityData.
     """
     try:
-        # Read raw — no header assumption, all as strings initially
         raw = pd.read_csv(csv_path, header=None, dtype=str, encoding_errors="replace")
     except Exception as e:
         warnings.append(f"'{strategy_name}': could not read EquityData.csv: {e}")
-        return None
+        return []
 
     if raw.empty:
         warnings.append(f"'{strategy_name}': EquityData.csv has no data rows.")
-        return None
+        return []
 
-    # Skip header row if first row is non-numeric in col 2
+    # ── Detect multi-strategy format ──────────────────────────────────────────
+    # Skip a potential header row first, then probe the first data row
+    _probe_row_idx = 0
+    if raw.shape[0] > 0 and not _is_numeric(raw.iloc[0, 1] if raw.shape[1] > 1 else raw.iloc[0, 0]):
+        _probe_row_idx = 1  # row 0 looks like a header
+
+    if raw.shape[0] > _probe_row_idx and raw.shape[1] >= 2:
+        _probe = raw.iloc[_probe_row_idx]
+        _col0_is_date = parse_csv_date(str(_probe.iloc[0]), date_format) is not None
+        _col1_is_date = parse_csv_date(str(_probe.iloc[1]), date_format) is not None
+        is_multi = not _col0_is_date and _col1_is_date
+    else:
+        is_multi = False
+
+    if is_multi:
+        return _read_multi_strategy_csv(raw, strategy_name, date_format, warnings)
+    else:
+        result = _read_single_strategy_csv(raw, strategy_name, date_format, warnings)
+        return [result] if result is not None else []
+
+
+def _read_single_strategy_csv(
+    raw: pd.DataFrame,
+    strategy_name: str,
+    date_format: str,
+    warnings: list[str],
+) -> _StrategyEquity | None:
+    """Parse a single-strategy EquityData.csv (original format)."""
     start_row = 1 if not _is_numeric(raw.iloc[0, EQUITY_COL_M2M]) else 0
 
     dates: list = []
@@ -194,7 +277,6 @@ def _read_equity_csv(
         if d is None:
             continue
 
-        # Ensure enough columns
         n_cols = len(row)
         if n_cols <= EQUITY_COL_CLOSED:
             warnings.append(
@@ -221,6 +303,81 @@ def _read_equity_csv(
         long=long_vals,
         short=short_vals,
     )
+
+
+# Multi-strategy column offsets (col 0 = name, rest shift by +1 vs single-strategy)
+_MULTI_COL_NAME   = 0
+_MULTI_COL_DATE   = 1
+_MULTI_COL_M2M    = 2
+_MULTI_COL_LONG   = 3
+_MULTI_COL_SHORT  = 4
+_MULTI_COL_CLOSED = 6   # col 5 is unused (same as single-strategy pattern)
+
+
+def _read_multi_strategy_csv(
+    raw: pd.DataFrame,
+    file_label: str,
+    date_format: str,
+    warnings: list[str],
+) -> list[_StrategyEquity]:
+    """
+    Parse a multi-strategy EquityData.csv.
+    Col 0 = strategy name (groups rows); col 1 = date; cols 2-6 = data.
+    Each unique name in col 0 becomes a separate _StrategyEquity.
+    """
+    # Skip header row if col 1 is non-date in the first row
+    start_row = 0
+    if raw.shape[0] > 0 and parse_csv_date(str(raw.iloc[0, _MULTI_COL_DATE]), date_format) is None:
+        start_row = 1
+
+    # Group rows by strategy name (col 0)
+    groups: dict[str, tuple[list, list, list, list, list]] = {}
+
+    min_cols = _MULTI_COL_CLOSED + 1
+
+    for _, row in raw.iloc[start_row:].iterrows():
+        if len(row) < min_cols:
+            continue
+
+        sub_name = str(row.iloc[_MULTI_COL_NAME]).strip()
+        if not sub_name or sub_name.lower() in ("", "nan", "none"):
+            continue
+
+        d = parse_csv_date(str(row.iloc[_MULTI_COL_DATE]), date_format)
+        if d is None:
+            continue
+
+        if sub_name not in groups:
+            groups[sub_name] = ([], [], [], [], [])
+        dates_l, m2m_l, closed_l, long_l, short_l = groups[sub_name]
+        dates_l.append(d)
+        m2m_l.append(_to_float(row.iloc[_MULTI_COL_M2M]))
+        long_l.append(_to_float(row.iloc[_MULTI_COL_LONG]))
+        short_l.append(_to_float(row.iloc[_MULTI_COL_SHORT]))
+        closed_l.append(_to_float(row.iloc[_MULTI_COL_CLOSED]))
+
+    if not groups:
+        warnings.append(
+            f"'{file_label}': multi-strategy file detected but no valid rows parsed."
+        )
+        return []
+
+    results = []
+    for sub_name, (dates_l, m2m_l, closed_l, long_l, short_l) in groups.items():
+        results.append(_StrategyEquity(
+            name=sub_name,
+            dates=dates_l,
+            m2m=m2m_l,
+            closed=closed_l,
+            long=long_l,
+            short=short_l,
+        ))
+
+    warnings.append(
+        f"'{file_label}': multi-strategy file — imported {len(results)} sub-strategies: "
+        + ", ".join(r.name for r in results)
+    )
+    return results
 
 
 def _read_all_trades(

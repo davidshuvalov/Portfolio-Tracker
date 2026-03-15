@@ -122,6 +122,8 @@ class AppConfig(BaseModel):
     margin_type: Literal["Maintenance", "Initial", "Average"] = "Maintenance"
     customer_id: int = 0
     multiwalk_folder: str = ""
+    # Per-folder default status: maps folder path string → status applied to new strategies
+    folder_default_status: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("folders", mode="before")
     @classmethod
@@ -155,13 +157,19 @@ class AppConfig(BaseModel):
         with open(USER_CONFIG_FILE, "w") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-    def add_folder(self, folder: Path) -> None:
+    def add_folder(self, folder: Path, default_status: str = "New") -> None:
         if folder not in self.folders:
             self.folders.append(folder)
-            self.save()
+        self.folder_default_status[str(folder)] = default_status
+        self.save()
 
     def remove_folder(self, folder: Path) -> None:
         self.folders = [f for f in self.folders if f != folder]
+        self.folder_default_status.pop(str(folder), None)
+        self.save()
+
+    def set_folder_default_status(self, folder: Path, status: str) -> None:
+        self.folder_default_status[str(folder)] = status
         self.save()
 
 

@@ -104,7 +104,7 @@ def scan_folders(base_folders: list[Path]) -> ScanResult:
             if not subfolder.is_dir():
                 continue
 
-            result = _scan_strategy_folder(subfolder, warnings)
+            result = _scan_strategy_folder(subfolder, warnings, base_folder=base)
             if result is None:
                 continue
 
@@ -123,7 +123,7 @@ def scan_folders(base_folders: list[Path]) -> ScanResult:
 
 
 def _scan_strategy_folder(
-    subfolder: Path, warnings: list[str]
+    subfolder: Path, warnings: list[str], base_folder: Path | None = None
 ) -> StrategyFolder | None:
     """
     Inspect one strategy subfolder.
@@ -170,6 +170,7 @@ def _scan_strategy_folder(
         equity_csv=equity_csv,
         trade_csv=trade_csv,
         walkforward_csv=wf_details,
+        base_folder=base_folder,
     )
 
 
@@ -201,22 +202,35 @@ def strip_not_loaded_prefix(status: str) -> str:
 def reconcile_statuses(
     found_names: set[str],
     configured_strategies: list[dict],
+    strategy_folders: list[StrategyFolder] | None = None,
+    folder_default_status: dict[str, str] | None = None,
 ) -> list[dict]:
     """
     Cross-reference found strategy folders against the configured strategies list.
 
-    - Strategies found in folders but not in config → added with status 'New'
+    - Strategies found in folders but not in config → added with folder default status (or 'New')
     - Strategies in config but not found in folders → prefixed with 'Not Loaded - '
     - Strategies in both → 'Not Loaded - ' prefix stripped if present
 
     Mirrors VBA GetStrategyStatus + CheckMissingStrategies logic.
 
     Args:
-        found_names: set of strategy names discovered by scan_folders
-        configured_strategies: list of strategy dicts from strategies config
+        found_names:            set of strategy names discovered by scan_folders or import
+        configured_strategies:  list of strategy dicts from strategies config
+        strategy_folders:       optional list of StrategyFolder (for base_folder lookup)
+        folder_default_status:  optional dict of base_folder_path_str → default status
 
     Returns updated list of strategy dicts.
     """
+    # Build lookup: strategy name → default status from its folder
+    _name_to_default: dict[str, str] = {}
+    if strategy_folders and folder_default_status:
+        for sf in strategy_folders:
+            if sf.base_folder is not None:
+                default = folder_default_status.get(str(sf.base_folder))
+                if default:
+                    _name_to_default[sf.name] = default
+
     configured_names = {s["name"] for s in configured_strategies}
     result = []
 
@@ -236,9 +250,10 @@ def reconcile_statuses(
     for name in sorted(found_names - configured_names):
         sym, tf = parse_name_parts(name)
         sector = _SYMBOL_SECTOR.get(sym, "")
+        default_status = _name_to_default.get(name, "New")
         result.append({
             "name": name,
-            "status": "New",
+            "status": default_status,
             "contracts": 1,
             "symbol": sym,
             "sector": sector,

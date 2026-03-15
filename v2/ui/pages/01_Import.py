@@ -38,37 +38,61 @@ st.caption(
     "Equivalent to Folder1–Folder10 and FolderBH in v1.24."
 )
 
+_STATUS_OPTIONS = ["New", "Live", "Paper", "Pass", "Retired", "Buy&Hold"]
+
 # Display current folders
 if config.folders:
-    cols = st.columns([6, 1])
-    with cols[0]:
-        for i, folder in enumerate(config.folders):
-            exists = folder.exists()
-            icon = "✓" if exists else "✗"
-            colour = "green" if exists else "red"
+    _fdr_hdr = st.columns([5, 2, 1])
+    _fdr_hdr[0].caption("Folder path")
+    _fdr_hdr[1].caption("Default status for new strategies")
+    _fdr_hdr[2].caption("Remove")
+    for folder in config.folders:
+        exists = folder.exists()
+        icon = "✓" if exists else "✗"
+        colour = "green" if exists else "red"
+        _fc1, _fc2, _fc3 = st.columns([5, 2, 1])
+        with _fc1:
             st.markdown(
                 f":{colour}[{icon}] `{folder}`",
                 help="Folder exists" if exists else "Folder not found on disk",
             )
-    with cols[1]:
-        to_remove = st.selectbox(
-            "Remove",
-            options=[""] + [str(f) for f in config.folders],
-            label_visibility="collapsed",
-        )
-        if to_remove and st.button("Remove folder"):
-            config.remove_folder(Path(to_remove))
-            st.session_state.config = config
-            st.rerun()
+        with _fc2:
+            _cur_default = config.folder_default_status.get(str(folder), "New")
+            _safe_idx = _STATUS_OPTIONS.index(_cur_default) if _cur_default in _STATUS_OPTIONS else 0
+            _new_default = st.selectbox(
+                "Default",
+                _STATUS_OPTIONS,
+                index=_safe_idx,
+                key=f"folder_status_{folder}",
+                label_visibility="collapsed",
+                help="Status assigned to strategies from this folder when first discovered.",
+            )
+            if _new_default != _cur_default:
+                config.set_folder_default_status(folder, _new_default)
+                st.session_state.config = config
+        with _fc3:
+            if st.button("✕", key=f"remove_{folder}", help=f"Remove {folder}"):
+                config.remove_folder(folder)
+                st.session_state.config = config
+                st.rerun()
 else:
     st.info("No folders configured yet. Add a folder below.")
 
 # Add new folder
 with st.form("add_folder_form", clear_on_submit=True):
-    new_folder = st.text_input(
-        "Add folder path",
-        placeholder=r"C:\MultiWalk\Strategies",
-    )
+    _af1, _af2 = st.columns([4, 2])
+    with _af1:
+        new_folder = st.text_input(
+            "Add folder path",
+            placeholder=r"C:\MultiWalk\Strategies",
+        )
+    with _af2:
+        new_folder_status = st.selectbox(
+            "Default status",
+            _STATUS_OPTIONS,
+            index=0,
+            help="Status assigned to strategies found in this folder when they are first discovered.",
+        )
     submitted = st.form_submit_button("Add Folder")
     if submitted and new_folder:
         p = Path(new_folder.strip())
@@ -77,9 +101,9 @@ with st.form("add_folder_form", clear_on_submit=True):
         elif p in config.folders:
             st.warning("Folder already in list.")
         else:
-            config.add_folder(p)
+            config.add_folder(p, default_status=new_folder_status)
             st.session_state.config = config
-            st.success(f"Added: {p}")
+            st.success(f"Added: {p} (default status: **{new_folder_status}**)")
             st.rerun()
 
 # ── Step 1 completion callout ──────────────────────────────────
@@ -171,18 +195,27 @@ if scan_clicked:
     if result.strategies:
         st.success(f"Found **{len(result.strategies)}** strategies.")
 
-        # Reconcile with configured strategies
+        # Reconcile with configured strategies (uses folder default status)
         configured = load_strategies()
         found_names = {sf.name for sf in result.strategies}
-        reconciled = reconcile_statuses(found_names, configured)
+        reconciled = reconcile_statuses(
+            found_names,
+            configured,
+            strategy_folders=result.strategies,
+            folder_default_status=config.folder_default_status,
+        )
         save_strategies(reconciled)
 
         # Show scan results table
+        # Quick-peek multi-strategy detection for display only
+        from core.ingestion.csv_importer import _is_multi_strategy_file
         rows = []
         for sf in result.strategies:
+            is_multi = _is_multi_strategy_file(sf.equity_csv, config.date_format)
             rows.append({
                 "Strategy": sf.name,
                 "Folder": sf.path.name,
+                "Multi-Strategy": "Yes" if is_multi else "",
                 "Trade Data": "Yes" if sf.trade_csv else "No",
                 "WF Details": "Yes" if sf.walkforward_csv else "No",
             })
@@ -234,6 +267,20 @@ if import_clicked and st.session_state.get("scan_result"):
             if _cfg.get("status"):    _strat.status    = _cfg["status"]
             if _cfg.get("contracts"): _strat.contracts = int(_cfg["contracts"])
             if _cfg.get("notes"):     _strat.notes     = _cfg["notes"]
+
+        # Post-import reconciliation: actual strategy names may differ from scan names
+        # (e.g. multi-strategy files produce sub-strategy names not known at scan time)
+        _actual_names = set(imported.strategy_names)
+        _post_configured = load_strategies()
+        _scan_result = st.session_state.get("scan_result")
+        _sf_list = _scan_result.strategies if _scan_result else []
+        _post_reconciled = reconcile_statuses(
+            _actual_names,
+            _post_configured,
+            strategy_folders=_sf_list,
+            folder_default_status=config.folder_default_status,
+        )
+        save_strategies(_post_reconciled)
 
         st.session_state.imported_data = imported
         st.session_state.portfolio_data = None  # Reset downstream cache

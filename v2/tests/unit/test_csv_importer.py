@@ -21,6 +21,7 @@ from core.ingestion.csv_importer import (
     _read_trade_csv,
     _to_float,
     _is_numeric,
+    _is_multi_strategy_file,
     EQUITY_COL_DATE, EQUITY_COL_M2M, EQUITY_COL_LONG,
     EQUITY_COL_SHORT, EQUITY_COL_CLOSED,
     TRADE_COL_DATE, TRADE_COL_TYPE, TRADE_COL_POSITION,
@@ -112,6 +113,8 @@ class TestHelpers:
 # ── _read_equity_csv ──────────────────────────────────────────────────────────
 
 class TestReadEquityCsv:
+    """Tests for _read_equity_csv — now returns list[_StrategyEquity]."""
+
     def test_reads_basic_dmy_csv(self, tmp_path):
         content = _equity_csv([
             ("15/06/2023", 100.0, 1, 0, 0, 50.0),
@@ -120,8 +123,9 @@ class TestReadEquityCsv:
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
-        assert result is not None
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert results
+        result = results[0]
         assert len(result.dates) == 2
         assert result.dates[0] == date(2023, 6, 15)
         assert result.m2m[0] == pytest.approx(100.0)
@@ -134,34 +138,36 @@ class TestReadEquityCsv:
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "MDY", warnings)
-        assert result is not None
-        assert result.dates[0] == date(2023, 6, 15)
+        results = _read_equity_csv(csv_path, "StratA", "MDY", warnings)
+        assert results
+        assert results[0].dates[0] == date(2023, 6, 15)
 
     def test_skips_header_row(self, tmp_path):
         content = _equity_csv([("15/06/2023", 100.0, 1, 0, 0, 50.0)], header=True)
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
-        assert result is not None
-        assert len(result.dates) == 1
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert results
+        assert len(results[0].dates) == 1
 
     def test_no_header_row(self, tmp_path):
         content = _equity_csv([("15/06/2023", 100.0, 1, 0, 0, 50.0)], header=False)
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
-        assert result is not None
-        assert len(result.dates) == 1
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert results
+        assert len(results[0].dates) == 1
 
     def test_reads_all_columns(self, tmp_path):
         content = _equity_csv([("15/06/2023", 100.0, 1.0, 0.5, 0, 75.0)])
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert results
+        result = results[0]
         assert result.m2m[0] == pytest.approx(100.0)
         assert result.long[0] == pytest.approx(1.0)
         assert result.short[0] == pytest.approx(0.5)
@@ -175,33 +181,45 @@ class TestReadEquityCsv:
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
         # Only the valid row is kept (invalid date row skipped)
-        assert result is not None
+        assert results
+        result = results[0]
         assert len(result.dates) == 1
         assert result.dates[0] == date(2023, 6, 15)
 
-    def test_nonexistent_file_returns_none_with_warning(self, tmp_path):
+    def test_nonexistent_file_returns_empty_with_warning(self, tmp_path):
         warnings = []
-        result = _read_equity_csv(tmp_path / "missing.csv", "StratA", "DMY", warnings)
-        assert result is None
+        results = _read_equity_csv(tmp_path / "missing.csv", "StratA", "DMY", warnings)
+        assert not results
         assert len(warnings) == 1
 
-    def test_empty_file_returns_none_with_warning(self, tmp_path):
+    def test_empty_file_returns_empty(self, tmp_path):
         csv_path = tmp_path / "empty.csv"
         csv_path.write_text("")
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
-        assert result is None
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert not results
 
     def test_negative_pnl_values(self, tmp_path):
         content = _equity_csv([("15/06/2023", -100.0, 0, 1, 0, -50.0)])
         csv_path = tmp_path / "test.csv"
         csv_path.write_text(content)
         warnings = []
-        result = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert results
+        result = results[0]
         assert result.m2m[0] == pytest.approx(-100.0)
         assert result.closed[0] == pytest.approx(-50.0)
+
+    def test_single_strategy_returns_list_of_one(self, tmp_path):
+        content = _equity_csv([("15/06/2023", 100.0, 1, 0, 0, 50.0)])
+        csv_path = tmp_path / "test.csv"
+        csv_path.write_text(content)
+        warnings = []
+        results = _read_equity_csv(csv_path, "StratA", "DMY", warnings)
+        assert len(results) == 1
+        assert results[0].name == "StratA"
 
     def test_to_float_strips_commas_from_thousands(self):
         # Verify _to_float handles comma-formatted numbers (e.g. "1,500.00")
@@ -448,3 +466,151 @@ class TestImportAll:
         sf = _make_strategy_folder(tmp_path, "StratA", content)
         imported, _ = import_all([sf], date_format="DMY")
         assert imported.daily_m2m.index[0] < imported.daily_m2m.index[1]
+
+
+# ── Multi-strategy CSV ────────────────────────────────────────────────────────
+
+def _multi_equity_csv(strategies: dict[str, list[tuple]], header=True) -> str:
+    """
+    Build a multi-strategy EquityData.csv.
+    strategies: {name: [(date, m2m, long, short, unused, closed), ...]}
+    Layout: Name, Date, M2M, Long, Short, Unused, Closed
+    """
+    lines = []
+    if header:
+        lines.append("Name,Date,DailyM2M,Long,Short,Unused,Closed")
+    for name, rows in strategies.items():
+        for row in rows:
+            lines.append(f"{name}," + ",".join(str(v) for v in row))
+    return "\n".join(lines) + "\n"
+
+
+class TestMultiStrategyEquityCsv:
+    """Tests for multi-strategy EquityData.csv detection and parsing."""
+
+    def test_is_multi_strategy_file_detects_multi(self, tmp_path):
+        content = _multi_equity_csv({
+            "BH_ES": [("15/06/2023", 100.0, 0, 0, 0, 50.0)],
+        })
+        csv_path = tmp_path / "multi.csv"
+        csv_path.write_text(content)
+        assert _is_multi_strategy_file(csv_path, "DMY") is True
+
+    def test_is_multi_strategy_file_rejects_single(self, tmp_path):
+        content = _equity_csv([("15/06/2023", 100.0, 1, 0, 0, 50.0)])
+        csv_path = tmp_path / "single.csv"
+        csv_path.write_text(content)
+        assert _is_multi_strategy_file(csv_path, "DMY") is False
+
+    def test_is_multi_strategy_file_missing_file(self, tmp_path):
+        assert _is_multi_strategy_file(tmp_path / "nope.csv", "DMY") is False
+
+    def test_read_equity_csv_multi_returns_multiple(self, tmp_path):
+        content = _multi_equity_csv({
+            "BH_ES": [
+                ("15/06/2023", 100.0, 0, 0, 0, 50.0),
+                ("16/06/2023", 200.0, 0, 0, 0, 75.0),
+            ],
+            "BH_NQ": [
+                ("15/06/2023", 150.0, 0, 0, 0, 60.0),
+                ("16/06/2023", 250.0, 0, 0, 0, 80.0),
+            ],
+        })
+        csv_path = tmp_path / "multi.csv"
+        csv_path.write_text(content)
+        warnings = []
+        results = _read_equity_csv(csv_path, "BuyAndHold", "DMY", warnings)
+        assert len(results) == 2
+        names = {r.name for r in results}
+        assert names == {"BH_ES", "BH_NQ"}
+
+    def test_multi_strategy_data_values(self, tmp_path):
+        content = _multi_equity_csv({
+            "BH_ES": [("15/06/2023", 100.0, 1.0, 0.5, 0, 50.0)],
+        })
+        csv_path = tmp_path / "multi.csv"
+        csv_path.write_text(content)
+        warnings = []
+        results = _read_equity_csv(csv_path, "BH", "DMY", warnings)
+        assert results
+        r = results[0]
+        assert r.name == "BH_ES"
+        assert r.dates[0] == date(2023, 6, 15)
+        assert r.m2m[0] == pytest.approx(100.0)
+        assert r.long[0] == pytest.approx(1.0)
+        assert r.short[0] == pytest.approx(0.5)
+        assert r.closed[0] == pytest.approx(50.0)
+
+    def test_multi_strategy_warning_lists_sub_names(self, tmp_path):
+        content = _multi_equity_csv({
+            "BH_ES": [("15/06/2023", 100.0, 0, 0, 0, 50.0)],
+            "BH_NQ": [("15/06/2023", 150.0, 0, 0, 0, 60.0)],
+        })
+        csv_path = tmp_path / "multi.csv"
+        csv_path.write_text(content)
+        warnings = []
+        _read_equity_csv(csv_path, "BuyAndHold", "DMY", warnings)
+        assert any("BH_ES" in w and "BH_NQ" in w for w in warnings)
+
+    def test_import_all_with_multi_strategy_file(self, tmp_path):
+        """import_all expands multi-strategy files into separate columns."""
+        multi_content = _multi_equity_csv({
+            "BH_ES": [
+                ("15/06/2023", 100.0, 0, 0, 0, 50.0),
+                ("16/06/2023", 200.0, 0, 0, 0, 75.0),
+            ],
+            "BH_NQ": [
+                ("15/06/2023", 150.0, 0, 0, 0, 60.0),
+                ("16/06/2023", 250.0, 0, 0, 0, 80.0),
+            ],
+        })
+        # Write a multi-strategy equity CSV
+        wf_dir = tmp_path / "BuyAndHold" / "Walkforward Files"
+        wf_dir.mkdir(parents=True)
+        equity_csv = wf_dir / "BuyAndHold EquityData.csv"
+        equity_csv.write_text(multi_content)
+        sf = StrategyFolder(
+            name="BuyAndHold",
+            path=tmp_path / "BuyAndHold",
+            equity_csv=equity_csv,
+            trade_csv=None,
+            walkforward_csv=None,
+        )
+        imported, warnings = import_all([sf], date_format="DMY")
+        # Both sub-strategies should be columns
+        assert "BH_ES" in imported.daily_m2m.columns
+        assert "BH_NQ" in imported.daily_m2m.columns
+        assert "BuyAndHold" not in imported.daily_m2m.columns
+        # Values correct
+        ts = pd.Timestamp("2023-06-15")
+        assert imported.daily_m2m.loc[ts, "BH_ES"] == pytest.approx(100.0)
+        assert imported.daily_m2m.loc[ts, "BH_NQ"] == pytest.approx(150.0)
+
+    def test_import_all_mixed_single_and_multi(self, tmp_path):
+        """Single-strategy and multi-strategy folders can coexist."""
+        # Single strategy
+        single_sf = _make_strategy_folder(
+            tmp_path / "single", "StratA",
+            _equity_csv([("15/06/2023", 100.0, 1, 0, 0, 50.0)])
+        )
+        # Multi-strategy
+        multi_content = _multi_equity_csv({
+            "BH_ES": [("15/06/2023", 200.0, 0, 0, 0, 80.0)],
+            "BH_NQ": [("15/06/2023", 300.0, 0, 0, 0, 90.0)],
+        })
+        wf_dir = tmp_path / "multi" / "BH" / "Walkforward Files"
+        wf_dir.mkdir(parents=True)
+        equity_csv = wf_dir / "BH EquityData.csv"
+        equity_csv.write_text(multi_content)
+        multi_sf = StrategyFolder(
+            name="BH",
+            path=tmp_path / "multi" / "BH",
+            equity_csv=equity_csv,
+            trade_csv=None,
+            walkforward_csv=None,
+        )
+        imported, _ = import_all([single_sf, multi_sf], date_format="DMY")
+        assert "StratA" in imported.daily_m2m.columns
+        assert "BH_ES" in imported.daily_m2m.columns
+        assert "BH_NQ" in imported.daily_m2m.columns
+        assert len(imported.strategy_names) == 3
