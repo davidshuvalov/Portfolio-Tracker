@@ -336,7 +336,7 @@ def main():
     # Register all pages so st.page_link() can resolve file paths (Streamlit 1.37+)
     pg = st.navigation(
         [
-            st.Page(_home_page, title="Home", url_path=""),
+            st.Page(_home_page, title="Home", default=True),
             st.Page("ui/pages/01_Import.py", title="Import"),
             st.Page("ui/pages/02_Strategies.py", title="Strategies"),
             st.Page("ui/pages/03_Portfolio.py", title="Portfolio"),
