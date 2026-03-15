@@ -356,13 +356,29 @@ with tab_summary:
             _disp = _sm2[_disp_cols].reset_index()
             _disp.rename(columns={"strategy_name": "Strategy"}, inplace=True)
 
-            st.dataframe(
+            # Columns that are read-only (everything except status + contracts)
+            _readonly_cols = [c for c in _disp.columns if c not in ("status", "contracts")]
+
+            _edited_summary = st.data_editor(
                 _disp,
                 use_container_width=True,
                 hide_index=True,
+                disabled=_readonly_cols,
+                key="summary_editor",
                 column_config={
-                    "status": st.column_config.TextColumn("Status", width="small"),
-                    "contracts": st.column_config.NumberColumn("Contr.", format="%d", width="small"),
+                    "status": st.column_config.SelectboxColumn(
+                        "Status",
+                        options=[
+                            "Live", "Paper", "Retired", "Pass",
+                            "Buy&Hold", "Incubating", "New",
+                            "Not Loaded - Live", "Not Loaded - Paper",
+                            "Not Loaded - Retired", "Not Loaded - Pass",
+                        ],
+                        width="small",
+                    ),
+                    "contracts": st.column_config.NumberColumn(
+                        "Contr.", format="%d", min_value=0, max_value=999, step=1, width="small"
+                    ),
                     "oos_begin": st.column_config.DateColumn("OOS Start"),
                     "oos_end": st.column_config.DateColumn("OOS End"),
                     "expected_annual_profit": st.column_config.NumberColumn(
@@ -396,6 +412,28 @@ with tab_summary:
                     "incubation_status": st.column_config.TextColumn("Incubation"),
                 },
             )
+
+            if st.button("Save Status & Contracts", type="primary", key="save_summary_btn"):
+                _edits_by_name = {
+                    r["Strategy"]: r for r in _edited_summary.to_dict(orient="records")
+                }
+                _merged = []
+                for _s in strategies:
+                    _nm = _s.get("name", "")
+                    if _nm in _edits_by_name:
+                        _e = _edits_by_name[_nm]
+                        _s = dict(_s)
+                        _s["status"] = _e.get("status", _s.get("status"))
+                        try:
+                            _s["contracts"] = int(_e.get("contracts") or 1)
+                        except (ValueError, TypeError):
+                            pass
+                    _merged.append(_s)
+                save_strategies(_merged)
+                st.session_state.portfolio_data = None
+                _live_n = sum(1 for _s in _merged if _s.get("status") == "Live")
+                st.success(f"Saved. {_live_n} Live strategies — portfolio will rebuild on next visit.")
+                st.rerun()
 
             st.divider()
             st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio with Live strategies")

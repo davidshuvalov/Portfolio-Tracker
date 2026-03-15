@@ -217,23 +217,18 @@ if not portfolio.summary_metrics.empty:
         display_df = sm[display_cols].reset_index()
         display_df.rename(columns={"strategy_name": "Strategy"}, inplace=True)
 
-        # Format columns
-        fmt = {}
-        for col in display_df.columns:
-            if "profit" in col or "drawdown" in col or "return" in col.lower():
-                if "efficiency" not in col and "rate" not in col:
-                    fmt[col] = "${:,.0f}"
-            if "rate" in col or "efficiency" in col:
-                fmt[col] = "{:.1%}"
-            if col in ("sharpe_is", "sharpe_isoos", "rtd_oos", "rtd_12_months"):
-                fmt[col] = "{:.2f}"
+        _readonly = [c for c in display_df.columns if c != "contracts"]
 
-        st.dataframe(
+        _edited_metrics = st.data_editor(
             display_df,
             use_container_width=True,
             hide_index=True,
+            disabled=_readonly,
+            key="portfolio_metrics_editor",
             column_config={
-                "contracts": st.column_config.NumberColumn("Contr.", format="%d"),
+                "contracts": st.column_config.NumberColumn(
+                    "Contr.", format="%d", min_value=0, max_value=999, step=1
+                ),
                 "oos_begin": st.column_config.DateColumn("OOS Start"),
                 "oos_end": st.column_config.DateColumn("OOS End"),
                 "expected_annual_profit": st.column_config.NumberColumn(
@@ -275,6 +270,30 @@ if not portfolio.summary_metrics.empty:
                 ),
             },
         )
+
+        if st.button("Save Contracts", key="save_contracts_btn"):
+            from core.portfolio.strategies import load_strategies, save_strategies as _save
+            _all_strats = load_strategies()
+            _contracts_edit = {
+                r["Strategy"]: r["contracts"]
+                for r in _edited_metrics.to_dict(orient="records")
+                if "contracts" in r
+            }
+            _updated = []
+            for _s in _all_strats:
+                _nm = _s.get("name", "")
+                if _nm in _contracts_edit:
+                    _s = dict(_s)
+                    try:
+                        _s["contracts"] = int(_contracts_edit[_nm] or 1)
+                    except (ValueError, TypeError):
+                        pass
+                _updated.append(_s)
+            _save(_updated)
+            st.session_state.portfolio_data = None
+            st.success("Contracts saved — click **Rebuild Portfolio** to recalculate.")
+            st.rerun()
+
     else:
         st.info("Run an import with Walkforward Details CSVs to see strategy metrics.")
 else:
