@@ -37,6 +37,11 @@ except Exception:
     pass
 
 st.title("Portfolio")
+
+_pnav_l, _ = st.columns([1, 7])
+with _pnav_l:
+    st.page_link("ui/pages/02_Strategies.py", label="← Strategies")
+
 st.caption("Step 4 of 4 — build the portfolio to aggregate all Live strategies.")
 
 config: AppConfig = st.session_state.get("config", AppConfig.load())

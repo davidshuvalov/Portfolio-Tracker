@@ -1,12 +1,10 @@
 """
-Strategies page — editable strategy configuration table.
-Mirrors the VBA Strategies tab: user sets status, contracts, symbol, sector, etc.
-Uses st.data_editor for inline editing with immediate persistence to strategies.yaml.
+Strategies page — editable strategy configuration table + performance summary.
+Mirrors the VBA Strategies tab (config) and Summary tab (performance metrics).
 """
 
 import streamlit as st
 import pandas as pd
-from pathlib import Path
 
 from core.portfolio.strategies import load_strategies, save_strategies
 
@@ -21,11 +19,15 @@ except Exception:
     pass
 
 st.title("Strategies")
-st.caption("Step 3 of 4 — set each strategy's status, contracts, symbol, and sector. Mark active strategies as Live.")
 
+# ── Top navigation ─────────────────────────────────────────────────────────────
+_nav_l, _nav_r, _ = st.columns([1, 1, 6])
+with _nav_l:
+    st.page_link("ui/pages/01_Import.py", label="← Import")
+with _nav_r:
+    st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio")
 
 # ── Load strategies ────────────────────────────────────────────────────────────
-
 strategies = load_strategies()
 
 if not strategies:
@@ -33,10 +35,11 @@ if not strategies:
     st.page_link("ui/pages/01_Import.py", label="Go to Import →")
     st.stop()
 
+# ── Tabs ───────────────────────────────────────────────────────────────────────
+tab_config, tab_summary = st.tabs(["⚙ Configure", "📊 Performance Summary"])
 
-# ── Build editable DataFrame ───────────────────────────────────────────────────
 
-# Column display order and types for st.data_editor
+# ── Column definitions (shared) ────────────────────────────────────────────────
 _COLUMNS = [
     "name", "status", "contracts", "symbol", "sector",
     "timeframe", "type", "horizon", "other", "notes",
@@ -91,7 +94,6 @@ def _to_df(strats: list[dict]) -> pd.DataFrame:
     rows = []
     for s in strats:
         row = {col: s.get(col, "") for col in _COLUMNS}
-        # Ensure contracts is numeric
         try:
             row["contracts"] = int(row["contracts"] or 1)
         except (ValueError, TypeError):
@@ -100,83 +102,159 @@ def _to_df(strats: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=_COLUMNS)
 
 
-# ── Filters ────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Configure tab
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_config:
+    st.caption("Step 3 of 4 — set each strategy's status, contracts, symbol, and sector. Mark active strategies as Live.")
 
-with st.expander("Filter / Search", expanded=False):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        search = st.text_input("Search name", placeholder="e.g. ES_Trend")
-    with col2:
-        all_statuses = sorted({s.get("status", "") for s in strategies if s.get("status")})
-        filter_status = st.multiselect("Filter by status", options=all_statuses)
-    with col3:
-        all_sectors = sorted({s.get("sector", "") for s in strategies if s.get("sector")})
-        filter_sector = st.multiselect("Filter by sector", options=all_sectors)
+    # Filters
+    with st.expander("Filter / Search", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            search = st.text_input("Search name", placeholder="e.g. ES_Trend")
+        with col2:
+            all_statuses = sorted({s.get("status", "") for s in strategies if s.get("status")})
+            filter_status = st.multiselect("Filter by status", options=all_statuses)
+        with col3:
+            all_sectors = sorted({s.get("sector", "") for s in strategies if s.get("sector")})
+            filter_sector = st.multiselect("Filter by sector", options=all_sectors)
 
-filtered = strategies
-if search:
-    filtered = [s for s in filtered if search.lower() in s.get("name", "").lower()]
-if filter_status:
-    filtered = [s for s in filtered if s.get("status") in filter_status]
-if filter_sector:
-    filtered = [s for s in filtered if s.get("sector") in filter_sector]
+    filtered = strategies
+    if search:
+        filtered = [s for s in filtered if search.lower() in s.get("name", "").lower()]
+    if filter_status:
+        filtered = [s for s in filtered if s.get("status") in filter_status]
+    if filter_sector:
+        filtered = [s for s in filtered if s.get("sector") in filter_sector]
 
-is_filtered = bool(search or filter_status or filter_sector)
+    is_filtered = bool(search or filter_status or filter_sector)
+    st.caption(
+        f"Showing **{len(filtered)}** of **{len(strategies)}** strategies"
+        + (" (filtered)" if is_filtered else "")
+    )
 
-st.caption(
-    f"Showing **{len(filtered)}** of **{len(strategies)}** strategies"
-    + (" (filtered)" if is_filtered else "")
-)
+    df = _to_df(filtered)
+    edited_df = st.data_editor(
+        df,
+        column_config=_COLUMN_CONFIG,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key="strategies_editor",
+    )
 
+    # Save
+    if st.button("Save Changes", type="primary"):
+        edited_rows = edited_df.to_dict(orient="records")
+        edited_by_name = {r["name"]: r for r in edited_rows}
+        merged = []
+        for s in strategies:
+            name = s.get("name", "")
+            if name in edited_by_name:
+                updated = dict(s)
+                updated.update(edited_by_name[name])
+                merged.append(updated)
+            else:
+                merged.append(s)
+        save_strategies(merged)
+        st.session_state.portfolio_data = None
+        live_count = sum(1 for r in edited_rows if r.get("status") == "Live")
+        st.success(
+            f"Saved {len(edited_rows)} records. "
+            + (f"{live_count} Live strategies — portfolio will need a rebuild." if live_count else "")
+        )
+        if live_count:
+            st.page_link("ui/pages/03_Portfolio.py", label="→ Rebuild Portfolio")
+        st.rerun()
 
-# ── Editable table ─────────────────────────────────────────────────────────────
+    st.divider()
 
-df = _to_df(filtered)
+    # Bulk operations
+    st.subheader("Bulk Operations")
+    col_bulk1, col_bulk2, col_bulk3 = st.columns(3)
 
-edited_df = st.data_editor(
-    df,
-    column_config=_COLUMN_CONFIG,
-    use_container_width=True,
-    hide_index=True,
-    num_rows="fixed",
-    key="strategies_editor",
-)
+    with col_bulk1:
+        bulk_status = st.selectbox(
+            "Set status for all *New* strategies",
+            options=["", "Live", "Paper", "Retired", "Pass"],
+            index=0,
+            key="bulk_status",
+        )
+        if bulk_status and st.button("Apply to New strategies"):
+            updated = []
+            changed = 0
+            for s in strategies:
+                if s.get("status") == "New":
+                    s = dict(s)
+                    s["status"] = bulk_status
+                    changed += 1
+                updated.append(s)
+            save_strategies(updated)
+            st.success(f"Updated {changed} strategies to '{bulk_status}'.")
+            st.rerun()
 
-# ── Save changes ───────────────────────────────────────────────────────────────
+    with col_bulk2:
+        if st.button("Reset all contracts to 1"):
+            updated = [dict(s, contracts=1) for s in strategies]
+            save_strategies(updated)
+            st.success("All contracts reset to 1.")
+            st.rerun()
 
-if st.button("Save Changes", type="primary"):
-    edited_rows = edited_df.to_dict(orient="records")
+    with col_bulk3:
+        not_loaded = [s for s in strategies if "Not Loaded" in s.get("status", "")]
+        if not_loaded:
+            st.warning(f"{len(not_loaded)} strategies not found in folders.")
+            if st.button("Remove Not Loaded strategies"):
+                kept = [s for s in strategies if "Not Loaded" not in s.get("status", "")]
+                save_strategies(kept)
+                st.success(f"Removed {len(not_loaded)} not-loaded strategies.")
+                st.rerun()
 
-    # Merge edits back into the full strategies list (preserving unfiltered rows)
-    edited_by_name = {r["name"]: r for r in edited_rows}
+    # Auto-fill sectors
+    st.divider()
+    st.subheader("Auto-fill Sectors from v1.24 Reference")
 
-    merged = []
-    for s in strategies:
-        name = s.get("name", "")
-        if name in edited_by_name:
-            # Use edited values, preserve any extra keys not in the editor
-            updated = dict(s)
-            updated.update(edited_by_name[name])
-            merged.append(updated)
+    from core.ingestion.xlsb_importer import load_margin_tables  # noqa: E402
+    if "margin_tables" not in st.session_state:
+        st.session_state["margin_tables"] = load_margin_tables()
+    _mt = st.session_state.get("margin_tables")
+
+    if _mt is not None and _mt.sector_lookup:
+        missing_sector = [s for s in strategies if not s.get("sector") and s.get("symbol")]
+        fillable = [s for s in missing_sector if s.get("symbol") in _mt.sector_lookup]
+        if fillable:
+            st.caption(
+                f"**{len(fillable)}** strategies have a symbol but no sector, and their "
+                f"symbol is in the v1.24 reference data."
+            )
+            if st.button(f"Auto-fill sectors for {len(fillable)} strategies", type="primary"):
+                updated = []
+                for s in strategies:
+                    sym = s.get("symbol", "")
+                    if not s.get("sector") and sym and sym in _mt.sector_lookup:
+                        s = dict(s, sector=_mt.sector_lookup[sym])
+                    updated.append(s)
+                save_strategies(updated)
+                st.success(f"Filled sectors for {len(fillable)} strategies.")
+                st.rerun()
         else:
-            merged.append(s)
-
-    save_strategies(merged)
-    # Invalidate cached portfolio — status changes require a rebuild
-    st.session_state.portfolio_data = None
-    live_count = sum(1 for r in edited_rows if r.get("status") == "Live")
-    st.success(f"Saved {len(edited_rows)} strategy records. Portfolio will need to be rebuilt.")
-    if live_count:
-        st.page_link("ui/pages/03_Portfolio.py", label="Rebuild Portfolio →")
-    st.rerun()
+            st.caption(
+                "All strategies with symbols already have sectors, "
+                "or their symbols are not in the reference data."
+            )
+    else:
+        st.caption(
+            "No v1.24 reference data found. Run the **Migrate** page with your "
+            "`.xlsb` file to import the Sector reference table."
+        )
 
 
 # ── Quick stats sidebar ────────────────────────────────────────────────────────
-
 with st.sidebar:
     st.header("Summary")
 
-    status_counts = {}
+    status_counts: dict[str, int] = {}
     for s in strategies:
         stat = s.get("status", "Unknown")
         status_counts[stat] = status_counts.get(stat, 0) + 1
@@ -194,93 +272,138 @@ with st.sidebar:
         st.metric("New (unconfirmed)", new_)
 
     st.divider()
-
-    # Status breakdown
     st.caption("Status breakdown")
-    for status, count in sorted(status_counts.items()):
-        pct = count / total * 100 if total else 0
-        st.write(f"**{status}**: {count} ({pct:.0f}%)")
+    for _stat, _count in sorted(status_counts.items()):
+        pct = _count / total * 100 if total else 0
+        st.write(f"**{_stat}**: {_count} ({pct:.0f}%)")
 
 
-# ── Bulk operations ────────────────────────────────────────────────────────────
-
-st.divider()
-st.subheader("Bulk Operations")
-
-col_bulk1, col_bulk2, col_bulk3 = st.columns(3)
-
-with col_bulk1:
-    bulk_status = st.selectbox(
-        "Set status for all *New* strategies",
-        options=["", "Live", "Paper", "Retired", "Pass"],
-        index=0,
-        key="bulk_status",
-    )
-    if bulk_status and st.button("Apply to New strategies"):
-        updated = []
-        changed = 0
-        for s in strategies:
-            if s.get("status") == "New":
-                s = dict(s)
-                s["status"] = bulk_status
-                changed += 1
-            updated.append(s)
-        save_strategies(updated)
-        st.success(f"Updated {changed} strategies to '{bulk_status}'.")
-        st.rerun()
-
-with col_bulk2:
-    if st.button("Reset all contracts to 1"):
-        updated = [dict(s, contracts=1) for s in strategies]
-        save_strategies(updated)
-        st.success("All contracts reset to 1.")
-        st.rerun()
-
-with col_bulk3:
-    not_loaded = [s for s in strategies if "Not Loaded" in s.get("status", "")]
-    if not_loaded:
-        st.warning(f"{len(not_loaded)} strategies not found in folders.")
-        if st.button("Remove Not Loaded strategies"):
-            kept = [s for s in strategies if "Not Loaded" not in s.get("status", "")]
-            save_strategies(kept)
-            st.success(f"Removed {len(not_loaded)} not-loaded strategies.")
-            st.rerun()
-
-# ── Auto-fill sectors from v1.24 reference data ────────────────────────────────
-
-st.divider()
-st.subheader("Auto-fill Sectors from v1.24 Reference")
-
-from core.ingestion.xlsb_importer import load_margin_tables  # noqa: E402
-if "margin_tables" not in st.session_state:
-    st.session_state["margin_tables"] = load_margin_tables()
-_mt = st.session_state.get("margin_tables")
-
-if _mt is not None and _mt.sector_lookup:
-    missing_sector = [s for s in strategies if not s.get("sector") and s.get("symbol")]
-    fillable = [s for s in missing_sector if s.get("symbol") in _mt.sector_lookup]
-    if fillable:
-        st.caption(
-            f"**{len(fillable)}** strategies have a symbol but no sector, and their "
-            f"symbol is in the v1.24 reference data."
-        )
-        if st.button(f"Auto-fill sectors for {len(fillable)} strategies", type="primary"):
-            updated = []
-            for s in strategies:
-                sym = s.get("symbol", "")
-                if not s.get("sector") and sym and sym in _mt.sector_lookup:
-                    s = dict(s, sector=_mt.sector_lookup[sym])
-                updated.append(s)
-            save_strategies(updated)
-            st.success(f"Filled sectors for {len(fillable)} strategies.")
-            st.rerun()
-    else:
-        st.caption(
-            "All strategies with symbols already have sectors, "
-            "or their symbols are not in the reference data."
-        )
-else:
+# ══════════════════════════════════════════════════════════════════════════════
+# Performance Summary tab — mirrors the Excel Summary tab
+# Shows per-strategy WF metrics for ALL strategies (not filtered to Live)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_summary:
     st.caption(
-        "No v1.24 reference data found. Run the **Migrate** page with your "
-        "`.xlsb` file to import the Sector reference table."
+        "Per-strategy performance from Walkforward data — all strategies regardless of status. "
+        "Click **Compute / Refresh** after each import to update."
     )
+
+    _imported = st.session_state.get("imported_data")
+
+    if _imported is None:
+        st.info("Import data first to see performance metrics.")
+        st.page_link("ui/pages/01_Import.py", label="→ Go to Import")
+    else:
+        _SUMMARY_KEY = "all_strategies_summary_cache"
+
+        _cb1, _cb2, _ = st.columns([1, 1, 6])
+        with _cb1:
+            _do_compute = st.button("Compute / Refresh", type="primary", key="compute_summary_btn")
+        with _cb2:
+            if st.session_state.get(_SUMMARY_KEY) is not None:
+                if st.button("Clear Cache", key="clear_summary_btn"):
+                    st.session_state[_SUMMARY_KEY] = None
+                    st.rerun()
+
+        if _do_compute:
+            from core.config import AppConfig as _AC
+            from core.ingestion.folder_scanner import scan_folders as _scan_f
+            from core.portfolio.summary import compute_summary as _cs
+            from datetime import date as _date
+
+            _cfg = st.session_state.get("config", _AC.load())
+            with st.spinner("Computing strategy metrics..."):
+                _scan_res = _scan_f(_cfg.folders) if _cfg.folders else None
+                _sfl = _scan_res.strategies if _scan_res else []
+                _cutoff = None
+                if _cfg.portfolio.use_cutoff and _cfg.portfolio.cutoff_date:
+                    try:
+                        _cutoff = _date.fromisoformat(_cfg.portfolio.cutoff_date)
+                    except ValueError:
+                        pass
+                st.session_state[_SUMMARY_KEY] = _cs(
+                    imported=_imported,
+                    strategy_folders=_sfl,
+                    date_format=_cfg.date_format,
+                    use_cutoff=_cfg.portfolio.use_cutoff,
+                    cutoff_date=_cutoff,
+                )
+            st.success(f"Summary computed for {len(st.session_state[_SUMMARY_KEY])} strategies.")
+
+        _sm = st.session_state.get(_SUMMARY_KEY)
+
+        if _sm is not None and not _sm.empty:
+            # Merge status + contracts from config
+            _strats_map = {s.get("name"): s for s in strategies}
+            _sm2 = _sm.copy()
+            _sm2.insert(0, "status", _sm2.index.map(
+                lambda n: _strats_map.get(n, {}).get("status", "")
+            ))
+            _sm2.insert(1, "contracts", _sm2.index.map(
+                lambda n: int(_strats_map.get(n, {}).get("contracts") or 1)
+            ))
+
+            _disp_cols = [c for c in [
+                "status", "contracts", "symbol", "sector",
+                "oos_begin", "oos_end",
+                "expected_annual_profit", "actual_annual_profit", "return_efficiency",
+                "profit_last_1_month", "profit_last_3_months",
+                "profit_last_6_months", "profit_last_12_months",
+                "profit_since_oos_start", "max_oos_drawdown", "rtd_oos",
+                "incubation_status",
+            ] if c in _sm2.columns]
+
+            _disp = _sm2[_disp_cols].reset_index()
+            _disp.rename(columns={"strategy_name": "Strategy"}, inplace=True)
+
+            st.dataframe(
+                _disp,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "status": st.column_config.TextColumn("Status", width="small"),
+                    "contracts": st.column_config.NumberColumn("Contr.", format="%d", width="small"),
+                    "oos_begin": st.column_config.DateColumn("OOS Start"),
+                    "oos_end": st.column_config.DateColumn("OOS End"),
+                    "expected_annual_profit": st.column_config.NumberColumn(
+                        "Exp. Annual ($)", format="$%.0f"
+                    ),
+                    "actual_annual_profit": st.column_config.NumberColumn(
+                        "Act. Annual ($)", format="$%.0f"
+                    ),
+                    "return_efficiency": st.column_config.NumberColumn(
+                        "Efficiency", format="%.1%%"
+                    ),
+                    "profit_last_1_month": st.column_config.NumberColumn(
+                        "Last 1M ($)", format="$%.0f"
+                    ),
+                    "profit_last_3_months": st.column_config.NumberColumn(
+                        "Last 3M ($)", format="$%.0f"
+                    ),
+                    "profit_last_6_months": st.column_config.NumberColumn(
+                        "Last 6M ($)", format="$%.0f"
+                    ),
+                    "profit_last_12_months": st.column_config.NumberColumn(
+                        "Last 12M ($)", format="$%.0f"
+                    ),
+                    "profit_since_oos_start": st.column_config.NumberColumn(
+                        "OOS P&L ($)", format="$%.0f"
+                    ),
+                    "max_oos_drawdown": st.column_config.NumberColumn(
+                        "OOS Max DD ($)", format="$%.0f"
+                    ),
+                    "rtd_oos": st.column_config.NumberColumn("R:DD OOS", format="%.2f"),
+                    "incubation_status": st.column_config.TextColumn("Incubation"),
+                },
+            )
+
+            st.divider()
+            st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio with Live strategies")
+
+        elif _sm is not None:
+            st.info(
+                "No Walkforward data found. "
+                "Make sure your import includes Walkforward Details CSVs."
+            )
+        else:
+            st.info("Click **Compute / Refresh** to load per-strategy performance metrics.")

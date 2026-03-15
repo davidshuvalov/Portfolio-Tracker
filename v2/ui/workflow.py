@@ -79,23 +79,29 @@ def render_workflow_sidebar() -> None:
         unsafe_allow_html=True,
     )
 
-    all_done = all(status.values())
     for key, label, page in steps:
         done = status[key]
-        if done:
-            st.markdown(
-                f'<div style="color:#10b981;font-size:0.85rem;padding:2px 0">'
-                f'✓ {label}</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.page_link(page, label=f"○ {label}")
-
-    if all_done:
-        st.markdown(
-            '<p style="color:#3b82f6;font-size:0.78rem;margin-top:0.4rem">'
-            "● All steps complete</p>",
-            unsafe_allow_html=True,
-        )
+        st.page_link(page, label=f"{'✅' if done else '⭕'} {label}")
 
     st.divider()
+
+    # Analytics links — shown once portfolio is built
+    if status["portfolio"]:
+        st.markdown(
+            '<p style="color:#64748b;font-size:0.72rem;text-transform:uppercase;'
+            'letter-spacing:0.12em;margin:0 0 0.4rem 0">Analytics</p>',
+            unsafe_allow_html=True,
+        )
+        _analytics = [
+            ("Monte Carlo",          "ui/pages/_04_Monte_Carlo.py"),
+            ("Correlations",         "ui/pages/_05_Correlations.py"),
+            ("Diversification",      "ui/pages/_06_Diversification.py"),
+            ("Leave One Out",        "ui/pages/_07_Leave_One_Out.py"),
+            ("Backtest",             "ui/pages/_08_Backtest.py"),
+            ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py"),
+            ("Margin Tracking",      "ui/pages/_10_Margin_Tracking.py"),
+            ("Position Check",       "ui/pages/_11_Position_Check.py"),
+        ]
+        for _label, _page in _analytics:
+            st.page_link(_page, label=_label)
+        st.divider()
