@@ -21,6 +21,7 @@ import streamlit as st
 from core.config import AppConfig
 from core.data_types import PortfolioData
 from core.portfolio.aggregator import portfolio_equity_curve, portfolio_total_pnl
+from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Backtest", layout="wide")
 st.title("Backtest")
@@ -75,6 +76,9 @@ with st.sidebar:
 
     show_individual = st.checkbox("Show individual strategies", value=True)
     normalize = st.checkbox("Normalise curves to 0 start", value=False)
+
+    st.divider()
+    render_strategy_picker(portfolio.strategies, key="bt_strat_picker")
 
 # ── Filter to period ──────────────────────────────────────────────────────────
 start_ts = pd.Timestamp(start_date)

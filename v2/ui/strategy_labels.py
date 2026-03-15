@@ -76,3 +76,34 @@ def relabel_matrix(matrix: pd.DataFrame, label_map: dict[str, str]) -> pd.DataFr
 def relabel_series(series: pd.Series, label_map: dict[str, str]) -> pd.Series:
     """Rename the index of a Series using label_map."""
     return series.rename(index=lambda name: label_map.get(name, name))
+
+
+def render_strategy_picker(
+    strategies: list[Strategy],
+    *,
+    label: str = "Open strategy detail",
+    key: str = "strategy_picker",
+) -> None:
+    """
+    Render a compact strategy selector + link inside a sidebar section.
+
+    Sets ``st.session_state.selected_strategy`` and shows a page_link to
+    the Strategy Detail page so the user can navigate there with one click.
+
+    Usage (inside a ``with st.sidebar:`` block)::
+
+        render_strategy_picker(portfolio.strategies)
+    """
+    if not strategies:
+        return
+
+    names = [s.name for s in strategies]
+    current = st.session_state.get("selected_strategy")
+    default_idx = names.index(current) if current in names else 0
+
+    chosen = st.selectbox(label, names, index=default_idx, key=key)
+    st.session_state.selected_strategy = chosen
+    st.page_link(
+        "ui/pages/_Strategy_Detail.py",
+        label="Open detail →",
+    )

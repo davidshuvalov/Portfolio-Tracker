@@ -20,6 +20,7 @@ import streamlit as st
 from core.analytics.leave_one_out import run_leave_one_out
 from core.config import AppConfig, MCConfig
 from core.data_types import PortfolioData
+from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Leave One Out", layout="wide")
 st.title("Leave-One-Out Analysis")
@@ -95,6 +96,9 @@ with st.sidebar:
         config.save()
         st.session_state.config = config
         st.success("Saved.")
+
+    st.divider()
+    render_strategy_picker(portfolio.strategies, key="loo_strat_picker")
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 loo_result: pd.DataFrame | None = st.session_state.get("loo_result")

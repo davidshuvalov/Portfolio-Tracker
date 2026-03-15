@@ -27,7 +27,7 @@ from core.analytics.correlations import (
 )
 from core.config import AppConfig
 from core.data_types import PortfolioData
-from ui.strategy_labels import build_label_map, relabel_matrix, render_legend
+from ui.strategy_labels import build_label_map, relabel_matrix, render_legend, render_strategy_picker
 
 st.set_page_config(page_title="Correlations", layout="wide")
 st.title("Correlations")
@@ -86,6 +86,9 @@ with st.sidebar:
     )
 
     compute_btn = st.button("Compute Correlations", type="primary", use_container_width=True)
+
+    st.divider()
+    render_strategy_picker(portfolio.strategies, key="corr_strat_picker")
 
 threshold_map = {
     CorrelationMode.NORMAL:   thresh_normal,

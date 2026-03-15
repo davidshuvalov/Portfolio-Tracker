@@ -24,7 +24,7 @@ from core.analytics.correlations import (
 )
 from core.config import AppConfig
 from core.data_types import PortfolioData, Strategy
-from ui.strategy_labels import build_label_map, relabel_matrix, render_legend
+from ui.strategy_labels import build_label_map, relabel_matrix, render_legend, render_strategy_picker
 
 st.set_page_config(page_title="Diversification", layout="wide")
 st.title("Diversification")
@@ -43,6 +43,9 @@ if not portfolio.strategies:
 
 strategies = portfolio.strategies
 label_map  = build_label_map(strategies)
+
+with st.sidebar:
+    render_strategy_picker(strategies, key="div_strat_picker")
 
 
 # ── Helper: build breakdown DataFrame ────────────────────────────────────────

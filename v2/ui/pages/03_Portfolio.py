@@ -25,6 +25,7 @@ from core.portfolio.aggregator import (
     portfolio_summary_stats,
 )
 from core.portfolio.summary import compute_summary
+from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Portfolio", layout="wide")
 
@@ -113,6 +114,11 @@ with col_status:
         st.caption(
             f"Portfolio: **{len(portfolio.strategies)}** live strategies active"
         )
+
+if portfolio and portfolio.strategies:
+    with st.sidebar:
+        st.divider()
+        render_strategy_picker(portfolio.strategies, key="port_strat_picker")
 
 if portfolio is None or not portfolio.strategies:
     st.warning("No live strategies in portfolio.")

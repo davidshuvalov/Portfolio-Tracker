@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 
 from core.portfolio.strategies import load_strategies, save_strategies
+from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Strategies", layout="wide")
 
@@ -276,6 +277,11 @@ with st.sidebar:
     for _stat, _count in sorted(status_counts.items()):
         pct = _count / total * 100 if total else 0
         st.write(f"**{_stat}**: {_count} ({pct:.0f}%)")
+
+    _imported_for_picker = st.session_state.get("imported_data")
+    if _imported_for_picker and _imported_for_picker.strategies:
+        st.divider()
+        render_strategy_picker(_imported_for_picker.strategies, key="strats_strat_picker")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
