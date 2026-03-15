@@ -89,7 +89,11 @@ def render_workflow_sidebar() -> None:
                 unsafe_allow_html=True,
             )
         else:
-            st.page_link(page, label=f"○ {label}")
+            st.markdown(
+                f'<div style="color:#64748b;font-size:0.85rem;padding:2px 0">'
+                f'○ {label}</div>',
+                unsafe_allow_html=True,
+            )
 
     if all_done:
         st.markdown(

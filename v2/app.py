@@ -140,7 +140,10 @@ def _step_card(
             st.markdown(f"**{title}**")
             st.caption(desc)
             if done or active:
-                st.page_link(page, label=action)
+                st.markdown(
+                    f'<span style="color:#3b82f6;font-size:0.85rem">{action}</span>',
+                    unsafe_allow_html=True,
+                )
 
 
 # ── Analytics card renderer ───────────────────────────────────────────────────
