@@ -27,6 +27,7 @@ from core.analytics.correlations import (
 )
 from core.config import AppConfig
 from core.data_types import PortfolioData
+from ui.strategy_labels import build_label_map, relabel_matrix, render_legend
 
 st.set_page_config(page_title="Correlations", layout="wide")
 st.title("Correlations")
@@ -103,19 +104,23 @@ if compute_btn or corr_cache is None:
 matrix = corr_cache[mode.value]
 threshold = threshold_map[mode]
 
+# ── Short labels ───────────────────────────────────────────────────────────────
+label_map = build_label_map(portfolio.strategies)
+labeled_matrix = relabel_matrix(matrix, label_map)
+
 # ── Heatmap ───────────────────────────────────────────────────────────────────
 st.subheader(f"Correlation Matrix — {mode_label} Mode")
 
-n = len(matrix)
+n = len(labeled_matrix)
 # Colour scale: green (negative) → white (zero) → red (positive)
 fig = go.Figure(go.Heatmap(
-    z=matrix.values,
-    x=list(matrix.columns),
-    y=list(matrix.index),
+    z=labeled_matrix.values,
+    x=list(labeled_matrix.columns),
+    y=list(labeled_matrix.index),
     colorscale="RdYlGn_r",
     zmin=-1.0,
     zmax=1.0,
-    text=np.round(matrix.values, 2),
+    text=np.round(labeled_matrix.values, 2),
     texttemplate="%{text}",
     textfont={"size": 10 if n <= 15 else 8},
     hovertemplate="%{y} × %{x}: %{z:.3f}<extra></extra>",
@@ -127,6 +132,7 @@ fig.update_layout(
     margin=dict(l=10, r=10, t=30, b=10),
 )
 st.plotly_chart(fig, use_container_width=True)
+render_legend(portfolio.strategies)
 
 # ── Summary row ───────────────────────────────────────────────────────────────
 avg = average_correlation(matrix)
@@ -143,6 +149,8 @@ st.divider()
 if high:
     st.subheader(f"⚠ High-Correlation Pairs (|r| ≥ {threshold:.0%})")
     alert_df = pd.DataFrame(high, columns=["Strategy A", "Strategy B", "Correlation"])
+    alert_df["Strategy A"] = alert_df["Strategy A"].map(lambda n: label_map.get(n, n))
+    alert_df["Strategy B"] = alert_df["Strategy B"].map(lambda n: label_map.get(n, n))
     alert_df["Correlation"] = alert_df["Correlation"].round(3)
     alert_df = alert_df.sort_values("Correlation", ascending=False)
 
@@ -165,6 +173,8 @@ else:
 with st.expander("All Pairs", expanded=False):
     pairs = get_correlation_pairs(matrix)
     if not pairs.empty:
+        pairs["strategy_a"] = pairs["strategy_a"].map(lambda n: label_map.get(n, n))
+        pairs["strategy_b"] = pairs["strategy_b"].map(lambda n: label_map.get(n, n))
         pairs["correlation"] = pairs["correlation"].round(3)
         st.dataframe(pairs, hide_index=True, use_container_width=True)
 

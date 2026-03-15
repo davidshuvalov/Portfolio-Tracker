@@ -24,6 +24,7 @@ from core.analytics.correlations import (
 )
 from core.config import AppConfig
 from core.data_types import PortfolioData, Strategy
+from ui.strategy_labels import build_label_map, relabel_matrix, render_legend
 
 st.set_page_config(page_title="Diversification", layout="wide")
 st.title("Diversification")
@@ -41,6 +42,7 @@ if not portfolio.strategies:
     st.stop()
 
 strategies = portfolio.strategies
+label_map  = build_label_map(strategies)
 
 
 # ── Helper: build breakdown DataFrame ────────────────────────────────────────
@@ -172,6 +174,8 @@ if len(strategies) >= 2:
     if not all_pairs.empty:
         top_n = min(20, len(all_pairs))
         top_pairs = all_pairs.head(top_n).copy()
+        top_pairs["strategy_a"] = top_pairs["strategy_a"].map(lambda n: label_map.get(n, n))
+        top_pairs["strategy_b"] = top_pairs["strategy_b"].map(lambda n: label_map.get(n, n))
         top_pairs["correlation"] = top_pairs["correlation"].round(3)
         top_pairs["⚠ High"] = top_pairs["correlation"] >= config.corr_normal_threshold
 
@@ -198,10 +202,12 @@ if len(strategies) >= 2:
         )
         st.subheader("Strategies Appearing in Most High-Correlation Pairs")
         redund = pd.DataFrame(
-            strat_appearances.most_common(),
+            [(label_map.get(n, n), c) for n, c in strat_appearances.most_common()],
             columns=["Strategy", "High-Corr Pair Count"],
         )
         st.dataframe(redund, hide_index=True, use_container_width=True)
+
+    render_legend(strategies)
 
 else:
     st.warning("Need at least 2 live strategies to compute diversification metrics.")
@@ -225,10 +231,12 @@ with st.expander("Trading Day Overlap Matrix", expanded=False):
             overlap[i, j] = both_active.sum() / denom if denom > 0 else 0.0
 
     overlap_df = pd.DataFrame(overlap, index=cols_avail, columns=cols_avail)
+    overlap_df = relabel_matrix(overlap_df, label_map)
+    short_labels = list(overlap_df.columns)
     fig3 = go.Figure(go.Heatmap(
         z=overlap_df.values,
-        x=cols_avail,
-        y=cols_avail,
+        x=short_labels,
+        y=short_labels,
         colorscale="Blues",
         zmin=0.0, zmax=1.0,
         text=np.round(overlap_df.values, 2),
@@ -239,7 +247,8 @@ with st.expander("Trading Day Overlap Matrix", expanded=False):
     ))
     fig3.update_layout(
         height=max(350, n * 35 + 80),
-        xaxis=dict(tickangle=-45 if n > 8 else 0),
+        xaxis=dict(tickangle=0),
         margin=dict(l=10, r=10, t=20, b=10),
     )
     st.plotly_chart(fig3, use_container_width=True)
+    render_legend(strategies)
