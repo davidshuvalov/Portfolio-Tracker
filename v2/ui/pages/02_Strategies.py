@@ -529,15 +529,74 @@ with tab_summary:
                 lambda n: _strats_map.get(n, {}).get("status", "")
             ))
 
-            _disp_cols = [c for c in [
-                "in_portfolio", "contracts", "status", "symbol", "sector",
-                "oos_begin", "oos_end",
+            # All available summary columns with friendly labels
+            _SUMM_ALL_COLS: dict[str, str] = {
+                "symbol": "Symbol",
+                "sector": "Sector",
+                "oos_begin": "OOS Start",
+                "oos_end": "OOS End",
+                "oos_period_years": "OOS Years",
+                "expected_annual_profit": "Exp. Annual ($)",
+                "actual_annual_profit": "Act. Annual ($)",
+                "return_efficiency": "Efficiency",
+                "trades_per_year": "Trades/Yr",
+                "overall_win_rate": "Win Rate",
+                "sharpe_isoos": "Sharpe IS+OOS",
+                "sharpe_is": "Sharpe IS",
+                "max_drawdown_isoos": "Max DD IS+OOS ($)",
+                "max_drawdown_is": "Max DD IS ($)",
+                "profit_last_1_month": "Last 1M ($)",
+                "profit_last_3_months": "Last 3M ($)",
+                "profit_last_6_months": "Last 6M ($)",
+                "profit_last_9_months": "Last 9M ($)",
+                "profit_last_12_months": "Last 12M ($)",
+                "profit_since_oos_start": "OOS P&L ($)",
+                "max_oos_drawdown": "OOS Max DD ($)",
+                "avg_oos_drawdown": "Avg OOS DD ($)",
+                "rtd_oos": "R:DD OOS",
+                "rtd_12_months": "R:DD 12M",
+                "count_profit_months": "Profit Months",
+                "incubation_status": "Incubation",
+                "incubation_date": "Incub. Date",
+                "quitting_status": "Quit Status",
+                "quitting_date": "Quit Date",
+                "profit_since_quit": "P&L Since Quit ($)",
+                "k_factor": "K-Factor",
+                "ulcer_index": "Ulcer Index",
+                "best_month": "Best Month ($)",
+                "worst_month": "Worst Month ($)",
+                "max_consecutive_loss_months": "Max Loss Streak",
+            }
+            # Columns always shown (not in picker)
+            _SUMM_FIXED = ["in_portfolio", "contracts", "status"]
+            _SUMM_DEFAULT = [
+                "symbol", "sector",
                 "expected_annual_profit", "actual_annual_profit", "return_efficiency",
-                "profit_last_1_month", "profit_last_3_months",
-                "profit_last_6_months", "profit_last_12_months",
-                "profit_since_oos_start", "max_oos_drawdown", "rtd_oos",
-                "incubation_status",
-            ] if c in _sm2.columns]
+                "profit_last_3_months", "profit_last_12_months",
+                "max_oos_drawdown", "rtd_oos", "incubation_status",
+            ]
+
+            _avail_summ_cols = [c for c in _SUMM_ALL_COLS if c in _sm2.columns]
+            _avail_summ_labels = {c: _SUMM_ALL_COLS[c] for c in _avail_summ_cols}
+            _summ_default_sel = [c for c in _SUMM_DEFAULT if c in _avail_summ_cols]
+
+            _summ_col_key = "summ_metrics_col_picker"
+            if _summ_col_key not in st.session_state:
+                st.session_state[_summ_col_key] = _summ_default_sel
+
+            with st.expander("⚙ Columns", expanded=False):
+                _summ_sel_cols = st.multiselect(
+                    "Select columns to display",
+                    options=_avail_summ_cols,
+                    format_func=lambda c: _avail_summ_labels.get(c, c),
+                    key=_summ_col_key,
+                )
+                if st.button("Reset to defaults", key="summ_metrics_cols_reset"):
+                    st.session_state[_summ_col_key] = _summ_default_sel
+                    st.rerun()
+
+            _picked = st.session_state.get(_summ_col_key) or _summ_default_sel
+            _disp_cols = [c for c in _SUMM_FIXED + _picked if c in _sm2.columns]
 
             _disp = _sm2[_disp_cols].reset_index()
             _disp.rename(columns={"strategy_name": "Strategy"}, inplace=True)

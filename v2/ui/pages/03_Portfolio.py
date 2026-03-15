@@ -326,34 +326,78 @@ st.subheader("Strategy Metrics")
 if not portfolio.summary_metrics.empty:
     sm = portfolio.summary_metrics.copy()
 
-    # Select key display columns
-    display_cols = [
-        c for c in [
-            "eligibility_status",
-            "contracts", "symbol", "sector",
-            "oos_begin", "oos_end", "oos_period_years",
-            "expected_annual_profit", "actual_annual_profit", "return_efficiency",
-            "trades_per_year", "overall_win_rate",
-            "sharpe_isoos", "sharpe_is",
-            "max_drawdown_isoos", "max_drawdown_is",
-            "profit_last_1_month", "profit_last_3_months", "profit_last_6_months",
-            "profit_last_9_months", "profit_last_12_months",
-            "profit_since_oos_start",
-            "max_oos_drawdown", "avg_oos_drawdown",
-            "rtd_oos", "rtd_12_months",
-            "count_profit_months",
-            "incubation_status", "incubation_date",
-            "quitting_status", "quitting_date", "profit_since_quit",
-            "k_factor", "ulcer_index",
-            "best_month", "worst_month", "max_consecutive_loss_months",
-        ]
-        if c in sm.columns
-    ]
-
     # Add contracts from strategies config
     if "contracts" not in sm.columns:
         contracts_map = {s.name: s.contracts for s in portfolio.strategies}
         sm["contracts"] = sm.index.map(contracts_map)
+
+    # All available metric columns with friendly labels
+    _ALL_METRIC_COLS: dict[str, str] = {
+        "eligibility_status": "Eligible",
+        "contracts": "Contracts",
+        "symbol": "Symbol",
+        "sector": "Sector",
+        "oos_begin": "OOS Start",
+        "oos_end": "OOS End",
+        "oos_period_years": "OOS Years",
+        "expected_annual_profit": "Exp. Annual ($)",
+        "actual_annual_profit": "Act. Annual ($)",
+        "return_efficiency": "Efficiency",
+        "trades_per_year": "Trades/Yr",
+        "overall_win_rate": "Win Rate",
+        "sharpe_isoos": "Sharpe IS+OOS",
+        "sharpe_is": "Sharpe IS",
+        "max_drawdown_isoos": "Max DD IS+OOS ($)",
+        "max_drawdown_is": "Max DD IS ($)",
+        "profit_last_1_month": "Last 1M ($)",
+        "profit_last_3_months": "Last 3M ($)",
+        "profit_last_6_months": "Last 6M ($)",
+        "profit_last_9_months": "Last 9M ($)",
+        "profit_last_12_months": "Last 12M ($)",
+        "profit_since_oos_start": "OOS P&L ($)",
+        "max_oos_drawdown": "OOS Max DD ($)",
+        "avg_oos_drawdown": "Avg OOS DD ($)",
+        "rtd_oos": "R:DD OOS",
+        "rtd_12_months": "R:DD 12M",
+        "count_profit_months": "Profit Months",
+        "incubation_status": "Incubation",
+        "incubation_date": "Incub. Date",
+        "quitting_status": "Quit Status",
+        "quitting_date": "Quit Date",
+        "profit_since_quit": "P&L Since Quit ($)",
+        "k_factor": "K-Factor",
+        "ulcer_index": "Ulcer Index",
+        "best_month": "Best Month ($)",
+        "worst_month": "Worst Month ($)",
+        "max_consecutive_loss_months": "Max Loss Streak",
+    }
+    _DEFAULT_METRIC_COLS = [
+        "eligibility_status", "contracts", "symbol", "sector",
+        "expected_annual_profit", "actual_annual_profit", "return_efficiency",
+        "profit_last_12_months", "max_oos_drawdown", "rtd_oos",
+    ]
+
+    _avail_metric_cols = [c for c in _ALL_METRIC_COLS if c in sm.columns]
+    _avail_metric_labels = {c: _ALL_METRIC_COLS[c] for c in _avail_metric_cols}
+    _default_sel = [c for c in _DEFAULT_METRIC_COLS if c in _avail_metric_cols]
+
+    # Initialise session state on first load
+    _col_key = "port_metrics_col_picker"
+    if _col_key not in st.session_state:
+        st.session_state[_col_key] = _default_sel
+
+    with st.expander("⚙ Columns", expanded=False):
+        _sel_cols = st.multiselect(
+            "Select columns to display",
+            options=_avail_metric_cols,
+            format_func=lambda c: _avail_metric_labels.get(c, c),
+            key=_col_key,
+        )
+        if st.button("Reset to defaults", key="port_metrics_cols_reset"):
+            st.session_state[_col_key] = _default_sel
+            st.rerun()
+
+    display_cols = st.session_state.get(_col_key) or _default_sel
 
     if display_cols:
         display_df = sm[display_cols].reset_index()
