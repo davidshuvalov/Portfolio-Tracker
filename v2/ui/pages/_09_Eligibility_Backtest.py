@@ -24,7 +24,7 @@ from core.analytics.eligibility.portfolio_backtest import (
     run_portfolio_backtest,
 )
 from core.analytics.eligibility.rule_backtest import run_rule_backtest
-from core.analytics.eligibility.rules import build_rule_catalogue
+from core.analytics.eligibility.rules import build_rule_catalogue, evaluate_rule
 from core.config import AppConfig, EligibilityConfig
 from core.data_types import PortfolioData
 
@@ -129,7 +129,7 @@ elig_config = EligibilityConfig(
 )
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["📊 Rule Statistics", "📈 Portfolio Construction"])
+tab1, tab2, tab3 = st.tabs(["📊 Rule Statistics", "📈 Portfolio Construction", "🔍 Strategy Screener"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -361,3 +361,221 @@ with tab2:
 
     elif not run_btn2:
         st.info("Select rule(s) and click **Run Portfolio Backtest**.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3: Strategy Screener — "as of today"
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab3:
+    st.subheader("Strategy Screener")
+    st.caption(
+        "Evaluate any combination of rules against every strategy using all data available today. "
+        "See which strategies currently pass your chosen criteria — independently of the walk-forward backtest."
+    )
+
+    # ── Rule selector ──────────────────────────────────────────────────────────
+    col_sc1, col_sc2 = st.columns([3, 1])
+    with col_sc1:
+        # Sensible defaults: OOS Profitable + Last 3M > 0 + Last 6M > 0
+        default_screener_labels = [r.label for r in rules if r.id in (1, 6, 10)]
+        screener_rule_labels = st.multiselect(
+            "Rules to apply",
+            rule_labels,
+            default=default_screener_labels,
+            help="Strategies must pass ALL selected rules to appear in the 'passing' section.",
+        )
+    with col_sc2:
+        st.write("")
+        show_all = st.checkbox("Show non-eligible strategies too", value=False)
+        only_passing = st.checkbox("Show only strategies passing all rules", value=False)
+
+    screener_rules = [r for r in rules if r.label in screener_rule_labels]
+
+    # ── Helper: last-N monthly sum ─────────────────────────────────────────────
+    def _ln(arr: np.ndarray, n: int) -> float:
+        if n <= 0 or len(arr) == 0:
+            return 0.0
+        return float(arr[-n:].sum())
+
+    # ── Build monthly series (full history) ────────────────────────────────────
+    monthly_all = imported.daily_m2m.resample("ME").sum()
+    months_index = monthly_all.index
+    now_ts = pd.Timestamp.now()
+
+    # ── Evaluate each strategy ─────────────────────────────────────────────────
+    rows = []
+    for name in summary.index:
+        row = summary.loc[name]
+        status = str(row.get("status", ""))
+
+        # --- Base eligibility ---
+        status_ok = status in (elig_config.status_include or ["Live"])
+
+        oos_begin_raw = row.get("oos_begin")
+        incub_raw     = row.get("incubation_date")
+        date_raw = (
+            incub_raw if elig_config.date_type == "Incubation Pass Date" else oos_begin_raw
+        )
+        if pd.notna(date_raw) if not isinstance(date_raw, type(None)) else False:
+            try:
+                oos_days = int((now_ts - pd.Timestamp(date_raw)).days)
+            except Exception:
+                oos_days = 0
+        else:
+            oos_days = 0
+
+        days_ok = oos_days >= elig_config.days_threshold_oos
+
+        dd_cap_ok = True
+        if elig_config.oos_dd_vs_is_cap > 0:
+            is_dd  = abs(float(row.get("max_drawdown_is", 0) or 0))
+            oos_dd = abs(float(row.get("max_oos_drawdown", 0) or 0))
+            dd_cap_ok = (is_dd == 0) or (oos_dd <= elig_config.oos_dd_vs_is_cap * is_dd)
+
+        base_eligible = status_ok and days_ok and dd_cap_ok
+
+        if not show_all and not base_eligible:
+            continue
+
+        # --- Get monthly PnL array for this strategy ---
+        if name not in monthly_all.columns:
+            continue
+        m_pnl = monthly_all[name].values.astype(float)
+
+        # --- OOS start index ---
+        oos_begin_ts = None
+        try:
+            oos_begin_ts = pd.Timestamp(oos_begin_raw) if pd.notna(oos_begin_raw) else None
+        except Exception:
+            pass
+        if oos_begin_ts is not None:
+            oos_idx = int(min(
+                months_index.searchsorted(oos_begin_ts, side="left"),
+                len(months_index) - 1,
+            ))
+        else:
+            oos_idx = 0
+
+        # --- Expected annual ---
+        exp_annual = float(row.get("expected_annual_profit", 0) or 0)
+        contracts  = int(row.get("contracts", 1) or 1)
+
+        # --- Compute display metrics ---
+        last_1m  = _ln(m_pnl, 1)  * contracts
+        last_3m  = _ln(m_pnl, 3)  * contracts
+        last_6m  = _ln(m_pnl, 6)  * contracts
+        last_12m = _ln(m_pnl, 12) * contracts
+        oos_total = float(m_pnl[oos_idx:].sum()) * contracts if oos_idx < len(m_pnl) else 0.0
+
+        # --- Evaluate selected rules ---
+        rule_results: dict[str, bool] = {}
+        for sr in screener_rules:
+            rule_results[sr.label] = evaluate_rule(
+                sr, m_pnl, oos_idx, exp_annual, elig_config.efficiency_ratio
+            )
+
+        n_passed = sum(rule_results.values())
+        passes_all = (n_passed == len(screener_rules)) if screener_rules else True
+
+        if only_passing and not passes_all:
+            continue
+
+        entry: dict = {
+            "Strategy":    name,
+            "Status":      status,
+            "Eligible":    "✓" if base_eligible else "✗",
+            "OOS Days":    oos_days,
+            "Contracts":   contracts,
+            "Last 1M ($)":  last_1m,
+            "Last 3M ($)":  last_3m,
+            "Last 6M ($)":  last_6m,
+            "Last 12M ($)": last_12m,
+            "OOS Total ($)": oos_total,
+        }
+        for sr in screener_rules:
+            entry[sr.label] = rule_results[sr.label]
+        if len(screener_rules) > 1:
+            entry["Rules Passed"] = f"{n_passed}/{len(screener_rules)}"
+        entry["_passes_all"] = passes_all
+        rows.append(entry)
+
+    if not rows:
+        st.info("No strategies to display with the current eligibility settings.")
+    else:
+        df_screen = pd.DataFrame(rows)
+        passes_all_col = df_screen.pop("_passes_all")
+
+        # Sort: passing-all first, then by OOS Total descending
+        df_screen["_sort"] = passes_all_col.astype(int)
+        df_screen = df_screen.sort_values(["_sort", "OOS Total ($)"], ascending=[False, False])
+        df_screen = df_screen.drop(columns=["_sort"]).reset_index(drop=True)
+
+        # ── Summary banner ─────────────────────────────────────────────────────
+        n_elig = (df_screen["Eligible"] == "✓").sum()
+        n_pass = passes_all_col.sum() if screener_rules else n_elig
+        rule_summary = (
+            f"**{n_pass}** of **{n_elig}** eligible strategies pass all selected rules."
+            if screener_rules
+            else f"**{n_elig}** eligible strategies (no rules selected)."
+        )
+        st.info(rule_summary)
+
+        # ── Colour rule columns ────────────────────────────────────────────────
+        rule_col_names = [sr.label for sr in screener_rules]
+        pnl_col_names  = ["Last 1M ($)", "Last 3M ($)", "Last 6M ($)", "Last 12M ($)", "OOS Total ($)"]
+
+        def _style_screener(df: pd.DataFrame):
+            styles = pd.DataFrame("", index=df.index, columns=df.columns)
+            for col in rule_col_names:
+                if col not in df.columns:
+                    continue
+                for idx, val in df[col].items():
+                    styles.at[idx, col] = (
+                        "background-color: #c8e6c9" if val is True else "background-color: #ffcdd2"
+                    )
+            for col in pnl_col_names:
+                if col not in df.columns:
+                    continue
+                for idx, val in df[col].items():
+                    try:
+                        styles.at[idx, col] = (
+                            "color: #2e7d32" if float(val) >= 0 else "color: #c62828"
+                        )
+                    except Exception:
+                        pass
+            return styles
+
+        # Format boolean rule columns as ✓/✗ for display
+        display_df = df_screen.copy()
+        for col in rule_col_names:
+            display_df[col] = display_df[col].map({True: "✓", False: "✗"})
+        for col in pnl_col_names:
+            display_df[col] = display_df[col].apply(
+                lambda v: f"${v:,.0f}" if isinstance(v, (int, float)) and not np.isnan(v) else v
+            )
+
+        styled_screen = display_df.style.apply(_style_screener, axis=None)
+        st.dataframe(styled_screen, hide_index=True, use_container_width=True, height=550)
+
+        # ── OOS Total bar chart ────────────────────────────────────────────────
+        if not df_screen.empty:
+            chart_df = df_screen[["Strategy", "OOS Total ($)"]].copy()
+            chart_df["pass"] = passes_all_col.values if len(passes_all_col) == len(chart_df) else True
+            chart_df["color"] = chart_df["pass"].map({True: "Passes All Rules", False: "Fails a Rule"})
+            fig_sc = px.bar(
+                chart_df.sort_values("OOS Total ($)", ascending=True),
+                x="OOS Total ($)",
+                y="Strategy",
+                orientation="h",
+                color="color",
+                color_discrete_map={"Passes All Rules": "#4CAF50", "Fails a Rule": "#EF9A9A"},
+                title="OOS Total PnL per Strategy (current contracts)",
+            )
+            fig_sc.add_vline(x=0, line_color="black", line_width=1)
+            fig_sc.update_layout(
+                height=max(300, len(chart_df) * 28 + 100),
+                coloraxis_showscale=False,
+                legend_title_text="",
+            )
+            st.plotly_chart(fig_sc, use_container_width=True)
