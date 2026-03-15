@@ -68,7 +68,8 @@ def _mc_core(
 
             if equity > peak:
                 peak = equity
-            drawdown = (peak - equity) / peak if peak > 1e-9 else 0.0
+            raw_dd = (peak - equity) / peak if peak > 1e-9 else 0.0
+            drawdown = raw_dd if raw_dd < 1.0 else 1.0
             if drawdown > dd:
                 dd = drawdown
             if equity < margin_threshold:
