@@ -193,10 +193,10 @@ def _render_strategy_actions(names: list[str], key: str) -> None:
     # Multi-file picker (shown after clicking Code ▾)
     if len(code_files) > 1 and st.session_state.get(f"{key}_show_code"):
         with st.container():
-            for cf in code_files:
+            for i, cf in enumerate(code_files):
                 c1, c2 = st.columns([5, 1])
                 c1.markdown(f"`{cf.name}`")
-                if c2.button("Open", key=f"{key}_cf_{cf.name}"):
+                if c2.button("Open", key=f"{key}_cf_{i}"):
                     _open_path(cf)
 
 
