@@ -441,7 +441,7 @@ if not portfolio.summary_metrics.empty:
                 "max_drawdown_isoos": st.column_config.NumberColumn(
                     "Max DD IS+OOS ($)", format="$%.0f"
                 ),
-                "sharpe_isoos": st.column_config.NumberColumn("Sharpe", format="%.2f"),
+                "sharpe_isoos": st.column_config.NumberColumn("Sharpe IS+OOS", format="%.2f"),
                 "profit_last_1_month": st.column_config.NumberColumn(
                     "Last 1M ($)", format="$%.0f"
                 ),
@@ -546,7 +546,7 @@ if not portfolio.summary_metrics.empty:
                 if _nm in _contracts_edit:
                     _s = dict(_s)
                     try:
-                        _s["contracts"] = round(int(_contracts_edit[_nm] or 1))
+                        _s["contracts"] = int(round(float(_contracts_edit[_nm] or 1)))
                     except (ValueError, TypeError):
                         pass
                 _updated.append(_s)
