@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from core.analytics.monte_carlo import closed_trade_mc
 from core.config import EligibilityConfig
 from core.data_types import ImportedData, StrategyFolder
 from core.ingestion.date_utils import resolve_oos_dates
@@ -66,6 +67,25 @@ def compute_summary(
     # Build lookup: strategy_name → StrategyFolder
     folder_map = {sf.name: sf for sf in strategy_folders}
 
+    # ── Pre-compute direction and trade PnL arrays ────────────────────────────
+    _direction_map: dict[str, str] = {}
+    _trade_pnls: dict[str, np.ndarray] = {}  # all trades, per strategy
+    if imported.trades is not None and not imported.trades.empty:
+        for _nm in imported.strategy_names:
+            _t = imported.trades[imported.trades["strategy"] == _nm]
+            _has_long = bool((_t["position"] == "L").any())
+            _has_short = bool((_t["position"] == "S").any())
+            if _has_long and _has_short:
+                _direction_map[_nm] = "Long & Short"
+            elif _has_long:
+                _direction_map[_nm] = "Long Only"
+            elif _has_short:
+                _direction_map[_nm] = "Short Only"
+            else:
+                _direction_map[_nm] = ""
+            if "pnl" in _t.columns and not _t.empty:
+                _trade_pnls[_nm] = _t["pnl"].dropna().values.astype(np.float64)
+
     rows: list[dict[str, Any]] = []
 
     for name in imported.strategy_names:
@@ -105,6 +125,32 @@ def compute_summary(
         )
 
         row = _build_row(name, wf, dynamic)
+
+        # ── Direction (auto-detected from trade data) ─────────────────────────
+        row["direction"] = _direction_map.get(name, "")
+
+        # ── Last date on file ─────────────────────────────────────────────────
+        _last = pnl.dropna()
+        row["last_date_on_file"] = _last.index[-1].date() if not _last.empty else None
+
+        # ── Closed-trade Monte Carlo (IS only and IS+OOS) ─────────────────────
+        _all_trades = _trade_pnls.get(name, np.array([], dtype=np.float64))
+        _tpy = int(round(float(wf.trades_per_year))) if wf and wf.trades_per_year else max(1, len(_all_trades))
+        if len(_all_trades) >= 2:
+            # IS only: trades before oos_begin
+            if oos_begin is not None and not imported.trades.empty:
+                _strat_t = imported.trades[imported.trades["strategy"] == name]
+                _is_trades = _strat_t.loc[
+                    _strat_t["date"] < pd.Timestamp(oos_begin), "pnl"
+                ].dropna().values.astype(np.float64)
+            else:
+                _is_trades = _all_trades
+            row["mc_closed_is"] = closed_trade_mc(_is_trades, _tpy) if len(_is_trades) >= 2 else float("nan")
+            row["mc_closed_isoos"] = closed_trade_mc(_all_trades, _tpy)
+        else:
+            row["mc_closed_is"] = float("nan")
+            row["mc_closed_isoos"] = float("nan")
+
         rows.append(row)
 
     if not rows:
@@ -647,6 +693,9 @@ _WF_STR_COLS = [
 ]
 _WF_DATE_COLS = ["is_begin", "oos_begin", "oos_end", "next_opt_date", "last_opt_date"]
 _WF_INT_COLS = ["trading_days_is", "trading_days_isoos"]
+
+# New dynamic columns added outside WF (always computed)
+_DYNAMIC_EXTRA_COLS = ["direction", "last_date_on_file", "mc_closed_is", "mc_closed_isoos"]
 
 
 # ── Eligibility evaluation ────────────────────────────────────────────────────

@@ -329,12 +329,20 @@ if not portfolio.summary_metrics.empty:
         "contracts": "Contracts",
         "symbol": "Symbol",
         "sector": "Sector",
+        "direction": "Direction",
+        "last_date_on_file": "Last Date on File",
         "oos_begin": "OOS Start",
         "oos_end": "OOS End",
+        "next_opt_date": "Next Opt Date",
+        "last_opt_date": "Last Opt Date",
         "oos_period_years": "OOS Years",
         "expected_annual_profit": "Exp. Annual ($)",
         "actual_annual_profit": "Act. Annual ($)",
         "return_efficiency": "Efficiency",
+        "mw_mc_is": "MW MC IS (%)",
+        "mw_mc_isoos": "MW MC IS+OOS (%)",
+        "mc_closed_is": "Closed MC IS (10%)",
+        "mc_closed_isoos": "Closed MC IS+OOS (10%)",
         "trades_per_year": "Trades/Yr",
         "overall_win_rate": "Win Rate",
         "sharpe_isoos": "Sharpe IS+OOS",
@@ -415,6 +423,20 @@ if not portfolio.summary_metrics.empty:
                 "symbol": st.column_config.TextColumn("Symbol"),
                 "sector": st.column_config.TextColumn("Sector"),
                 "trades_per_year": st.column_config.NumberColumn("Trades/Yr", format="%.1f"),
+                "direction": st.column_config.TextColumn("Direction"),
+                "last_date_on_file": st.column_config.DateColumn("Last Date on File"),
+                "next_opt_date": st.column_config.DateColumn("Next Opt Date"),
+                "last_opt_date": st.column_config.DateColumn("Last Opt Date"),
+                "mw_mc_is": st.column_config.NumberColumn("MW MC IS (%)", format="%.1f%%"),
+                "mw_mc_isoos": st.column_config.NumberColumn("MW MC IS+OOS (%)", format="%.1f%%"),
+                "mc_closed_is": st.column_config.NumberColumn(
+                    "Closed MC IS (10%)", format="%.1f%%",
+                    help="Closed-trade Monte Carlo max drawdown at 10% risk of ruin (IS only).",
+                ),
+                "mc_closed_isoos": st.column_config.NumberColumn(
+                    "Closed MC IS+OOS (10%)", format="%.1f%%",
+                    help="Closed-trade Monte Carlo max drawdown at 10% risk of ruin (IS+OOS).",
+                ),
                 "incubation_status": st.column_config.TextColumn("Incubation"),
                 "oos_begin": st.column_config.DateColumn("OOS Start"),
                 "oos_end": st.column_config.DateColumn("OOS End"),
@@ -425,10 +447,10 @@ if not portfolio.summary_metrics.empty:
                     "Act. Annual ($)", format="$%.0f"
                 ),
                 "return_efficiency": st.column_config.NumberColumn(
-                    "Efficiency", format="%.1%%"
+                    "Efficiency", format="%.1f%%"
                 ),
                 "overall_win_rate": st.column_config.NumberColumn(
-                    "Win Rate", format="%.1%%"
+                    "Win Rate", format="%.1f%%"
                 ),
                 "max_drawdown_isoos": st.column_config.NumberColumn(
                     "Max DD IS+OOS ($)", format="$%.0f"
@@ -546,6 +568,44 @@ if not portfolio.summary_metrics.empty:
             st.session_state.portfolio_data = None
             st.success("Contracts saved — click **Rebuild Portfolio** to recalculate.")
             st.rerun()
+
+        # ── Re-optimisation alerts ─────────────────────────────────────────
+        if "next_opt_date" in sm.columns:
+            from datetime import date as _today_cls
+            _today = _today_cls.today()
+            _reopt_rows = []
+            for _idx, _nod in sm["next_opt_date"].items():
+                if _nod is None or (hasattr(_nod, "__class__") and str(_nod) in ("NaT", "None", "nan")):
+                    continue
+                try:
+                    _nod_d = _nod if isinstance(_nod, _today_cls) else pd.Timestamp(_nod).date()
+                    _days_left = (_nod_d - _today).days
+                    if _days_left <= 21:
+                        _lod = sm.at[_idx, "last_opt_date"] if "last_opt_date" in sm.columns else None
+                        _reopt_rows.append({
+                            "Strategy": _idx,
+                            "Next Opt Date": str(_nod_d),
+                            "Last Opt Date": str(_lod) if _lod else "—",
+                            "Days Until": _days_left,
+                            "Alert": "🔴 Overdue / ≤1 week" if _days_left <= 7 else "🟡 Within 3 weeks",
+                        })
+                except Exception:
+                    pass
+            if _reopt_rows:
+                st.divider()
+                st.subheader("Re-optimisation Due")
+                _reopt_df = pd.DataFrame(_reopt_rows).sort_values("Days Until")
+
+                def _reopt_style(row):
+                    if row.get("Days Until", 99) <= 7:
+                        return ["background-color: #ffcdd2; color: #7f0000; font-weight: 600;"] * len(row)
+                    return ["background-color: #fff9c4; color: #5d4037; font-weight: 500;"] * len(row)
+
+                st.dataframe(
+                    _reopt_df.style.apply(_reopt_style, axis=1),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
     else:
         st.info("Run an import with Walkforward Details CSVs to see strategy metrics.")

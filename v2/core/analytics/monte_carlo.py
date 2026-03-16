@@ -82,7 +82,33 @@ def _mc_core(
     return final_equity, max_drawdown, ruined
 
 
-# ── Helper metrics ────────────────────────────────────────────────────────────
+# ── Closed-trade MC (per-strategy, IS and IS+OOS) ─────────────────────────────
+
+def closed_trade_mc(
+    trade_pnls: np.ndarray,
+    trades_per_year: int,
+    n_simulations: int = 2_000,
+    risk_pct: float = 0.10,
+    starting_equity: float = 100_000.0,
+) -> float:
+    """
+    Run MC on closed-trade samples and return the max drawdown (as fraction 0–1)
+    at the ``risk_pct`` confidence level — i.e. ``risk_pct * 100``% of scenarios
+    will have a **higher** max drawdown.
+
+    With ``risk_pct=0.10``: returns the 90th-percentile MC max drawdown.
+    This mirrors how MW Monte Carlo values are interpreted:
+    "10% of scenarios are worse than this drawdown."
+
+    Returns NaN if fewer than 2 trade samples are provided.
+    """
+    if len(trade_pnls) < 2:
+        return float("nan")
+    samples = trade_pnls.astype(np.float64)
+    tpy = max(1, int(trades_per_year))
+    _, max_dd, _ = _mc_core(samples, starting_equity, 0.0, n_simulations, tpy, 0.0)
+    # Percentile: (1 - risk_pct)*100 = 90th for 10% risk
+    return float(np.percentile(max_dd, (1.0 - risk_pct) * 100.0))
 
 def _calc_sharpe(final_equity: np.ndarray, starting_equity: float) -> float:
     """

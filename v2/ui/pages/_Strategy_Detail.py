@@ -152,14 +152,26 @@ timeframe = timeframe or "—"
 sector    = sector    or "—"
 
 # Metadata strip
-mc1, mc2, mc3, mc4, mc5, mc6, mc7 = st.columns(7)
-mc1.metric("Status",    status)
-mc2.metric("Symbol",    symbol)
-mc3.metric("Sector",    sector)
-mc4.metric("Contracts", contracts)
-mc5.metric("Timeframe", timeframe)
-mc6.metric("Type",      s_type)
-mc7.metric("Horizon",   horizon)
+_direction = _sm("direction", "") or "—"
+_elig_status = _sm("eligibility_status", "") or "—"
+_next_opt = _sm("next_opt_date")
+_last_opt = _sm("last_opt_date")
+_next_opt_str = str(_next_opt) if _next_opt else "—"
+_last_opt_str = str(_last_opt) if _last_opt else "—"
+
+mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+mc1.metric("Status",      status)
+mc2.metric("Symbol",      symbol)
+mc3.metric("Sector",      sector)
+mc4.metric("Direction",   _direction)
+mc5.metric("Eligibility", _elig_status)
+
+mc6, mc7, mc8, mc9, mc10 = st.columns(5)
+mc6.metric("Contracts",   contracts)
+mc7.metric("Timeframe",   timeframe)
+mc8.metric("Type",        s_type)
+mc9.metric("Next Opt",    _next_opt_str)
+mc10.metric("Last Opt",   _last_opt_str)
 
 if notes:
     st.caption(f"Notes: {notes}")

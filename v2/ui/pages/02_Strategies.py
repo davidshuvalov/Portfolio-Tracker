@@ -227,9 +227,18 @@ with tab_config:
     )
 
     df = _to_df(filtered)
+    # Merge auto-detected direction from summary cache (read-only)
+    _dir_cache = st.session_state.get("all_strategies_summary_cache")
+    if _dir_cache is not None and "direction" in _dir_cache.columns:
+        df["direction"] = df["name"].map(lambda n: _dir_cache["direction"].get(n, ""))
+    else:
+        df["direction"] = ""
+    _cfg_cols = list(_COLUMNS) + ["direction"]
+    _cfg_col_config = dict(_COLUMN_CONFIG)
+    _cfg_col_config["direction"] = st.column_config.TextColumn("Direction", disabled=True, width="small")
     edited_df = st.data_editor(
-        df,
-        column_config=_COLUMN_CONFIG,
+        df[_cfg_cols],
+        column_config=_cfg_col_config,
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
@@ -239,6 +248,9 @@ with tab_config:
     # Save
     if st.button("Save Changes", type="primary"):
         edited_rows = edited_df.to_dict(orient="records")
+        # Strip read-only computed columns before saving
+        for _r in edited_rows:
+            _r.pop("direction", None)
         edited_by_name = {r["name"]: r for r in edited_rows}
         merged = []
         for s in strategies:
@@ -623,16 +635,30 @@ with tab_summary:
                 lambda n: _strats_map.get(n, {}).get("status", "")
             ))
 
+            # ── Eligibility computation ────────────────────────────────────────
+            from core.portfolio.summary import apply_eligibility_rules as _apply_elig
+            _elig_mask = _apply_elig(_sm, config.eligibility)
+            _sm2["eligibility_status"] = _elig_mask.map({True: "Eligible", False: "Ineligible"})
+
             # All available summary columns with friendly labels
             _SUMM_ALL_COLS: dict[str, str] = {
                 "symbol": "Symbol",
                 "sector": "Sector",
+                "direction": "Direction",
+                "eligibility_status": "Eligibility",
+                "last_date_on_file": "Last Date on File",
                 "oos_begin": "OOS Start",
                 "oos_end": "OOS End",
+                "next_opt_date": "Next Opt Date",
+                "last_opt_date": "Last Opt Date",
                 "oos_period_years": "OOS Years",
                 "expected_annual_profit": "Exp. Annual ($)",
                 "actual_annual_profit": "Act. Annual ($)",
                 "return_efficiency": "Efficiency",
+                "mw_mc_is": "MW MC IS (%)",
+                "mw_mc_isoos": "MW MC IS+OOS (%)",
+                "mc_closed_is": "Closed MC IS (10%)",
+                "mc_closed_isoos": "Closed MC IS+OOS (10%)",
                 "trades_per_year": "Trades/Yr",
                 "overall_win_rate": "Win Rate",
                 "sharpe_isoos": "Sharpe IS+OOS",
@@ -753,6 +779,21 @@ with tab_summary:
                     ),
                     "rtd_oos": st.column_config.NumberColumn("R:DD OOS", format="%.2f"),
                     "incubation_status": st.column_config.TextColumn("Incubation"),
+                    "eligibility_status": st.column_config.TextColumn("Eligibility"),
+                    "direction": st.column_config.TextColumn("Direction"),
+                    "last_date_on_file": st.column_config.DateColumn("Last Date on File"),
+                    "next_opt_date": st.column_config.DateColumn("Next Opt Date"),
+                    "last_opt_date": st.column_config.DateColumn("Last Opt Date"),
+                    "mw_mc_is": st.column_config.NumberColumn("MW MC IS (%)", format="%.1f%%"),
+                    "mw_mc_isoos": st.column_config.NumberColumn("MW MC IS+OOS (%)", format="%.1f%%"),
+                    "mc_closed_is": st.column_config.NumberColumn(
+                        "Closed MC IS (10%)", format="%.1f%%",
+                        help="Closed-trade Monte Carlo max drawdown at 10% risk of ruin (IS only).",
+                    ),
+                    "mc_closed_isoos": st.column_config.NumberColumn(
+                        "Closed MC IS+OOS (10%)", format="%.1f%%",
+                        help="Closed-trade Monte Carlo max drawdown at 10% risk of ruin (IS+OOS).",
+                    ),
                     # Additional columns available via column picker
                     "symbol": st.column_config.TextColumn("Symbol"),
                     "sector": st.column_config.TextColumn("Sector"),
@@ -854,6 +895,44 @@ with tab_summary:
             # Strategy row actions
             _sm_names = list(_sm2.index)
             _render_strategy_actions(_sm_names, key="summ")
+
+            # ── Re-optimisation alerts ─────────────────────────────────────────
+            if "next_opt_date" in _sm2.columns:
+                from datetime import date as _today_cls, timedelta as _td
+                _today = _today_cls.today()
+                _reopt_rows = []
+                for _idx, _nod in _sm2["next_opt_date"].items():
+                    if _nod is None or (hasattr(_nod, "__class__") and str(_nod) in ("NaT", "None", "nan")):
+                        continue
+                    try:
+                        _nod_d = _nod if isinstance(_nod, _today_cls) else pd.Timestamp(_nod).date()
+                        _days_left = (_nod_d - _today).days
+                        if _days_left <= 21:
+                            _lod = _sm2.at[_idx, "last_opt_date"] if "last_opt_date" in _sm2.columns else None
+                            _reopt_rows.append({
+                                "Strategy": _idx,
+                                "Next Opt Date": str(_nod_d),
+                                "Last Opt Date": str(_lod) if _lod else "—",
+                                "Days Until": _days_left,
+                                "Alert": "🔴 Overdue / ≤1 week" if _days_left <= 7 else "🟡 Within 3 weeks",
+                            })
+                    except Exception:
+                        pass
+                if _reopt_rows:
+                    st.divider()
+                    st.subheader("Re-optimisation Due")
+                    _reopt_df = pd.DataFrame(_reopt_rows).sort_values("Days Until")
+
+                    def _reopt_style(row):
+                        if row.get("Days Until", 99) <= 7:
+                            return ["background-color: #ffcdd2; color: #7f0000; font-weight: 600;"] * len(row)
+                        return ["background-color: #fff9c4; color: #5d4037; font-weight: 500;"] * len(row)
+
+                    st.dataframe(
+                        _reopt_df.style.apply(_reopt_style, axis=1),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
 
             st.divider()
             st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio with Live strategies")
