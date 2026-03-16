@@ -225,9 +225,13 @@ def _home_page() -> None:
             ("Diversification",      "ui/pages/_06_Diversification.py",      "Portfolio composition by sector, symbol and type"),
             ("Leave One Out",        "ui/pages/_07_Leave_One_Out.py",        "Impact on portfolio metrics of removing each strategy"),
             ("Backtest",             "ui/pages/_08_Backtest.py",             "Recreate the performance of your actual traded portfolio"),
+            ("What-If Backtest",     "ui/pages/_08b_WhatIf_Backtest.py",    "Compose a hypothetical portfolio with any strategies and date range"),
             ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py", "Walk-forward rule validation across OOS windows"),
             ("Margin Tracking",      "ui/pages/_10_Margin_Tracking.py",      "Historical daily margin utilisation by symbol and sector"),
             ("Position Check",       "ui/pages/_11_Position_Check.py",       "Compare current MultiWalk positions to your live account"),
+            ("Diversificator",       "ui/pages/_13_Diversificator.py",       "Find the optimal strategy build order for maximum diversification benefit"),
+            ("Portfolio Compare",    "ui/pages/_14_Portfolio_Compare.py",    "Track changes to your Live portfolio using saved snapshots"),
+            ("Portfolio Optimizer",  "ui/pages/_15_Portfolio_Optimizer.py",  "Auto-suggest an optimal, diversified portfolio from eligible strategies"),
         ]
 
         a_cols = st.columns(4, gap="medium")
@@ -345,10 +349,14 @@ def main():
             st.Page("ui/pages/_06_Diversification.py", title="Diversification"),
             st.Page("ui/pages/_07_Leave_One_Out.py", title="Leave One Out"),
             st.Page("ui/pages/_08_Backtest.py", title="Backtest"),
+            st.Page("ui/pages/_08b_WhatIf_Backtest.py", title="What-If Backtest"),
             st.Page("ui/pages/_09_Eligibility_Backtest.py", title="Eligibility Backtest"),
             st.Page("ui/pages/_10_Margin_Tracking.py", title="Margin Tracking"),
             st.Page("ui/pages/_11_Position_Check.py", title="Position Check"),
             st.Page("ui/pages/12_Settings.py", title="Settings"),
+            st.Page("ui/pages/_13_Diversificator.py", title="Diversificator"),
+            st.Page("ui/pages/_14_Portfolio_Compare.py", title="Portfolio Compare"),
+            st.Page("ui/pages/_15_Portfolio_Optimizer.py", title="Portfolio Optimizer"),
             st.Page("ui/pages/00_Migrate.py", title="Migrate"),
             st.Page("ui/pages/_Strategy_Detail.py", title="Strategy Detail"),
         ],
