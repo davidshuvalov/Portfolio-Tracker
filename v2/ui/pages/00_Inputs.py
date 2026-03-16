@@ -32,6 +32,13 @@ st.caption(
 config: AppConfig = st.session_state.get("config", AppConfig.load())
 _any_saved = False
 
+tab_data, tab_elig, tab_analytics, tab_portfolio = st.tabs([
+    "📁 Data & Dates",
+    "🎯 Eligibility",
+    "📊 Analytics",
+    "💼 Portfolio",
+])
+
 
 def _save(new_config: AppConfig) -> None:
     global _any_saved
@@ -40,6 +47,8 @@ def _save(new_config: AppConfig) -> None:
     st.session_state.pop("portfolio_data", None)   # force rebuild
     _any_saved = True
 
+
+tab_data.__enter__()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. DATA FOLDERS
@@ -130,8 +139,8 @@ with st.form("date_portfolio_form"):
         _save(nc)
         st.success("Saved.")
 
-st.divider()
-
+tab_data.__exit__(None, None, None)
+tab_elig.__enter__()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. INCUBATION SETTINGS   (mirrors VBA rows 3–7 of Inputs tab)
@@ -430,8 +439,8 @@ with st.form("eligibility_form"):
         _save(nc)
         st.success("Saved.")
 
-st.divider()
-
+tab_elig.__exit__(None, None, None)
+tab_analytics.__enter__()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. MONTE CARLO SETTINGS
@@ -492,8 +501,8 @@ with st.form("corr_form"):
         _save(nc)
         st.success("Saved.")
 
-st.divider()
-
+tab_analytics.__exit__(None, None, None)
+tab_portfolio.__enter__()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 8. MARGIN SETTINGS
@@ -706,8 +715,7 @@ with st.form("ranking_form"):
         _save(nc)
         st.success("Saved.")
 
-st.divider()
-
+tab_portfolio.__exit__(None, None, None)
 
 # ── Saved banner ──────────────────────────────────────────────────────────────
 if _any_saved:

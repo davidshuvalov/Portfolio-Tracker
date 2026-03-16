@@ -188,7 +188,8 @@ else:
 
     def _net_style(row):
         bg = NET_COLOURS.get(row.get("Net Status", ""), "")
-        return [f"background-color: {bg}"] * len(row)
+        style = f"background-color: {bg}; color: #111111; font-weight: 500;" if bg else ""
+        return [style] * len(row)
 
     net_display = net_df.rename(columns={
         "symbol":      "Symbol",
@@ -248,8 +249,8 @@ if stale_count:
 
 def _fresh_style(row):
     if row.get("Stale?", "") == "⚠ Yes":
-        return ["background-color: #ffccbc"] * len(row)
-    return ["background-color: #e8f5e9"] * len(row)
+        return ["background-color: #ffccbc; color: #7f1010; font-weight: 600;"] * len(row)
+    return ["background-color: #e8f5e9; color: #1b4332; font-weight: 500;"] * len(row)
 
 st.dataframe(
     freshness_df.style.apply(_fresh_style, axis=1),

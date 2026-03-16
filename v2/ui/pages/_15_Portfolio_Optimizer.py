@@ -304,30 +304,30 @@ with st.sidebar:
             "1% = very tight; 100% = no limit."
         )
         opt_max_sym_pct = st.slider(
-            "Max single symbol margin %",
-            0.01, 1.0, float(opt_cfg.max_single_contract_margin_pct), 0.01,
-            format="%.0f%%",
+            "Max single symbol margin (% of portfolio margin)",
+            1, 100, int(round(opt_cfg.max_single_contract_margin_pct * 100)), 1,
+            format="%d%%",
             key="opt_max_sym_pct",
         )
         opt_max_sec_pct = st.slider(
-            "Max single sector margin %",
-            0.01, 1.0, float(opt_cfg.max_sector_margin_pct), 0.01,
-            format="%.0f%%",
+            "Max single sector margin (% of portfolio margin)",
+            1, 100, int(round(opt_cfg.max_sector_margin_pct * 100)), 1,
+            format="%d%%",
             key="opt_max_sec_pct",
         )
 
     # ── Drawdowns ─────────────────────────────────────────────────────────
     with st.expander("Drawdown Controls", expanded=False):
         opt_max_avg_dd = st.slider(
-            "Max avg strategy drawdown (% equity)",
-            0.01, 1.0, float(opt_cfg.max_avg_drawdown_pct), 0.01,
-            format="%.0f%%",
+            "Max avg strategy drawdown (% of equity)",
+            1, 100, int(round(opt_cfg.max_avg_drawdown_pct * 100)), 1,
+            format="%d%%",
             key="opt_max_avg_dd",
         )
         opt_max_single_dd = st.slider(
-            "Max single strategy drawdown (% equity)",
-            0.01, 1.0, float(opt_cfg.max_single_drawdown_pct), 0.01,
-            format="%.0f%%",
+            "Max single strategy drawdown (% of equity)",
+            1, 100, int(round(opt_cfg.max_single_drawdown_pct * 100)), 1,
+            format="%d%%",
             key="opt_max_single_dd",
         )
 
@@ -399,10 +399,10 @@ with st.sidebar:
         config.optimizer.per_symbol_first    = opt_per_symbol_first
         config.optimizer.max_correlation     = float(opt_max_corr)
         config.optimizer.max_negative_correlation = float(opt_max_neg)
-        config.optimizer.max_single_contract_margin_pct = float(opt_max_sym_pct)
-        config.optimizer.max_sector_margin_pct          = float(opt_max_sec_pct)
-        config.optimizer.max_avg_drawdown_pct    = float(opt_max_avg_dd)
-        config.optimizer.max_single_drawdown_pct = float(opt_max_single_dd)
+        config.optimizer.max_single_contract_margin_pct = int(opt_max_sym_pct) / 100.0
+        config.optimizer.max_sector_margin_pct          = int(opt_max_sec_pct) / 100.0
+        config.optimizer.max_avg_drawdown_pct    = int(opt_max_avg_dd) / 100.0
+        config.optimizer.max_single_drawdown_pct = int(opt_max_single_dd) / 100.0
         config.optimizer.mc_target_mode          = st.session_state.get("opt_mc_mode", opt_cfg.mc_target_mode)
         config.optimizer.mc_target_drawdown_pct  = float(st.session_state.get("opt_mc_dd_target", opt_cfg.mc_target_drawdown_pct))
         config.optimizer.mc_target_margin_pct    = float(st.session_state.get("opt_mc_margin_target", opt_cfg.mc_target_margin_pct))
@@ -603,16 +603,16 @@ if run_btn and _prereqs_ok:
                     "margins": margins,
                     "contract_margin_multiple": float(st.session_state.get("opt_margin_mult", cs_cfg.contract_margin_multiple)),
                     "equity": equity,
-                    "max_single_pct": float(st.session_state.get("opt_max_sym_pct", opt_cfg.max_single_contract_margin_pct)),
-                    "max_sector_pct": float(st.session_state.get("opt_max_sec_pct", opt_cfg.max_sector_margin_pct)),
+                    "max_single_pct": int(st.session_state.get("opt_max_sym_pct", int(round(opt_cfg.max_single_contract_margin_pct * 100)))) / 100.0,
+                    "max_sector_pct": int(st.session_state.get("opt_max_sec_pct", int(round(opt_cfg.max_sector_margin_pct * 100)))) / 100.0,
                 },
             ),
             "adjust_drawdowns": (
                 step_adjust_drawdowns,
                 {
                     "equity": equity,
-                    "max_avg_pct": float(st.session_state.get("opt_max_avg_dd", opt_cfg.max_avg_drawdown_pct)),
-                    "max_single_pct": float(st.session_state.get("opt_max_single_dd", opt_cfg.max_single_drawdown_pct)),
+                    "max_avg_pct": int(st.session_state.get("opt_max_avg_dd", int(round(opt_cfg.max_avg_drawdown_pct * 100)))) / 100.0,
+                    "max_single_pct": int(st.session_state.get("opt_max_single_dd", int(round(opt_cfg.max_single_drawdown_pct * 100)))) / 100.0,
                     "max_single_trade_pct": float(opt_cfg.max_single_trade_loss_pct),
                     "min_fraction": float(st.session_state.get("opt_min_frac", opt_cfg.min_contract_fraction)),
                 },
