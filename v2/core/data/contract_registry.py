@@ -88,7 +88,7 @@ CONTRACT_REGISTRY: dict[str, ContractFamily] = {
     "NIY": ContractFamily("NIY", "Nikkei 225 (USD)",            "Index",       "CME"),
     "NK":  ContractFamily("NK",  "Nikkei 225 (JPY)",            "Index",       "OSE"),
     "FESX":ContractFamily("FESX","Euro Stoxx 50",               "Index",       "EUREX"),
-    "FDAX":ContractFamily("FDAX","DAX",                         "Index",       "EUREX", micro_symbol="FDXM",  micro_ratio=0.2),
+    "FDAX":ContractFamily("FDAX","DAX",                         "Index",       "EUREX", micro_symbol="FDXS",  micro_ratio=0.04, mini_symbol="FDXM",  mini_ratio=0.2),   # FDXM=Mini(1/5), FDXS=Micro(1/25)
     "FSMI":ContractFamily("FSMI","SMI",                         "Index",       "EUREX"),
 
     # ── Energy ─────────────────────────────────────────────────────────────────
@@ -131,9 +131,9 @@ CONTRACT_REGISTRY: dict[str, ContractFamily] = {
     # ── Interest Rates / Fixed Income ──────────────────────────────────────────
     # CBOT Treasuries
     "ZB":  ContractFamily("ZB",  "30-Year U.S. T-Bond",          "Rates",       "CBOT"),
-    "UB":  ContractFamily("UB",  "Ultra T-Bond",                 "Rates",       "CBOT"),
+    "UB":  ContractFamily("UB",  "Ultra T-Bond",                 "Rates",       "CBOT",  micro_symbol="MWN",  micro_ratio=0.1),
     "ZN":  ContractFamily("ZN",  "10-Year U.S. T-Note",          "Rates",       "CBOT"),
-    "TN":  ContractFamily("TN",  "Ultra 10-Year T-Note",         "Rates",       "CBOT"),
+    "TN":  ContractFamily("TN",  "Ultra 10-Year T-Note",         "Rates",       "CBOT",  micro_symbol="MTN",  micro_ratio=0.1),
     "ZF":  ContractFamily("ZF",  "5-Year U.S. T-Note",           "Rates",       "CBOT"),
     "ZT":  ContractFamily("ZT",  "2-Year U.S. T-Note",           "Rates",       "CBOT"),
     "SR3": ContractFamily("SR3", "SOFR (3-Month)",               "Rates",       "CME"),
@@ -150,14 +150,14 @@ CONTRACT_REGISTRY: dict[str, ContractFamily] = {
     "6J":  ContractFamily("6J",  "Japanese Yen (12.5M JPY)",     "Currencies",  "CME",   micro_symbol="M6J",  micro_ratio=0.1),
     "6B":  ContractFamily("6B",  "British Pound (62,500 GBP)",   "Currencies",  "CME",   micro_symbol="M6B",  micro_ratio=0.1),
     "6A":  ContractFamily("6A",  "Australian Dollar (100K AUD)", "Currencies",  "CME",   micro_symbol="M6A",  micro_ratio=0.1),
-    "6C":  ContractFamily("6C",  "Canadian Dollar (100K CAD)",   "Currencies",  "CME",   micro_symbol="M6C",  micro_ratio=0.1),
-    "6S":  ContractFamily("6S",  "Swiss Franc (125,000 CHF)",    "Currencies",  "CME",   micro_symbol="M6S",  micro_ratio=0.1),
+    "6C":  ContractFamily("6C",  "Canadian Dollar (100K CAD)",   "Currencies",  "CME",   micro_symbol="MCD",  micro_ratio=0.1),   # MCD=CAD/USD; M6C is the inverse USD/CAD product
+    "6S":  ContractFamily("6S",  "Swiss Franc (125,000 CHF)",    "Currencies",  "CME",   micro_symbol="MSF",  micro_ratio=0.1),   # MSF=CHF/USD; M6S is the inverse USD/CHF product
     "6N":  ContractFamily("6N",  "New Zealand Dollar (100K NZD)","Currencies",  "CME",   micro_symbol="M6N",  micro_ratio=0.1),
     "6R":  ContractFamily("6R",  "Russian Ruble",                "Currencies",  "CME"),
     "DX":  ContractFamily("DX",  "U.S. Dollar Index",            "Currencies",  "ICE"),
 
-    # Kansas City Hard Red Winter Wheat (no micro available)
-    "KE":  ContractFamily("KE",  "Hard Red Winter Wheat (5,000 bu)", "Agriculture", "CBOT"),
+    # Kansas City Hard Red Winter Wheat — mini MKC (1,000 bu = 0.2×), no micro
+    "KE":  ContractFamily("KE",  "Hard Red Winter Wheat (5,000 bu)", "Agriculture", "CBOT",  mini_symbol="MKC",  mini_ratio=0.2),
 
     # ── Volatility ─────────────────────────────────────────────────────────────
     "VX":  ContractFamily("VX",  "CBOE VIX Futures",             "Volatility",  "CBOE"),

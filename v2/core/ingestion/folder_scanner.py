@@ -74,12 +74,19 @@ _SYMBOL_SECTOR: dict[str, str] = {
     "KW": "Agriculture",  # Hard Red Winter Wheat (CBOT: KE)
     # Micro Ag (launched Feb 2025)
     "MZC": "Agriculture", "MZS": "Agriculture", "MZW": "Agriculture",
-    # Micro FX
+    # Micro FX (direct-pair micros — same quote direction as standard contract)
     "M6E": "Currencies", "M6A": "Currencies", "M6J": "Currencies",
-    "M6B": "Currencies", "M6C": "Currencies", "M6S": "Currencies",
+    "M6B": "Currencies", "MCD": "Currencies", "MSF": "Currencies",
     "M6N": "Currencies",
     # Micro Energy
     "MCL": "Energy",
+    # Micro/Mini Interest Rates
+    "MWN": "Interest Rate",   # Micro Ultra T-Bond (0.1× UB)
+    "MTN": "Interest Rate",   # Micro Ultra 10-Year (0.1× TN)
+    # Eurex DAX variants
+    "FDXS": "Eurex Index",    # Micro-DAX (1/25 FDAX)
+    # Agriculture mini
+    "MKC": "Agriculture",     # Mini HRW Wheat (0.2× KE)
 }
 
 
