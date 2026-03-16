@@ -111,9 +111,10 @@ CONTRACT_REGISTRY: dict[str, ContractFamily] = {
 
     # ── Agricultural ───────────────────────────────────────────────────────────
     # CBOT — XC/XK/XW are the "Mini" (1,000-bushel) contracts = 0.2 × standard
-    "ZC":  ContractFamily("ZC",  "Corn (5,000 bu)",              "Agriculture", "CBOT",  mini_symbol="XC",  mini_ratio=0.2),
-    "ZS":  ContractFamily("ZS",  "Soybeans (5,000 bu)",          "Agriculture", "CBOT",  mini_symbol="XK",  mini_ratio=0.2),
-    "ZW":  ContractFamily("ZW",  "Wheat SRW (5,000 bu)",         "Agriculture", "CBOT",  mini_symbol="XW",  mini_ratio=0.2),
+    # MZC/MZS/MZW are the new Micro (500-bushel) contracts = 0.1 × standard (launched Feb 2025)
+    "ZC":  ContractFamily("ZC",  "Corn (5,000 bu)",              "Agriculture", "CBOT",  micro_symbol="MZC", micro_ratio=0.1, mini_symbol="XC",  mini_ratio=0.2),
+    "ZS":  ContractFamily("ZS",  "Soybeans (5,000 bu)",          "Agriculture", "CBOT",  micro_symbol="MZS", micro_ratio=0.1, mini_symbol="XK",  mini_ratio=0.2),
+    "ZW":  ContractFamily("ZW",  "Wheat SRW (5,000 bu)",         "Agriculture", "CBOT",  micro_symbol="MZW", micro_ratio=0.1, mini_symbol="XW",  mini_ratio=0.2),
     "ZM":  ContractFamily("ZM",  "Soybean Meal (100 short tons)","Agriculture", "CBOT"),
     "ZL":  ContractFamily("ZL",  "Soybean Oil (60,000 lbs)",     "Agriculture", "CBOT"),
     "LE":  ContractFamily("LE",  "Live Cattle (40,000 lbs)",     "Agriculture", "CME"),
@@ -151,9 +152,12 @@ CONTRACT_REGISTRY: dict[str, ContractFamily] = {
     "6A":  ContractFamily("6A",  "Australian Dollar (100K AUD)", "Currencies",  "CME",   micro_symbol="M6A",  micro_ratio=0.1),
     "6C":  ContractFamily("6C",  "Canadian Dollar (100K CAD)",   "Currencies",  "CME",   micro_symbol="M6C",  micro_ratio=0.1),
     "6S":  ContractFamily("6S",  "Swiss Franc (125,000 CHF)",    "Currencies",  "CME",   micro_symbol="M6S",  micro_ratio=0.1),
-    "6N":  ContractFamily("6N",  "New Zealand Dollar (100K NZD)","Currencies",  "CME"),
+    "6N":  ContractFamily("6N",  "New Zealand Dollar (100K NZD)","Currencies",  "CME",   micro_symbol="M6N",  micro_ratio=0.1),
     "6R":  ContractFamily("6R",  "Russian Ruble",                "Currencies",  "CME"),
     "DX":  ContractFamily("DX",  "U.S. Dollar Index",            "Currencies",  "ICE"),
+
+    # Kansas City Hard Red Winter Wheat (no micro available)
+    "KE":  ContractFamily("KE",  "Hard Red Winter Wheat (5,000 bu)", "Agriculture", "CBOT"),
 
     # ── Volatility ─────────────────────────────────────────────────────────────
     "VX":  ContractFamily("VX",  "CBOE VIX Futures",             "Volatility",  "CBOE"),
@@ -176,6 +180,29 @@ for _fam in CONTRACT_REGISTRY.values():
     if _fam.mini_symbol:
         _VARIANT_TO_STANDARD[_fam.mini_symbol] = _fam.symbol
 
+# Maps TradeStation legacy symbol → standard CME symbol
+# These are the two-letter codes TS uses vs. the CME "6X" / "Z_" convention.
+_TS_ALIASES: dict[str, str] = {
+    # Interest Rates
+    "TU": "ZT",   # 2-Year T-Note
+    "FV": "ZF",   # 5-Year T-Note
+    "TY": "ZN",   # 10-Year T-Note
+    "US": "ZB",   # 30-Year T-Bond
+    # Currencies
+    "EC":  "6E",  # Euro FX
+    "AD":  "6A",  # Australian Dollar
+    "JY":  "6J",  # Japanese Yen
+    "BP":  "6B",  # British Pound
+    "CD":  "6C",  # Canadian Dollar
+    "SF":  "6S",  # Swiss Franc
+    "NE1": "6N",  # New Zealand Dollar
+    # Agriculture (single-letter CBOT codes)
+    "C":  "ZC",   # Corn
+    "S":  "ZS",   # Soybeans
+    "W":  "ZW",   # Chicago SRW Wheat
+    "KW": "KE",   # Hard Red Winter Wheat
+}
+
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
 
@@ -183,8 +210,8 @@ def get_family(symbol: str) -> ContractFamily | None:
     """
     Return the :class:`ContractFamily` for *symbol*.
 
-    Accepts both standard symbols (``"NQ"``) and micro/mini symbols
-    (``"MNQ"``); in the latter case the parent family is returned.
+    Accepts standard symbols (``"NQ"``), micro/mini symbols (``"MNQ"``),
+    and TradeStation legacy aliases (``"EC"`` → ``6E`` family).
     Returns ``None`` when the symbol is unknown.
     """
     if symbol in CONTRACT_REGISTRY:
@@ -192,6 +219,9 @@ def get_family(symbol: str) -> ContractFamily | None:
     parent = _VARIANT_TO_STANDARD.get(symbol)
     if parent:
         return CONTRACT_REGISTRY[parent]
+    canonical = _TS_ALIASES.get(symbol)
+    if canonical:
+        return CONTRACT_REGISTRY.get(canonical)
     return None
 
 

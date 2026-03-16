@@ -56,6 +56,30 @@ _SYMBOL_SECTOR: dict[str, str] = {
     "FDAX": "Eurex Index", "FESX": "Eurex Index", "FDXM": "Eurex Index",
     "FGBL": "Eurex Interest Rate", "FGBM": "Eurex Interest Rate",
     "FGBS": "Eurex Interest Rate", "FGBX": "Eurex Interest Rate",
+    # ── TradeStation legacy symbol aliases ────────────────────────────────────
+    # Interest Rates (TS codes map to standard CBOT symbols)
+    # FV/TY/US/TU already present above; duplicated here for clarity
+    # Currencies — TS uses two-letter codes instead of CME "6X" convention
+    "EC": "Currencies",   # Euro FX          (CME: 6E)
+    "AD": "Currencies",   # Australian Dollar (CME: 6A)
+    "JY": "Currencies",   # Japanese Yen      (CME: 6J)
+    "BP": "Currencies",   # British Pound     (CME: 6B)
+    "CD": "Currencies",   # Canadian Dollar   (CME: 6C)
+    "SF": "Currencies",   # Swiss Franc       (CME: 6S)
+    "NE1": "Currencies",  # New Zealand Dollar (CME: 6N)
+    # Agriculture — TS uses single-letter codes for CBOT grains
+    "C":  "Agriculture",  # Corn              (CBOT: ZC)
+    "S":  "Agriculture",  # Soybeans          (CBOT: ZS)
+    "W":  "Agriculture",  # Chicago SRW Wheat (CBOT: ZW)
+    "KW": "Agriculture",  # Hard Red Winter Wheat (CBOT: KE)
+    # Micro Ag (launched Feb 2025)
+    "MZC": "Agriculture", "MZS": "Agriculture", "MZW": "Agriculture",
+    # Micro FX
+    "M6E": "Currencies", "M6A": "Currencies", "M6J": "Currencies",
+    "M6B": "Currencies", "M6C": "Currencies", "M6S": "Currencies",
+    "M6N": "Currencies",
+    # Micro Energy
+    "MCL": "Energy",
 }
 
 
@@ -63,9 +87,10 @@ def parse_name_parts(name: str) -> tuple[str, str]:
     """
     Extract symbol and timeframe from a MultiWalk strategy name.
     Expects the pattern [@SYMBOL-TIMEFRAME], e.g. [@TU-60min] → ('TU', '60min').
+    The symbol may include a session suffix like '.D' (day session) which is stripped.
     Returns ('', '') if pattern not found.
     """
-    m = re.search(r"\[@([A-Z0-9]+)-([^\]]+)\]", name)
+    m = re.search(r"\[@([A-Z0-9]+)(?:\.[A-Z]+)?-([^\]]+)\]", name)
     if m:
         return m.group(1), m.group(2)
     return "", ""
