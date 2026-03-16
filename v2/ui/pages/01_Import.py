@@ -14,14 +14,6 @@ from core.portfolio.strategies import load_strategies, save_strategies
 
 st.set_page_config(page_title="Import", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("Import")
 st.caption("Steps 1 & 2 of 4 — add folders, then scan and load strategy CSV data.")
 
@@ -174,7 +166,7 @@ with col_import:
         "Import Data",
         type="primary",
         use_container_width=True,
-        disabled=st.session_state.get("scan_result") is None,
+        disabled=not bool(config.folders),
     )
 
 # ── Scan ──────────────────────────────────────────────────────
@@ -224,7 +216,12 @@ if scan_clicked:
         st.warning("No strategies found. Check your folder paths.")
 
 # ── Import ────────────────────────────────────────────────────
-if import_clicked and st.session_state.get("scan_result"):
+if import_clicked:
+    # Auto-scan if no cached scan result yet
+    if st.session_state.get("scan_result") is None:
+        with st.spinner("Scanning folders…"):
+            _auto = scan_folders(config.folders)
+        st.session_state.scan_result = _auto
     result = st.session_state.scan_result
 
     cutoff = None

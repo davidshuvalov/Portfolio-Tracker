@@ -24,14 +24,6 @@ from core.data_types import ImportedData
 
 st.set_page_config(page_title="What-If Backtest", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("What-If Backtest")
 st.caption("Compose a hypothetical portfolio — any strategies, any contract counts, any date range.")
 

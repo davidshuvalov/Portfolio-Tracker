@@ -18,14 +18,6 @@ from core.portfolio.strategies import load_strategies, save_strategies
 
 st.set_page_config(page_title="Portfolio Optimizer", layout="wide")
 
-# ── Sidebar: workflow status ───────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("Portfolio Optimizer")
 st.caption(
     "Build a suggested portfolio from eligible strategies using a configurable "

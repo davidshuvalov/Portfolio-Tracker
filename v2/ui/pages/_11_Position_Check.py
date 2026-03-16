@@ -26,14 +26,6 @@ from core.data_types import PortfolioData
 
 st.set_page_config(page_title="Position Check", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("Position Check")
 
 config: AppConfig = st.session_state.get("config", AppConfig.load())

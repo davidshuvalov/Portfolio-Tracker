@@ -23,13 +23,6 @@ from core.config import AppConfig, StrategyRankingConfig
 
 st.set_page_config(page_title="Inputs", layout="wide")
 
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("Inputs")
 st.caption(
     "All configurable parameters that drive the analysis — mirrors the VBA Inputs tab. "

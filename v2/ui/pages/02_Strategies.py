@@ -16,14 +16,6 @@ from ui.strategy_labels import render_strategy_picker
 
 st.set_page_config(page_title="Strategies", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 st.title("Strategies")
 
 # ── Top navigation ─────────────────────────────────────────────────────────────

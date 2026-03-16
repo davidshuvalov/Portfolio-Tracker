@@ -36,14 +36,6 @@ from core.portfolio.strategies import load_strategies
 
 st.set_page_config(page_title="Portfolio Compare", layout="wide")
 
-# ── Sidebar workflow status ────────────────────────────────────────────────────
-try:
-    from ui.workflow import render_workflow_sidebar
-    with st.sidebar:
-        render_workflow_sidebar()
-except Exception:
-    pass
-
 # ── Top navigation ─────────────────────────────────────────────────────────────
 _nav_l, _ = st.columns([1, 7])
 with _nav_l:
