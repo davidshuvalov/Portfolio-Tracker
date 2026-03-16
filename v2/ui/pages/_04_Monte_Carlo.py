@@ -103,18 +103,59 @@ with st.sidebar:
     run_btn = st.button("Run Monte Carlo", type="primary", use_container_width=True)
 
     st.divider()
-    st.caption("**Equity & advanced**")
+    st.caption("**Equity & solve mode**")
+
+    _solve_opts = ["Solve for ROR target", "Solve for Max Drawdown", "Fixed equity"]
+    _solve_map  = {"ror": "Solve for ROR target", "max_dd": "Solve for Max Drawdown", "none": "Fixed equity"}
+    _solve_rmap = {v: k for k, v in _solve_map.items()}
+    _saved_solve = _solve_map.get(config.monte_carlo.solve_mode, "Solve for ROR target")
+    solve_mode_label = st.radio(
+        "Solve starting equity for",
+        _solve_opts,
+        index=_solve_opts.index(_saved_solve),
+        help=(
+            "**Solve for ROR target** — iterates until risk-of-ruin matches the target above.\n\n"
+            "**Solve for Max Drawdown** — iterates until the chosen drawdown percentile matches your target.\n\n"
+            "**Fixed equity** — uses the starting equity value directly."
+        ),
+    )
+    solve_mode = _solve_rmap[solve_mode_label]
+
     starting_equity = st.number_input(
         "Starting equity ($)",
         min_value=10_000.0, max_value=100_000_000.0, step=5_000.0,
         value=float(config.contract_sizing.starting_equity), format="%.0f",
-        help="Fixed starting equity (ignored when Solve for ROR is on).",
+        help="Used only when solve mode is **Fixed equity**.",
+        disabled=(solve_mode != "none"),
     )
-    solve_for_ror = st.checkbox(
-        "Solve for ROR target",
-        value=config.monte_carlo.solve_for_ror,
-        help="Iterate equity until ROR matches the target above.",
-    )
+
+    if solve_mode == "max_dd":
+        max_dd_target_pct = st.slider(
+            "Max drawdown target %",
+            min_value=5, max_value=60,
+            value=int(config.monte_carlo.max_dd_target * 100),
+            step=1,
+            help="Solve for equity that puts the chosen drawdown percentile at this level.",
+        )
+        max_dd_target = max_dd_target_pct / 100.0
+
+        _pct_opts = {"Median (50th)": 0.50, "75th percentile": 0.75,
+                     "90th percentile": 0.90, "95th percentile": 0.95}
+        _saved_pct_label = next(
+            (k for k, v in _pct_opts.items() if abs(v - config.monte_carlo.max_dd_percentile) < 0.01),
+            "Median (50th)",
+        )
+        max_dd_pct_label = st.selectbox(
+            "Drawdown percentile",
+            list(_pct_opts.keys()),
+            index=list(_pct_opts.keys()).index(_saved_pct_label),
+            help="Which percentile of the drawdown distribution to target.",
+        )
+        max_dd_percentile = _pct_opts[max_dd_pct_label]
+    else:
+        max_dd_target = config.monte_carlo.max_dd_target
+        max_dd_percentile = config.monte_carlo.max_dd_percentile
+
     output_samples = st.number_input(
         "Output samples",
         min_value=1, max_value=500, step=5,
@@ -135,7 +176,9 @@ with st.sidebar:
         config.monte_carlo.risk_ruin_target      = risk_ruin_target
         config.monte_carlo.trade_adjustment      = trade_adjustment
         config.monte_carlo.trade_option          = trade_option
-        config.monte_carlo.solve_for_ror         = solve_for_ror
+        config.monte_carlo.solve_mode            = solve_mode
+        config.monte_carlo.max_dd_target         = max_dd_target
+        config.monte_carlo.max_dd_percentile     = max_dd_percentile
         config.monte_carlo.output_samples        = int(output_samples)
         config.monte_carlo.remove_best_pct       = float(remove_best)
         config.contract_sizing.starting_equity   = float(starting_equity)
@@ -212,6 +255,9 @@ if run_btn:
         risk_ruin_tolerance=config.monte_carlo.risk_ruin_tolerance,
         trade_adjustment=trade_adjustment,
         trade_option=trade_option,
+        solve_mode=solve_mode,
+        max_dd_target=max_dd_target,
+        max_dd_percentile=max_dd_percentile,
     )
 
     with st.status(f"Running Monte Carlo — {mc_target}", expanded=True) as _mc_status:
@@ -221,6 +267,7 @@ if run_btn:
             daily_m2m=daily_m2m,
             config=mc_config,
             margin_threshold=float(margin_threshold),
+            starting_equity=float(starting_equity),
             closed_daily=closed_daily,
             strategy=strategy_obj,
             return_scenarios=True,
@@ -233,6 +280,7 @@ if run_btn:
 
     st.session_state.mc_result = result
     st.session_state.mc_target_label = mc_target
+    st.session_state.mc_solve_mode = solve_mode
     mc_target_label = mc_target
 
 
@@ -247,10 +295,15 @@ st.subheader(f"Results — {mc_target_label}")
 # Metric cards — two rows of 3 to avoid label/value truncation
 _ror_val = f"{result.risk_of_ruin:.1%}" if not np.isnan(result.risk_of_ruin) else "N/A"
 _row1 = st.columns(3)
+_equity_help = {
+    "ror":    "Capital required to achieve the target risk-of-ruin probability",
+    "max_dd": "Capital required to achieve the target max drawdown percentile",
+    "none":   "Fixed starting equity as configured",
+}.get(st.session_state.get("mc_solve_mode", "ror"), "Starting equity")
 _row1[0].metric(
     "Starting Equity",
     f"${result.starting_equity:,.0f}",
-    help="Capital required to achieve the target risk-of-ruin probability",
+    help=_equity_help,
 )
 _row1[1].metric("Expected Annual Profit", f"${result.expected_profit:,.0f}")
 _row1[2].metric(

@@ -167,7 +167,7 @@ def _estimate_trades_per_year(pnl_series: pd.Series, trade_option: str) -> int:
     return max(trades_per_year, 1)
 
 
-# ── Iterative solver ──────────────────────────────────────────────────────────
+# ── Iterative solvers ─────────────────────────────────────────────────────────
 
 def solve_starting_equity(
     pnl_samples: np.ndarray,
@@ -204,12 +204,56 @@ def solve_starting_equity(
     return float(equity), ror, fe, dd
 
 
+def solve_starting_equity_for_max_dd(
+    pnl_samples: np.ndarray,
+    config: MCConfig,
+    margin_threshold: float,
+    trades_per_year: int = 252,
+) -> tuple[float, float, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Solve starting equity so that the max drawdown at the chosen percentile
+    equals config.max_dd_target.
+
+    Higher equity → smaller % drawdown (same absolute dollar loss spread over
+    larger base).  Adjustment mirrors the ROR solver: +5% when too large, -0.9%
+    when too small.  Hard cap at 100 iterations.
+
+    Returns:
+        (starting_equity, actual_dd_at_percentile, final_equity_array, max_drawdown_array, ruined_array)
+    """
+    tolerance = 0.005   # within 0.5 pp
+    equity = max(margin_threshold * 2.0, 50_000.0)
+    fe = np.array([equity], dtype=np.float64)
+    dd = np.array([0.0], dtype=np.float64)
+    ruined = np.zeros(1, dtype=np.bool_)
+    actual_dd = 1.0
+    pct = config.max_dd_percentile * 100.0  # e.g. 50.0 for median
+
+    for _ in range(100):
+        fe, dd, ruined = _mc_core(
+            pnl_samples,
+            equity,
+            margin_threshold,
+            config.simulations,
+            trades_per_year,
+            config.trade_adjustment,
+        )
+        actual_dd = float(np.percentile(dd, pct))
+        if abs(actual_dd - config.max_dd_target) < tolerance:
+            break
+        # actual_dd > target → need more equity (smaller % dd)
+        equity *= 1.05 if actual_dd > config.max_dd_target else 0.991
+
+    return float(equity), actual_dd, fe, dd, ruined
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def run_monte_carlo(
     daily_m2m: pd.Series,
     config: MCConfig,
     margin_threshold: float,
+    starting_equity: float = 100_000.0,
     closed_daily: pd.Series | None = None,
     strategy: Strategy | None = None,
     return_scenarios: bool = False,
@@ -219,13 +263,11 @@ def run_monte_carlo(
 
     Args:
         daily_m2m:        Daily mark-to-market PnL (DatetimeIndex).
-                          Pass portfolio total PnL for portfolio MC,
-                          or a single strategy's column for per-strategy MC.
         config:           MCConfig with simulation parameters.
         margin_threshold: Dollar amount below which account = "ruined".
+        starting_equity:  Used when config.solve_mode == "none".
         closed_daily:     Daily closed-trade PnL series (for trade_option="Closed").
         strategy:         Strategy object for IS/OOS period filtering.
-                          Pass None for portfolio-level MC (uses all data).
         return_scenarios: If True, attach full scenario DataFrame to result.
 
     Returns:
@@ -252,9 +294,22 @@ def run_monte_carlo(
     pnl_samples = _get_pnl_samples(m2m_filtered, closed_filtered, config.trade_option)
     trades_per_year = _estimate_trades_per_year(m2m_filtered, config.trade_option)
 
-    equity, ror, fe, dd = solve_starting_equity(
-        pnl_samples, config, margin_threshold, trades_per_year
-    )
+    if config.solve_mode == "ror":
+        equity, ror, fe, dd = solve_starting_equity(
+            pnl_samples, config, margin_threshold, trades_per_year
+        )
+    elif config.solve_mode == "max_dd":
+        equity, _actual_dd, fe, dd, ruined_arr = solve_starting_equity_for_max_dd(
+            pnl_samples, config, margin_threshold, trades_per_year
+        )
+        ror = float(ruined_arr.mean())
+    else:  # solve_mode == "none"
+        equity = float(starting_equity)
+        fe, dd, ruined_arr = _mc_core(
+            pnl_samples, equity, margin_threshold,
+            config.simulations, trades_per_year, config.trade_adjustment,
+        )
+        ror = float(ruined_arr.mean())
 
     expected_profit = float(np.mean(fe) - equity)
     max_dd_pct = float(np.median(dd))
