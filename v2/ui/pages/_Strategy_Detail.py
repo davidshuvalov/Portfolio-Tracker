@@ -418,11 +418,19 @@ if _folder_path is None and _strat_obj is not None and _strat_obj.folder:
 # Known MultiWalk / MultiCharts code file extensions
 _CODE_EXTENSIONS = {".mex", ".eld", ".els", ".pla", ".c", ".cpp", ".py"}
 
+def _is_code_file(f: Path) -> bool:
+    if f.suffix.lower() in _CODE_EXTENSIONS:
+        return True
+    # MultiWalk EasyLanguage export: "... ELCode.txt"
+    if f.suffix.lower() == ".txt" and f.name.endswith("ELCode.txt"):
+        return True
+    return False
+
 _code_files: list[Path] = []
 _data_files: dict[str, Path] = {}
 if _folder_path and _folder_path.exists():
     for _f in sorted(_folder_path.iterdir()):
-        if _f.suffix.lower() in _CODE_EXTENSIONS:
+        if _is_code_file(_f):
             _code_files.append(_f)
         elif _f.suffix.lower() == ".csv":
             _data_files[_f.name] = _f
@@ -449,7 +457,7 @@ with st.expander("Files & Folder", expanded=False):
                 if col_btn.button("Open", key=f"open_code_{_cf.name}"):
                     _open_path(_cf)
         else:
-            st.caption("No code files (.mex / .eld / .pla / .els) found in this folder.")
+            st.caption("No code files (.mex / .eld / .pla / .els / ELCode.txt) found in this folder.")
 
         # Data files summary
         if _data_files:
