@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from datetime import date
 
 from core.config import AppConfig
-from core.portfolio.strategies import load_strategies
+from core.portfolio.strategies import load_strategies, save_strategies
 from core.portfolio.aggregator import (
     build_portfolio,
     portfolio_total_pnl,
@@ -397,7 +397,8 @@ if not portfolio.summary_metrics.empty:
             st.session_state[_col_key] = _default_sel
             st.rerun()
 
-    display_cols = st.session_state.get(_col_key) or _default_sel
+    _raw_sel = st.session_state.get(_col_key) or _default_sel
+    display_cols = [c for c in _raw_sel if c in sm.columns] or _default_sel
 
     if display_cols:
         display_df = sm[display_cols].reset_index()
@@ -419,6 +420,10 @@ if not portfolio.summary_metrics.empty:
                 "contracts": st.column_config.NumberColumn(
                     "Contr.", format="%d", min_value=0, max_value=999, step=1
                 ),
+                "symbol": st.column_config.TextColumn("Symbol"),
+                "sector": st.column_config.TextColumn("Sector"),
+                "trades_per_year": st.column_config.NumberColumn("Trades/Yr", format="%.1f"),
+                "incubation_status": st.column_config.TextColumn("Incubation"),
                 "oos_begin": st.column_config.DateColumn("OOS Start"),
                 "oos_end": st.column_config.DateColumn("OOS End"),
                 "expected_annual_profit": st.column_config.NumberColumn(
@@ -529,7 +534,6 @@ if not portfolio.summary_metrics.empty:
                 )
 
         if _save_contracts_clicked:
-            from core.portfolio.strategies import load_strategies, save_strategies as _save
             _all_strats = load_strategies()
             _contracts_edit = {
                 r["Strategy"]: r["contracts"]
@@ -542,11 +546,11 @@ if not portfolio.summary_metrics.empty:
                 if _nm in _contracts_edit:
                     _s = dict(_s)
                     try:
-                        _s["contracts"] = int(_contracts_edit[_nm] or 1)
+                        _s["contracts"] = round(int(_contracts_edit[_nm] or 1))
                     except (ValueError, TypeError):
                         pass
                 _updated.append(_s)
-            _save(_updated)
+            save_strategies(_updated)
             st.session_state.portfolio_data = None
             st.success("Contracts saved — click **Rebuild Portfolio** to recalculate.")
             st.rerun()
@@ -656,113 +660,117 @@ if not portfolio.summary_metrics.empty:
         _cdf["symbol"] = _cdf["symbol"].fillna("?")
         _cdf["sector"] = _cdf["sector"].fillna("Other").replace("", "Other")
         _cdf = _cdf[_cdf[_sel_metric].notna()].copy()
-        _cdf[_sel_metric] = _cdf[_sel_metric].astype(float)
 
-        # Value formatter
-        def _fmt(v: float) -> str:
-            if _sel_metric in _DOLLAR_METRICS:
-                return f"-${abs(v):,.0f}" if v < 0 else f"${v:,.0f}"
-            if _sel_metric in _PCT_METRICS:
-                return f"{v:.1%}"
-            return f"{v:.2f}"
+        if _cdf.empty:
+            st.info(f"No data available for **{_avail[_sel_metric]}** — compute strategy summary to populate this metric.")
+        else:
+            _cdf[_sel_metric] = _cdf[_sel_metric].astype(float)
 
-        # Sector → colour mapping
-        _unique_sectors = sorted(_cdf["sector"].unique())
-        _sec_color = {s: _SECTOR_PALETTE[i % len(_SECTOR_PALETTE)]
-                      for i, s in enumerate(_unique_sectors)}
+            # Value formatter
+            def _fmt(v: float) -> str:
+                if _sel_metric in _DOLLAR_METRICS:
+                    return f"-${abs(v):,.0f}" if v < 0 else f"${v:,.0f}"
+                if _sel_metric in _PCT_METRICS:
+                    return f"{v:.1%}"
+                return f"{v:.2f}"
 
-        _tab_strat, _tab_sym, _tab_sec = st.tabs(["By Strategy", "By Symbol", "By Sector"])
+            # Sector → colour mapping
+            _unique_sectors = sorted(_cdf["sector"].unique())
+            _sec_color = {s: _SECTOR_PALETTE[i % len(_SECTOR_PALETTE)]
+                          for i, s in enumerate(_unique_sectors)}
 
-        # ── By Strategy ───────────────────────────────────────────────────
-        with _tab_strat:
-            _strat_df = _cdf.sort_values(_sel_metric, ascending=True)
-            _colors = [_sec_color.get(s, "#888") for s in _strat_df["sector"]]
+            _tab_strat, _tab_sym, _tab_sec = st.tabs(["By Strategy", "By Symbol", "By Sector"])
 
-            # Add invisible dummy traces for sector legend
-            _legend_traces = []
-            for _sec in _unique_sectors:
-                if _sec in _strat_df["sector"].values:
-                    _legend_traces.append(go.Bar(
-                        x=[None], y=[None],
-                        name=_sec,
-                        marker_color=_sec_color[_sec],
-                        showlegend=True,
-                    ))
+            # ── By Strategy ───────────────────────────────────────────────────
+            with _tab_strat:
+                _strat_df = _cdf.sort_values(_sel_metric, ascending=True)
+                _colors = [_sec_color.get(s, "#888") for s in _strat_df["sector"]]
 
-            _fig_strat = go.Figure()
-            for _lt in _legend_traces:
-                _fig_strat.add_trace(_lt)
+                # Add invisible dummy traces for sector legend
+                _legend_traces = []
+                for _sec in _unique_sectors:
+                    if _sec in _strat_df["sector"].values:
+                        _legend_traces.append(go.Bar(
+                            x=[None], y=[None],
+                            name=_sec,
+                            marker_color=_sec_color[_sec],
+                            showlegend=True,
+                        ))
 
-            _fig_strat.add_trace(go.Bar(
-                y=_strat_df["Strategy"],
-                x=_strat_df[_sel_metric],
-                orientation="h",
-                marker_color=_colors,
-                text=[_fmt(v) for v in _strat_df[_sel_metric]],
-                textposition="outside",
-                showlegend=False,
-                hovertemplate="%{y}: %{text}<extra></extra>",
-            ))
-            _fig_strat.update_layout(
-                xaxis_title=_avail[_sel_metric],
-                height=max(350, len(_strat_df) * 22 + 80),
-                margin=dict(l=0, r=80, t=10, b=0),
-                legend=dict(
-                    title="Sector",
-                    orientation="v",
-                    x=1.01, y=1,
-                ),
-            )
-            st.plotly_chart(_fig_strat, use_container_width=True)
+                _fig_strat = go.Figure()
+                for _lt in _legend_traces:
+                    _fig_strat.add_trace(_lt)
 
-        # ── By Symbol ─────────────────────────────────────────────────────
-        with _tab_sym:
-            _sym_grp = (
-                _cdf.groupby("symbol")[_sel_metric]
-                .agg(_agg_fn_name)
-                .reset_index()
-                .sort_values(_sel_metric, ascending=False)
-            )
-            _fig_sym = go.Figure(go.Bar(
-                x=_sym_grp["symbol"],
-                y=_sym_grp[_sel_metric],
-                text=[_fmt(v) for v in _sym_grp[_sel_metric]],
-                textposition="outside",
-                marker_color="#1f77b4",
-                hovertemplate="%{x}: %{text}<extra></extra>",
-            ))
-            _fig_sym.update_layout(
-                xaxis_title="Symbol",
-                yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
-                height=400,
-                margin=dict(l=0, r=0, t=10, b=0),
-            )
-            st.plotly_chart(_fig_sym, use_container_width=True)
+                _fig_strat.add_trace(go.Bar(
+                    y=_strat_df["Strategy"],
+                    x=_strat_df[_sel_metric],
+                    orientation="h",
+                    marker_color=_colors,
+                    text=[_fmt(v) for v in _strat_df[_sel_metric]],
+                    textposition="outside",
+                    showlegend=False,
+                    hovertemplate="%{y}: %{text}<extra></extra>",
+                ))
+                _fig_strat.update_layout(
+                    xaxis_title=_avail[_sel_metric],
+                    height=max(350, len(_strat_df) * 22 + 80),
+                    margin=dict(l=0, r=80, t=10, b=0),
+                    legend=dict(
+                        title="Sector",
+                        orientation="v",
+                        x=1.01, y=1,
+                    ),
+                )
+                st.plotly_chart(_fig_strat, use_container_width=True)
 
-        # ── By Sector ─────────────────────────────────────────────────────
-        with _tab_sec:
-            _sec_grp = (
-                _cdf.groupby("sector")[_sel_metric]
-                .agg(_agg_fn_name)
-                .reset_index()
-                .sort_values(_sel_metric, ascending=False)
-            )
-            _sec_bar_colors = [_sec_color.get(s, "#888") for s in _sec_grp["sector"]]
-            _fig_sec = go.Figure(go.Bar(
-                x=_sec_grp["sector"],
-                y=_sec_grp[_sel_metric],
-                text=[_fmt(v) for v in _sec_grp[_sel_metric]],
-                textposition="outside",
-                marker_color=_sec_bar_colors,
-                hovertemplate="%{x}: %{text}<extra></extra>",
-            ))
-            _fig_sec.update_layout(
-                xaxis_title="Sector",
-                yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
-                height=400,
-                margin=dict(l=0, r=0, t=10, b=0),
-            )
-            st.plotly_chart(_fig_sec, use_container_width=True)
+            # ── By Symbol ─────────────────────────────────────────────────────
+            with _tab_sym:
+                _sym_grp = (
+                    _cdf.groupby("symbol")[_sel_metric]
+                    .agg(_agg_fn_name)
+                    .reset_index()
+                    .sort_values(_sel_metric, ascending=False)
+                )
+                _fig_sym = go.Figure(go.Bar(
+                    x=_sym_grp["symbol"],
+                    y=_sym_grp[_sel_metric],
+                    text=[_fmt(v) for v in _sym_grp[_sel_metric]],
+                    textposition="outside",
+                    marker_color="#1f77b4",
+                    hovertemplate="%{x}: %{text}<extra></extra>",
+                ))
+                _fig_sym.update_layout(
+                    xaxis_title="Symbol",
+                    yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
+                    height=400,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                )
+                st.plotly_chart(_fig_sym, use_container_width=True)
+
+            # ── By Sector ─────────────────────────────────────────────────────
+            with _tab_sec:
+                _sec_grp = (
+                    _cdf.groupby("sector")[_sel_metric]
+                    .agg(_agg_fn_name)
+                    .reset_index()
+                    .sort_values(_sel_metric, ascending=False)
+                )
+                _sec_bar_colors = [_sec_color.get(s, "#888") for s in _sec_grp["sector"]]
+                _fig_sec = go.Figure(go.Bar(
+                    x=_sec_grp["sector"],
+                    y=_sec_grp[_sel_metric],
+                    text=[_fmt(v) for v in _sec_grp[_sel_metric]],
+                    textposition="outside",
+                    marker_color=_sec_bar_colors,
+                    hovertemplate="%{x}: %{text}<extra></extra>",
+                ))
+                _fig_sec.update_layout(
+                    xaxis_title="Sector",
+                    yaxis_title=f"{_sel_agg} — {_avail[_sel_metric]}",
+                    height=400,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                )
+                st.plotly_chart(_fig_sec, use_container_width=True)
 
     else:
         st.info("No chartable metrics available — compute strategy summary to populate metric charts.")

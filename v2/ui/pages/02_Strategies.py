@@ -659,6 +659,47 @@ with tab_summary:
                     ),
                     "rtd_oos": st.column_config.NumberColumn("R:DD OOS", format="%.2f"),
                     "incubation_status": st.column_config.TextColumn("Incubation"),
+                    # Additional columns available via column picker
+                    "symbol": st.column_config.TextColumn("Symbol"),
+                    "sector": st.column_config.TextColumn("Sector"),
+                    "oos_period_years": st.column_config.NumberColumn("OOS Years", format="%.1f"),
+                    "trades_per_year": st.column_config.NumberColumn("Trades/Yr", format="%.1f"),
+                    "overall_win_rate": st.column_config.NumberColumn("Win Rate", format="%.1%%"),
+                    "sharpe_isoos": st.column_config.NumberColumn("Sharpe IS+OOS", format="%.2f"),
+                    "sharpe_is": st.column_config.NumberColumn("Sharpe IS", format="%.2f"),
+                    "max_drawdown_isoos": st.column_config.NumberColumn("Max DD IS+OOS ($)", format="$%.0f"),
+                    "max_drawdown_is": st.column_config.NumberColumn("Max DD IS ($)", format="$%.0f"),
+                    "profit_last_9_months": st.column_config.NumberColumn("Last 9M ($)", format="$%.0f"),
+                    "avg_oos_drawdown": st.column_config.NumberColumn("Avg OOS DD ($)", format="$%.0f"),
+                    "rtd_12_months": st.column_config.NumberColumn("R:DD 12M", format="%.2f"),
+                    "count_profit_months": st.column_config.NumberColumn(
+                        "Profit Months", format="%d",
+                        help="# of profitable months in the eligibility lookback window.",
+                    ),
+                    "incubation_date": st.column_config.DateColumn("Incub. Date"),
+                    "quitting_status": st.column_config.TextColumn(
+                        "Quit Status",
+                        help="Continue / Quit / Coming Back / Recovered / N/A",
+                    ),
+                    "quitting_date": st.column_config.DateColumn("Quit Date"),
+                    "profit_since_quit": st.column_config.NumberColumn(
+                        "P&L Since Quit ($)", format="$%.0f",
+                        help="Cumulative OOS P&L from the date the strategy entered 'Quit' status.",
+                    ),
+                    "k_factor": st.column_config.NumberColumn(
+                        "K-Factor", format="%.2f",
+                        help="(Win rate / Loss rate) × (Avg win / Avg loss) — monthly P&L.",
+                    ),
+                    "ulcer_index": st.column_config.NumberColumn(
+                        "Ulcer Index", format="%.2f",
+                        help="RMS % drawdown over OOS period. Lower = smoother equity curve.",
+                    ),
+                    "best_month": st.column_config.NumberColumn("Best Month ($)", format="$%.0f"),
+                    "worst_month": st.column_config.NumberColumn("Worst Month ($)", format="$%.0f"),
+                    "max_consecutive_loss_months": st.column_config.NumberColumn(
+                        "Max Loss Streak", format="%d",
+                        help="Maximum consecutive losing months in the OOS period.",
+                    ),
                 },
             )
 
