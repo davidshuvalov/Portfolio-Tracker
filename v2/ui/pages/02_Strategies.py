@@ -3,6 +3,11 @@ Strategies page — editable strategy configuration table + performance summary.
 Mirrors the VBA Strategies tab (config) and Summary tab (performance metrics).
 """
 
+import os
+import platform
+import subprocess
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 
@@ -103,6 +108,98 @@ def _to_df(strats: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=_COLUMNS)
 
 
+# ── Strategy row-action helpers ────────────────────────────────────────────────
+_CODE_EXTENSIONS = {".mex", ".eld", ".els", ".pla", ".c", ".cpp", ".py"}
+
+
+def _open_path(path: Path) -> None:
+    """Open a file or folder in the OS default application."""
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(path))
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception as exc:
+        st.error(f"Could not open: {exc}")
+
+
+def _strategy_folder(name: str) -> Path | None:
+    """Return the folder Path for a strategy from the session scan_result."""
+    scan = st.session_state.get("scan_result")
+    if scan:
+        for sf in scan.strategies:
+            if sf.name == name:
+                return sf.path
+    return None
+
+
+def _render_strategy_actions(names: list[str], key: str) -> None:
+    """
+    Compact action bar rendered below a strategies table.
+    Lets the user pick a strategy and open its detail page, folder, or code file.
+    """
+    if not names:
+        return
+
+    st.markdown("**Open strategy**")
+    col_pick, col_detail, col_folder, col_code = st.columns([4, 1, 1, 1])
+
+    with col_pick:
+        current = st.session_state.get("selected_strategy")
+        default_idx = names.index(current) if current in names else 0
+        chosen = st.selectbox(
+            "Strategy", names, index=default_idx,
+            key=f"{key}_picker", label_visibility="collapsed",
+        )
+        st.session_state.selected_strategy = chosen
+
+    folder = _strategy_folder(chosen)
+    code_files = (
+        sorted([f for f in folder.iterdir() if f.suffix.lower() in _CODE_EXTENSIONS])
+        if folder and folder.exists()
+        else []
+    )
+
+    with col_detail:
+        if st.button("📊 Detail", key=f"{key}_detail", use_container_width=True):
+            st.session_state.selected_strategy = chosen
+            st.switch_page("ui/pages/_Strategy_Detail.py")
+
+    with col_folder:
+        folder_exists = folder is not None and folder.exists()
+        if st.button(
+            "📂 Folder", key=f"{key}_folder",
+            disabled=not folder_exists, use_container_width=True,
+            help=str(folder) if folder else "Folder not found — import data first",
+        ):
+            _open_path(folder)
+
+    with col_code:
+        if len(code_files) == 1:
+            if st.button("📄 Code", key=f"{key}_code", use_container_width=True,
+                         help=code_files[0].name):
+                _open_path(code_files[0])
+        elif len(code_files) > 1:
+            # Multiple files: show them in a small expander
+            if st.button("📄 Code ▾", key=f"{key}_code", use_container_width=True,
+                         help=f"{len(code_files)} code files — click to expand"):
+                st.session_state[f"{key}_show_code"] = not st.session_state.get(f"{key}_show_code", False)
+        else:
+            st.button("📄 Code", key=f"{key}_code", disabled=True,
+                      use_container_width=True, help="No code files found")
+
+    # Multi-file picker (shown after clicking Code ▾)
+    if len(code_files) > 1 and st.session_state.get(f"{key}_show_code"):
+        with st.container():
+            for cf in code_files:
+                c1, c2 = st.columns([5, 1])
+                c1.markdown(f"`{cf.name}`")
+                if c2.button("Open", key=f"{key}_cf_{cf.name}"):
+                    _open_path(cf)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Configure tab
 # ══════════════════════════════════════════════════════════════════════════════
@@ -168,6 +265,9 @@ with tab_config:
         if live_count:
             st.page_link("ui/pages/03_Portfolio.py", label="→ Rebuild Portfolio")
         st.rerun()
+
+    # Strategy row actions
+    _render_strategy_actions([s["name"] for s in filtered], key="cfg")
 
     st.divider()
 
@@ -756,6 +856,10 @@ with tab_summary:
                     "Click **📸 Set Live Portfolio** to record this as your trading baseline."
                 )
                 st.rerun()
+
+            # Strategy row actions
+            _sm_names = list(_sm2.index)
+            _render_strategy_actions(_sm_names, key="summ")
 
             st.divider()
             st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio with Live strategies")
