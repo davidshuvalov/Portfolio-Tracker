@@ -2649,10 +2649,11 @@ End Sub
 
 
 ' Sort Summary rows by: Status priority → Sector → Symbol → OOS Begin Date.
-' Status priority:  Port_Status = 1  (live portfolio)
-'                   Pass_Status = 2  (backtesting / passing)
-'                   BuyandHoldStatus = 3
-'                   anything else    = 4
+' Status order comes from GetStatusOrderNumber() / GetOrderedStatusList():
+'   1. Port_Status (live portfolio)
+'   2. Pass_Status (passing/backtest)
+'   3+ StatusOptions (comma-separated named range — user-defined middle tiers)
+'   last: BuyandHoldStatus  (always sorted to the bottom)
 ' Called automatically at the end of UpdateStrategySummaryWithArray.
 ' Can also be assigned to a button for on-demand re-sort after manual status changes.
 Sub ReorderSummaryTab()
@@ -2673,25 +2674,16 @@ Sub ReorderSummaryTab()
 
     If lastRow < 3 Then GoTo CleanExit  ' nothing to sort
 
-    ' Get status strings from named ranges
-    Dim portSt As String, passSt As String, bnhSt As String
-    portSt = GetNamedRangeValue("Port_Status")
-    passSt = GetNamedRangeValue("Pass_Status")
-    bnhSt  = GetNamedRangeValue("BuyandHoldStatus")
-
-    ' Write a temporary sort-key column (after lastCol) with numeric priority
+    ' Write a temporary sort-key column (after lastCol) with numeric priority.
+    ' GetStatusOrderNumber returns the position in GetOrderedStatusList:
+    '   Port_Status=1, Pass_Status=2, ...StatusOptions..., BuyandHold=last, unknown=999.
     Dim helperCol As Long
     helperCol = lastCol + 1
     wsSummary.Cells(1, helperCol).value = "_SortPriority"
     Dim i As Long, sv As String
     For i = 2 To lastRow
         sv = wsSummary.Cells(i, COL_STATUS).value
-        Select Case sv
-            Case portSt: wsSummary.Cells(i, helperCol).value = 1
-            Case passSt: wsSummary.Cells(i, helperCol).value = 2
-            Case bnhSt:  wsSummary.Cells(i, helperCol).value = 3
-            Case Else:   wsSummary.Cells(i, helperCol).value = 4
-        End Select
+        wsSummary.Cells(i, helperCol).value = GetStatusOrderNumber(sv)
     Next i
 
     ' 4-key sort using Excel's built-in engine

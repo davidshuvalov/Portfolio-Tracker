@@ -162,11 +162,18 @@ Sub OptimizeDataProcessing()
         
     Wend
     
+    ' -------------------------------------------------------------------------
+    ' Non-BnH TradeData: Long / Short splits
+    ' Status is read from folderLocations col 6 (pre-populated by GetFolderData /
+    ' RetrieveAllFolderLocations).  This mirrors how EquityData extraction works
+    ' and correctly handles strategies whose CSV filename contains period suffixes
+    ' that would not match the Strategies-tab name used by GetStrategyStatus().
+    ' -------------------------------------------------------------------------
     i = 2
     While i <= lastRow
         folderPath = Trim(folderLocations.Cells(i, 4).value) & "\Walkforward Files\"
-            
-        If GetStrategyStatus(folderLocations.Cells(i, 2).value) <> GetNamedRangeValue("BuyandHoldStatus") Then
+
+        If folderLocations.Cells(i, 6).value <> GetNamedRangeValue("BuyandHoldStatus") Then
             csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
             Do While csvFile <> ""
                 FileNameOnly = left(csvFile, InStr(csvFile, " TradeData") - 1)
@@ -179,7 +186,7 @@ Sub OptimizeDataProcessing()
                 End If
                 ' Process data into separate long and short dictionaries
                 ProcessLSTradeData dataArray, tradeLongDataDict, tradeShortDataDict, FileNameOnly, numRows, colLongIndex, colShortIndex, colLongHeaders, colShortHeaders
-                 ' Process latest positions
+                ' Process latest positions
                 ProcessLatestPositions dataArray, latestPositionsDict, FileNameOnly, numRows
                 i = i + 1
                 csvFile = Dir
@@ -189,36 +196,43 @@ Sub OptimizeDataProcessing()
             i = i + 1
         End If
     Wend
-    
-    
+
+
+    ' -------------------------------------------------------------------------
+    ' BnH TradeData: ATR (MFE - MAE) + PNL per trade date
+    ' Same pattern as above â€” status read from col 6 so that multi-period files
+    ' (e.g. "NQ BnH 2018-2020 TradeData.csv", "NQ BnH 2020-2022 TradeData.csv")
+    ' in a single walkforward folder are all processed under the BnH path without
+    ' relying on an exact Strategies-tab name match.
+    ' -------------------------------------------------------------------------
     i = 2
     While i <= lastRow
         folderPath = Trim(folderLocations.Cells(i, 4).value) & "\Walkforward Files\"
-            
-            If GetStrategyStatus(folderLocations.Cells(i, 2).value) = GetNamedRangeValue("BuyandHoldStatus") Then
-                csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
-                Do While csvFile <> ""
-                    FileNameOnly = left(csvFile, InStr(csvFile, " TradeData") - 1)
-                    headerName = ExtractContractName(FileNameOnly)
-                    ' Read data from file
-                    dataArray = getDataFromFile(GetShortPath(folderPath & csvFile), ",", ErrStr, numRows, numCols, ExcelDateFormat)
-                    If ErrStr <> "" Then
-                        MsgBox ErrStr, vbExclamation
-                        Exit Sub
-                    End If
-                    ATR_Flag = 1
-                    ' Process data
-                    ProcessTradeData dataArray, tradeDataDict, headerName, numRows, colATRIndex, colATRHeaders
-                     ' Process latest positions for Buy and Hold strategies too
-                    ProcessLatestPositions dataArray, latestPositionsDict, FileNameOnly, numRows
-                    
-                    i = i + 1
-                    csvFile = Dir
-                    Application.StatusBar = "Importing trade data into array: " & i - 1 & " of " & lastRow & "..."
-                Loop
-            Else
+
+        If folderLocations.Cells(i, 6).value = GetNamedRangeValue("BuyandHoldStatus") Then
+            csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
+            Do While csvFile <> ""
+                FileNameOnly = left(csvFile, InStr(csvFile, " TradeData") - 1)
+                headerName = ExtractContractName(FileNameOnly)
+                ' Read data from file
+                dataArray = getDataFromFile(GetShortPath(folderPath & csvFile), ",", ErrStr, numRows, numCols, ExcelDateFormat)
+                If ErrStr <> "" Then
+                    MsgBox ErrStr, vbExclamation
+                    Exit Sub
+                End If
+                ATR_Flag = 1
+                ' Process data
+                ProcessTradeData dataArray, tradeDataDict, headerName, numRows, colATRIndex, colATRHeaders
+                ' Process latest positions for Buy and Hold strategies too
+                ProcessLatestPositions dataArray, latestPositionsDict, FileNameOnly, numRows
+
                 i = i + 1
-            End If
+                csvFile = Dir
+                Application.StatusBar = "Importing trade data into array: " & i - 1 & " of " & lastRow & "..."
+            Loop
+        Else
+            i = i + 1
+        End If
     Wend
     
     ' Check if any Buy and Hold files were found
@@ -1550,12 +1564,12 @@ Public Sub InitializeStrategyCache(wsStrategies As Worksheet)
     dataLoaded = True
 End Sub
 
-'–– Now this can be called repeatedly without hitting the sheet again
+'ï¿½ï¿½ Now this can be called repeatedly without hitting the sheet again
 Public Function GetStrategyStatus(strategyName As String) As String
     Dim i As Long
     
     If Not dataLoaded Then
-        Err.Raise vbObjectError + 1, , "Cache not initialized—run InitializeStrategyCache first."
+        Err.Raise vbObjectError + 1, , "Cache not initializedï¿½run InitializeStrategyCache first."
     End If
     
     For i = 1 To UBound(stratData, 1)
