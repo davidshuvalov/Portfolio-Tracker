@@ -73,9 +73,12 @@ def render_workflow_sidebar() -> None:
         ("portfolio",  "Build Portfolio",    "ui/pages/03_Portfolio.py"),
     ]
 
+    st.page_link("ui/pages/00_Inputs.py",  label="⚙️ Inputs")
+    st.page_link("ui/pages/12_Settings.py", label="⚙️ Settings")
+
     st.markdown(
         '<p style="color:#64748b;font-size:0.72rem;text-transform:uppercase;'
-        'letter-spacing:0.12em;margin:0 0 0.4rem 0">Setup</p>',
+        'letter-spacing:0.12em;margin:0.6rem 0 0.4rem 0">Setup</p>',
         unsafe_allow_html=True,
     )
 

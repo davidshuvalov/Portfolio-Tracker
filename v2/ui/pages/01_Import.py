@@ -281,31 +281,33 @@ if import_clicked:
 
         st.session_state.imported_data = imported
         st.session_state.portfolio_data = None  # Reset downstream cache
+        st.session_state._import_summary = {
+            "n_strats": len(imported.strategy_names),
+            "start":    str(imported.date_range[0]),
+            "end":      str(imported.date_range[1]),
+            "n_days":   len(imported.daily_m2m),
+            "n_trades": len(imported.trades),
+        }
 
         progress.progress(1.0, text="Import complete")
-
-        # Summary stats
-        n_strats = len(imported.strategy_names)
-        start, end = imported.date_range
-        n_days = len(imported.daily_m2m)
-        n_trades = len(imported.trades)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Strategies", n_strats)
-        col2.metric("Trading Days", f"{n_days:,}")
-        col3.metric("Date Range", f"{start} → {end}")
-        col4.metric("Trades", f"{n_trades:,}")
-
-        st.success("**Step 2 complete** — data imported successfully.")
-        st.page_link("ui/pages/02_Strategies.py", label="Next: Review Strategies →")
+        st.rerun()  # re-render so sidebar turns green
 
     except Exception as e:
         st.error(f"Import failed: {e}")
         progress.empty()
         raise
 
-# ── Show currently loaded data (if any) ──────────────────────
-if st.session_state.get("imported_data") and not import_clicked:
+# ── Show import summary / currently loaded data ──────────────
+_summary = st.session_state.pop("_import_summary", None)
+if _summary:
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Strategies",   _summary["n_strats"])
+    col2.metric("Trading Days", f"{_summary['n_days']:,}")
+    col3.metric("Date Range",   f"{_summary['start']} → {_summary['end']}")
+    col4.metric("Trades",       f"{_summary['n_trades']:,}")
+    st.success("**Step 2 complete** — data imported successfully.")
+    st.page_link("ui/pages/02_Strategies.py", label="Next: Review Strategies →")
+elif st.session_state.get("imported_data") and not import_clicked:
     data = st.session_state.imported_data
     start, end = data.date_range
     st.info(
