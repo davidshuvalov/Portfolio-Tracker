@@ -312,45 +312,40 @@ st.plotly_chart(fig, use_container_width=True)
 # ── Margin by symbol ──────────────────────────────────────────────────────────
 if not sym_margin.empty:
     st.subheader("Margin by Symbol")
-    palette = px.colors.qualitative.Plotly
-
-    fig_sym = go.Figure()
-    for i, sym in enumerate(sym_margin.columns):
-        fig_sym.add_trace(go.Scatter(
-            x=sym_margin.index,
-            y=sym_margin[sym].values,
-            name=sym,
-            stackgroup="one",
-            line=dict(width=0.5, color=palette[i % len(palette)]),
-            hovertemplate=f"{sym}: $%{{y:,.0f}}<extra></extra>",
-        ))
+    avg_sym = sym_margin.mean().sort_values(ascending=False)
+    avg_sym = avg_sym[avg_sym > 0]
+    fig_sym = go.Figure(go.Pie(
+        labels=avg_sym.index,
+        values=avg_sym.values,
+        hole=0.35,
+        textinfo="label+percent",
+        hovertemplate="%{label}: $%{value:,.0f} avg<extra></extra>",
+        marker=dict(colors=px.colors.qualitative.Plotly),
+    ))
     fig_sym.update_layout(
-        height=380,
-        xaxis_title="Date",
-        yaxis_title="Margin ($)",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=420,
+        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(t=20, b=20),
     )
     st.plotly_chart(fig_sym, use_container_width=True)
 
 # ── Margin by sector ──────────────────────────────────────────────────────────
 if not sec_margin.empty and len(sec_margin.columns) > 1:
     st.subheader("Margin by Sector")
-    fig_sec = go.Figure()
-    palette2 = px.colors.qualitative.Set2
-    for i, sec in enumerate(sec_margin.columns):
-        fig_sec.add_trace(go.Scatter(
-            x=sec_margin.index,
-            y=sec_margin[sec].values,
-            name=sec,
-            stackgroup="one",
-            line=dict(width=0.5, color=palette2[i % len(palette2)]),
-        ))
+    avg_sec = sec_margin.mean().sort_values(ascending=False)
+    avg_sec = avg_sec[avg_sec > 0]
+    fig_sec = go.Figure(go.Pie(
+        labels=avg_sec.index,
+        values=avg_sec.values,
+        hole=0.35,
+        textinfo="label+percent",
+        hovertemplate="%{label}: $%{value:,.0f} avg<extra></extra>",
+        marker=dict(colors=px.colors.qualitative.Set2),
+    ))
     fig_sec.update_layout(
-        height=320,
-        xaxis_title="Date",
-        yaxis_title="Margin ($)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=380,
+        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(t=20, b=20),
     )
     st.plotly_chart(fig_sec, use_container_width=True)
 
