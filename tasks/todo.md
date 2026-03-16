@@ -145,12 +145,13 @@ Each item needs a decision: accept / fix / document.
 
 | # | Area | What changed | Impact | Decision needed |
 |---|------|-------------|--------|----------------|
-| D0-1 | **Long_Trades / Short_Trades** | BnH strategies now flow through `ProcessLSTradeData` → appear in Long_Trades & Short_Trades. Previously only non-BnH strategies were there. | No downstream code reads these sheets today, so functionally zero impact. But if any future module reads L/S trade sheets it will see BnH trades. | Accept (document). Add comment to D_Import_Data noting BnH inclusion. |
+| D0-1 | **Long_Trades / Short_Trades** | BnH strategies now flow through `ProcessLSTradeData` → appear in Long_Trades & Short_Trades. Previously only non-BnH strategies were there. | **Two downstream consumers do read these sheets:** (1) `F_Summary_Tab_Setup.CalculateTradeProfitFactors` reads them to compute long/short gross profit, gross loss, and profit factor in the Summary tab. (2) `G_Create_Strategy_Tab.GetLongTradeValues/GetShortTradeValues` reads them for strategy detail charts. Before the merge, BnH strategies showed **0** for all L/S profit metrics. After the merge, BnH shows **correct** long profit factors (BnH is long-only so short metrics remain 0). This is an improvement in correctness but is a **behavioural change vs. base**. | Verify BnH profit factors in Summary after import — they should now be non-zero for BnH long trades and zero for short. Document the change. |
 | D0-2 | **ATR percentile method (W_Markets)** | `atrPct` is computed as: _count(raw exit-trade ATR values ≤ atr3M) / total_. This compares a 90-day rolling average against the raw trade ATR distribution — mixing time-frames. | Percentile reads "high" whenever atr3M > median single-trade ATR. May over-state volatility regime for strategies with few large trades. | Fix: compare atr3M against rolling 90-day historical series, not raw values. |
 | D0-3 | **W_Markets sector lookup uses fuzzy InStr match** | Strategy symbol is matched to BnH contract name via `InStr`. E.g. "ES" matches "ESET". | Sector and strategy-count columns may be wrong for short ticker symbols. | Fix: add word-boundary matching (`" " & contracts(i) & " "` or exact match first). |
 | D0-4 | **BnH strategies in Portfolio-level P&L sheets** | BnH always flowed into `PortfolioDailyM2M` and `TotalPortfolioM2M` (unchanged). But downstream modules — Correlations, LeaveOneOut, Diversification, Monte Carlo — now process BnH without filtering. | Correlation between BnH and active strategies is market-driven, not system-driven. Including BnH distorts diversification scores and MC risk estimates. | Requires explicit BnH exclusion flags in L, S, T, K modules OR a separate analysis path. |
 | D0-5 | **Backtest (N_BackTest) incomplete for BnH** | `ClosedTradePNL` is built from closed trade P&L entries only. BnH strategies that never fully close a position will have zero or partial entries. `TotalBackTest` aggregates this — BnH contribution is missing. | Portfolio backtest P&L is understated if BnH strategies are in Portfolio. | Investigate: does `ClosedTradePNL` receive BnH exits? If not, `TotalBackTest` is materially wrong. |
 | D0-6 | **Tab order group "Strategies / Backtest"** | The "Backtest" sheet tab sits in the Strategies group (it was moved there during tab reorder). Backtest analysis sheets (TotalBackTest etc.) sit in the new Backtest/WhatIf group. | Slight naming confusion — "Backtest" tab = setup/config, but "Backtest/WhatIf" group = results. | Cosmetic; document the naming convention. |
+| D0-7 | **Contract symbol collision in ProcessTradeData** | If two BnH strategies map to the same contract symbol via `ExtractContractName` (e.g., two different ES strategies), and both have an exit trade on the same date, the second one is silently dropped. The `If Not tradeDataDict(FileNameOnly).Exists(dateStr)` guard prevents overwrite but gives no warning. | Low likelihood in practice (rare to have two BnH strategies on the same contract with same exit date), but causes silent data loss when it occurs. | Accept for now. Add a warning log/MsgBox if collision detected. |
 
 ---
 
@@ -168,6 +169,8 @@ These tests verify the merge produces identical outputs for pre-existing behavio
 - [ ] **D1-6** After import: `Short_Trades` — non-BnH strategies have same short PNL entries. BnH strategies appear with empty/zero short entries (BnH is long-only; verify no phantom short trades).
 - [ ] **D1-7** After import: `DailyM2MEquity` — all strategies (BnH and non-BnH) have same daily equity curve as before.
 - [ ] **D1-8** After import: `ClosedTradePNL` — unchanged (not touched by the TradeData loop).
+- [ ] **D1-9** After import: Summary sheet `COL_PROFIT_LONG_FACTOR` / `COL_PROFIT_SHORT_FACTOR` for a BnH strategy are **non-zero** (long profit factor should reflect real trades). In the base, these were 0. After the merge they should reflect actual trade P&L. This is an intentional improvement (D0-1).
+- [ ] **D1-10** Strategy detail tab for a BnH strategy: Long trade chart now shows data (previously empty). Short trade chart remains empty (BnH is long-only). Verify no errors when generating BnH detail tab.
 
 **How to test:** Run import on a known dataset, capture the sheet values before and after the merge commit (`fc1a53f` → `4f6b72f`). Compare using a checksum or row/column counts.
 
@@ -249,8 +252,9 @@ vs the new model. Tick each as ✓ (present + matching), ✗ (missing), or ~ (di
 | ATR per BnH contract (period avgs) | ✓ AverageTrueRange | ✓ unchanged | ✓ |
 | ATR per BnH contract (raw trades) | ✓ TrueRanges | ✓ unchanged | ✓ |
 | Trade PNL per BnH contract | ✓ TradePNL | ✓ unchanged | ✓ |
-| Long trade PNL per strategy | ✓ Long_Trades (non-BnH) | ~ Long_Trades now includes BnH | D0-1 |
-| Short trade PNL per strategy | ✓ Short_Trades (non-BnH) | ~ Short_Trades now includes BnH | D0-1 |
+| Long trade PNL per strategy | ✓ Long_Trades (non-BnH only) | ~ Long_Trades now includes BnH → Summary profit factors now non-zero for BnH | D0-1 ✅ improvement |
+| Short trade PNL per strategy | ✓ Short_Trades (non-BnH only) | ~ Short_Trades includes BnH (empty for long-only BnH) → short profit factors stay 0 | D0-1 ✅ no change |
+| BnH long/short profit factors in Summary | ✗ zero in base | ✓ now computed from real trades | D0-1 ✅ improvement |
 | Latest positions | ✓ LatestPositionData | ✓ unchanged | ✓ |
 | Portfolio ATR columns | ✓ from AverageTrueRange | ✓ same lookup | ✓ |
 | Strategy correlations | ✓ PortfolioDailyM2M | ~ BnH included, no filter | D0-4 |
