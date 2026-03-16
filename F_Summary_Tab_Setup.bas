@@ -1042,8 +1042,10 @@ Sub CalculateProfitAndDrawdown(wsM2MEquity As Worksheet, strategyColumn As Long,
         End If
     Next row
 
-    ' Ensure we found valid rows
-    If OOSBeginRow = 0 Or OOSEndRow = 0 Or OOSBeginRow = OOSEndRow Then Exit Sub
+    ' Ensure we found valid rows.
+    ' NOTE: OOSBeginRow = OOSEndRow is intentionally allowed — Buy & Hold strategies
+    ' often have a single-day OOS window or start on the very first data row.
+    If OOSBeginRow = 0 Or OOSEndRow = 0 Then Exit Sub
 
     ' Loop through the rows within the OOS period
     For row = OOSBeginRow To OOSEndRow
@@ -1837,12 +1839,47 @@ Sub ApplyConditionalFormatting()
     Dim lastRow As Long
     lastRow = wsSummary.Cells(wsSummary.rows.count, 1).End(xlUp).row
 
-    ' Shading for different sections (alternate row shading)
-    Dim i As Long
+    ' Status-based row shading (replaces alternate-row grey).
+    ' Rows within the same status group are alternated between the base colour and a
+    ' slightly darker shade so individual rows stay easy to read.
+    Dim portSt As String, passSt As String, bnhSt As String
+    portSt = GetNamedRangeValue("Port_Status")
+    passSt = GetNamedRangeValue("Pass_Status")
+    bnhSt  = GetNamedRangeValue("BuyandHoldStatus")
+
+    Dim i As Long, sv As String, grpCount As Long, prevStatus As String
+    grpCount = 0
+    prevStatus = ""
     For i = 2 To lastRow
-        If i Mod 2 = 0 Then
-            wsSummary.rows(i).Interior.Color = RGB(242, 242, 242) ' Light Gray for alternate rows
+        sv = wsSummary.Cells(i, COL_STATUS).value
+        If sv <> prevStatus Then
+            grpCount = 0
+            prevStatus = sv
         End If
+        grpCount = grpCount + 1
+
+        Dim baseR As Long, baseG As Long, baseB As Long
+        Select Case sv
+            Case portSt  ' Live / portfolio — green
+                baseR = 198: baseG = 239: baseB = 206
+            Case passSt  ' Passing — steel blue
+                baseR = 189: baseG = 214: baseB = 238
+            Case bnhSt   ' Buy & Hold — grey
+                baseR = 220: baseG = 220: baseB = 220
+            Case "Failed"
+                baseR = 255: baseG = 199: baseB = 206  ' red
+            Case Else
+                baseR = 255: baseG = 243: baseB = 205  ' soft yellow for New / other
+        End Select
+
+        ' Alternate: even rows within a group get a slightly darker shade
+        If grpCount Mod 2 = 0 Then
+            baseR = Application.Max(0, baseR - 15)
+            baseG = Application.Max(0, baseG - 15)
+            baseB = Application.Max(0, baseB - 15)
+        End If
+
+        wsSummary.rows(i).Interior.Color = RGB(baseR, baseG, baseB)
     Next i
 
     ' Highlight if last re-opt happened within the last 6 weeks (42 days)
@@ -2611,71 +2648,96 @@ End Sub
 
 
 
+' Sort Summary rows by: Status priority → Sector → Symbol → OOS Begin Date.
+' Status priority:  Port_Status = 1  (live portfolio)
+'                   Pass_Status = 2  (backtesting / passing)
+'                   BuyandHoldStatus = 3
+'                   anything else    = 4
+' Called automatically at the end of UpdateStrategySummaryWithArray.
+' Can also be assigned to a button for on-demand re-sort after manual status changes.
 Sub ReorderSummaryTab()
     On Error GoTo ErrorHandler
-    
-    Dim wsStrategies As Worksheet
+
+    Call InitializeColumnConstantsManually
+
     Dim wsSummary As Worksheet
-    Dim lastRowStrat As Long, lastRowSum As Long
-    Dim i As Long, j As Long
-    Dim strategyName As String
-    Dim strategyNumber As String
-    Dim foundRow As Long
-    Dim tempArray() As Variant
-    
+    Dim wsStrategies As Worksheet
+    Set wsSummary   = ThisWorkbook.Sheets("Summary")
     Set wsStrategies = ThisWorkbook.Sheets("Strategies")
-    Set wsSummary = ThisWorkbook.Sheets("Summary")
-    
+
     Application.ScreenUpdating = False
-    
-    ' Get last rows
-    lastRowStrat = wsStrategies.Cells(wsStrategies.rows.count, COL_STRAT_STRATEGY_NAME).End(xlUp).row
-    lastRowSum = wsSummary.Cells(wsSummary.rows.count, "A").End(xlUp).row
-    
-    ' Store Summary data in array
-    Dim lastCol As Long
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsSummary.Cells(wsSummary.rows.count, 1).End(xlUp).row
     lastCol = wsSummary.Cells(1, wsSummary.Columns.count).End(xlToLeft).column
-    tempArray = wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRowSum, lastCol)).value
-    
-    ' Create new array for reordered data
-    Dim newArray() As Variant
-    ReDim newArray(1 To lastRowSum, 1 To lastCol)
-    
-    ' Copy header row
-    For j = 1 To lastCol
-        newArray(1, j) = tempArray(1, j)
-    Next j
-    
-    ' Reorder based on Strategies tab
-    Dim newRow As Long
-    newRow = 2
-    
-    For i = 2 To lastRowStrat
-        strategyName = wsStrategies.Cells(i, COL_STRAT_STRATEGY_NAME).value
-        strategyNumber = wsStrategies.Cells(i, COL_STRAT_STRATEGY_NUMBER).value
-        ' Find matching row in Summary data
-        For j = 2 To lastRowSum
-            If StrComp(tempArray(j, COL_STRATEGY_NAME), strategyName, vbTextCompare) = 0 Then
-                wsStrategies.Cells(i, COL_STRAT_SYMBOL).value = tempArray(j, COL_SYMBOL)
-                wsStrategies.Cells(i, COL_STRAT_TIMEFRAME).value = tempArray(j, COL_TIMEFRAME)
-                ' Copy entire row to new array
-                For K = 1 To lastCol
-                    newArray(newRow, K) = tempArray(j, K)
-                    newArray(newRow, 1) = strategyNumber
-                Next K
-                newRow = newRow + 1
+
+    If lastRow < 3 Then GoTo CleanExit  ' nothing to sort
+
+    ' Get status strings from named ranges
+    Dim portSt As String, passSt As String, bnhSt As String
+    portSt = GetNamedRangeValue("Port_Status")
+    passSt = GetNamedRangeValue("Pass_Status")
+    bnhSt  = GetNamedRangeValue("BuyandHoldStatus")
+
+    ' Write a temporary sort-key column (after lastCol) with numeric priority
+    Dim helperCol As Long
+    helperCol = lastCol + 1
+    wsSummary.Cells(1, helperCol).value = "_SortPriority"
+    Dim i As Long, sv As String
+    For i = 2 To lastRow
+        sv = wsSummary.Cells(i, COL_STATUS).value
+        Select Case sv
+            Case portSt: wsSummary.Cells(i, helperCol).value = 1
+            Case passSt: wsSummary.Cells(i, helperCol).value = 2
+            Case bnhSt:  wsSummary.Cells(i, helperCol).value = 3
+            Case Else:   wsSummary.Cells(i, helperCol).value = 4
+        End Select
+    Next i
+
+    ' 4-key sort using Excel's built-in engine
+    With wsSummary.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, helperCol), wsSummary.Cells(lastRow, helperCol)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_SECTOR), wsSummary.Cells(lastRow, COL_SECTOR)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_SYMBOL), wsSummary.Cells(lastRow, COL_SYMBOL)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_OOS_BEGIN_DATE), wsSummary.Cells(lastRow, COL_OOS_BEGIN_DATE)), _
+                         Order:=xlAscending
+        .SetRange wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRow, helperCol))
+        .Header  = xlYes
+        .MatchCase = False
+        .Apply
+    End With
+
+    ' Remove the temporary helper column
+    wsSummary.Columns(helperCol).Delete
+
+    ' Renumber strategies sequentially (1, 2, 3 …) to match new sort order
+    For i = 2 To lastRow
+        wsSummary.Cells(i, COL_STRATEGY_NUMBER).value = i - 1
+    Next i
+
+    ' Sync symbol / timeframe back to Strategies tab so it stays consistent
+    Dim lastRowStrat As Long
+    lastRowStrat = wsStrategies.Cells(wsStrategies.rows.count, COL_STRAT_STRATEGY_NAME).End(xlUp).row
+    Dim j As Long, stratName As String
+    For i = 2 To lastRow
+        stratName = wsSummary.Cells(i, COL_STRATEGY_NAME).value
+        For j = 2 To lastRowStrat
+            If StrComp(wsStrategies.Cells(j, COL_STRAT_STRATEGY_NAME).value, stratName, vbTextCompare) = 0 Then
+                wsStrategies.Cells(j, COL_STRAT_SYMBOL).value    = wsSummary.Cells(i, COL_SYMBOL).value
+                wsStrategies.Cells(j, COL_STRAT_TIMEFRAME).value = wsSummary.Cells(i, COL_TIMEFRAME).value
                 Exit For
             End If
         Next j
     Next i
-    
-    ' Write reordered data back to Summary sheet
-    wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRowSum, lastCol)).value = newArray
-    
+
 CleanExit:
     Application.ScreenUpdating = True
     Exit Sub
-    
+
 ErrorHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical
     Resume CleanExit
