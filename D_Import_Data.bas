@@ -163,18 +163,25 @@ Sub OptimizeDataProcessing()
     Wend
     
     ' -------------------------------------------------------------------------
-    ' Non-BnH TradeData: Long / Short splits
-    ' Status is read from folderLocations col 6 (pre-populated by GetFolderData /
-    ' RetrieveAllFolderLocations).  This mirrors how EquityData extraction works
-    ' and correctly handles strategies whose CSV filename contains period suffixes
-    ' that would not match the Strategies-tab name used by GetStrategyStatus().
+    ' Single TradeData pass — ALL strategies, including Buy & Hold.
+    '
+    ' Mirrors the EquityData loop: scan every *TradeData.csv in the folder,
+    ' advance i once per file (matching the one-row-per-file structure that
+    ' GetFolderData wrote to folderLocations).
+    '
+    ' Every strategy gets long/short splits (ProcessLSTradeData).
+    ' BnH strategies additionally get ATR/PNL calculations (ProcessTradeData),
+    ' using only the contract symbol as the header (ExtractContractName).
+    '
+    ' If a folder has no TradeData files (e.g. a strategy that only exports
+    ' equity curves), i is advanced once so the outer loop keeps moving.
     ' -------------------------------------------------------------------------
     i = 2
     While i <= lastRow
         folderPath = Trim(folderLocations.Cells(i, 4).value) & "\Walkforward Files\"
 
-        If folderLocations.Cells(i, 6).value <> GetNamedRangeValue("BuyandHoldStatus") Then
-            csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
+        csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
+        If csvFile <> "" Then
             Do While csvFile <> ""
                 FileNameOnly = left(csvFile, InStr(csvFile, " TradeData") - 1)
 
@@ -184,54 +191,24 @@ Sub OptimizeDataProcessing()
                     MsgBox ErrStr, vbExclamation
                     Exit Sub
                 End If
-                ' Process data into separate long and short dictionaries
+
+                ' Long/short splits for every strategy
                 ProcessLSTradeData dataArray, tradeLongDataDict, tradeShortDataDict, FileNameOnly, numRows, colLongIndex, colShortIndex, colLongHeaders, colShortHeaders
-                ' Process latest positions
                 ProcessLatestPositions dataArray, latestPositionsDict, FileNameOnly, numRows
-                i = i + 1
-                csvFile = Dir
-                Application.StatusBar = "Importing Long and Short trade data into arrays: " & i - 1 & " of " & lastRow & "..."
-            Loop
-        Else
-            i = i + 1
-        End If
-    Wend
 
-
-    ' -------------------------------------------------------------------------
-    ' BnH TradeData: ATR (MFE - MAE) + PNL per trade date
-    ' Same pattern as above — status read from col 6 so that multi-period files
-    ' (e.g. "NQ BnH 2018-2020 TradeData.csv", "NQ BnH 2020-2022 TradeData.csv")
-    ' in a single walkforward folder are all processed under the BnH path without
-    ' relying on an exact Strategies-tab name match.
-    ' -------------------------------------------------------------------------
-    i = 2
-    While i <= lastRow
-        folderPath = Trim(folderLocations.Cells(i, 4).value) & "\Walkforward Files\"
-
-        If folderLocations.Cells(i, 6).value = GetNamedRangeValue("BuyandHoldStatus") Then
-            csvFile = Dir(GetShortPath(folderPath & "*TradeData.csv"))
-            Do While csvFile <> ""
-                FileNameOnly = left(csvFile, InStr(csvFile, " TradeData") - 1)
-                headerName = ExtractContractName(FileNameOnly)
-                ' Read data from file
-                dataArray = getDataFromFile(GetShortPath(folderPath & csvFile), ",", ErrStr, numRows, numCols, ExcelDateFormat)
-                If ErrStr <> "" Then
-                    MsgBox ErrStr, vbExclamation
-                    Exit Sub
+                ' ATR/PNL additionally for Buy & Hold strategies
+                If folderLocations.Cells(i, 6).value = GetNamedRangeValue("BuyandHoldStatus") Then
+                    headerName = ExtractContractName(FileNameOnly)
+                    ProcessTradeData dataArray, tradeDataDict, headerName, numRows, colATRIndex, colATRHeaders
+                    ATR_Flag = 1
                 End If
-                ATR_Flag = 1
-                ' Process data
-                ProcessTradeData dataArray, tradeDataDict, headerName, numRows, colATRIndex, colATRHeaders
-                ' Process latest positions for Buy and Hold strategies too
-                ProcessLatestPositions dataArray, latestPositionsDict, FileNameOnly, numRows
 
                 i = i + 1
                 csvFile = Dir
-                Application.StatusBar = "Importing trade data into array: " & i - 1 & " of " & lastRow & "..."
+                Application.StatusBar = "Importing trade data into arrays: " & i - 1 & " of " & lastRow & "..."
             Loop
         Else
-            i = i + 1
+            i = i + 1  ' no TradeData file in this folder — keep moving
         End If
     Wend
     
