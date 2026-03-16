@@ -845,28 +845,49 @@ Sub EligibilityTracking(wsSummary As Worksheet, i As Long)
     End If
         
     
-    If ProfitMonth1 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth3 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth3or6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value <= 0 And wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value < 0 Then EligibilityStatus = "No"
-    If ProfitMonth9 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_9_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth12 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_12_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonthOOS = "Yes" And wsSummary.Cells(i, COL_PROFIT_SINCE_OOS_START).value <= 0 Then EligibilityStatus = "No"
-    
-    If LossMonth1 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value >= 0 Then EligibilityStatus = "No"
-    If LossMonth3 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value >= 0 Then EligibilityStatus = "No"
-    If LossMonth6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value >= 0 Then EligibilityStatus = "No"
-    
-    If EfficiencyMonth1 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth3 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth6 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth9 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth12 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_12_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonthOOS = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_SINCE_OOS_START).value <= efficiencyRatio Then EligibilityStatus = "No"
-        
-    If EfficiencyMonth1Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value >= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth3Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value >= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth6Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value >= efficiencyRatio Then EligibilityStatus = "No"
+    ' Guard all numeric comparisons with IsNumeric: profit/efficiency cells are set to "" when a
+    ' strategy lacks sufficient OOS history.  Comparing "" to a number raises Type Mismatch (Error 13)
+    ' in VBA, which was silently swallowing the entire EligibilityTracking call via the outer
+    ' On Error GoTo ErrorHandler / Resume Next, leaving the Eligibility column blank.
+    ' Blank cells are treated as "no data yet" — the criterion is skipped (not disqualifying).
+
+    Dim v1M As Variant, v3M As Variant, v6M As Variant, v9M As Variant, v12M As Variant, vOOS As Variant
+    Dim e1M As Variant, e3M As Variant, e6M As Variant, e9M As Variant, e12M As Variant, eOOS As Variant
+    v1M  = wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value
+    v3M  = wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value
+    v6M  = wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value
+    v9M  = wsSummary.Cells(i, COL_PROFIT_LAST_9_MONTHS).value
+    v12M = wsSummary.Cells(i, COL_PROFIT_LAST_12_MONTHS).value
+    vOOS = wsSummary.Cells(i, COL_PROFIT_SINCE_OOS_START).value
+    e1M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value
+    e3M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value
+    e6M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value
+    e9M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value
+    e12M = wsSummary.Cells(i, COL_EFFICIENCY_LAST_12_MONTHS).value
+    eOOS = wsSummary.Cells(i, COL_EFFICIENCY_SINCE_OOS_START).value
+
+    If ProfitMonth1   = "Yes" And IsNumeric(v1M)  And CDbl(v1M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth3   = "Yes" And IsNumeric(v3M)  And CDbl(v3M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth6   = "Yes" And IsNumeric(v6M)  And CDbl(v6M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth3or6 = "Yes" And IsNumeric(v3M) And IsNumeric(v6M) And CDbl(v3M) <= 0 And CDbl(v6M) < 0 Then EligibilityStatus = "No"
+    If ProfitMonth9   = "Yes" And IsNumeric(v9M)  And CDbl(v9M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth12  = "Yes" And IsNumeric(v12M) And CDbl(v12M) <= 0 Then EligibilityStatus = "No"
+    If ProfitMonthOOS = "Yes" And IsNumeric(vOOS) And CDbl(vOOS) <= 0 Then EligibilityStatus = "No"
+
+    If LossMonth1 = "Yes" And IsNumeric(v1M) And CDbl(v1M) >= 0 Then EligibilityStatus = "No"
+    If LossMonth3 = "Yes" And IsNumeric(v3M) And CDbl(v3M) >= 0 Then EligibilityStatus = "No"
+    If LossMonth6 = "Yes" And IsNumeric(v3M) And CDbl(v3M) >= 0 Then EligibilityStatus = "No"  ' Note: intentionally checks 3M (matches original logic)
+
+    If EfficiencyMonth1   = "Yes" And IsNumeric(e1M)  And CDbl(e1M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth3   = "Yes" And IsNumeric(e3M)  And CDbl(e3M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth6   = "Yes" And IsNumeric(e6M)  And CDbl(e6M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth9   = "Yes" And IsNumeric(e9M)  And CDbl(e9M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth12  = "Yes" And IsNumeric(e12M) And CDbl(e12M) <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonthOOS = "Yes" And IsNumeric(eOOS) And CDbl(eOOS) <= efficiencyRatio Then EligibilityStatus = "No"
+
+    If EfficiencyMonth1Loss = "Yes" And IsNumeric(e1M) And CDbl(e1M) >= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth3Loss = "Yes" And IsNumeric(e3M) And CDbl(e3M) >= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth6Loss = "Yes" And IsNumeric(e6M) And CDbl(e6M) >= efficiencyRatio Then EligibilityStatus = "No"
         
         
     If PositiveMonthsCheck = "Yes" And wsSummary.Cells(i, COL_COUNT_PROFIT_MONTHS).value < MinPositiveMonths Then EligibilityStatus = "No"
