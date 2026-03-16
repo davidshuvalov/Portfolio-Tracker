@@ -201,6 +201,10 @@ Sub GoToInputs()
     wsInputs.Activate ' Activate the Summary sheet
 End Sub
 
+Sub GoToMarkets()
+    Call W_Markets.GoToMarkets
+End Sub
+
 
 
 
@@ -239,7 +243,8 @@ Sub DeleteAllTabs()
                         "PortInMarketShort", "PortInMarketLong", "PortfolioMC", "LeaveOneOut", "Diversificator", _
                         "MW Folder Locations", "StrategiesOld", "TotalBackTest", _
                         "BackTestGraphs", "BacktestDetails", "BackTestM2MEquity", "TrueRanges", "AverageTrueRange", _
-                        "PortClosedTrade", "ContractMultiples", "CorrelationPeriodAnalysis", "DrawdownCorrelations", "TradePNL", "ATRCorrelations", "PNLCorrelations", "LatestPositionData", "Latest Positions")
+                        "PortClosedTrade", "ContractMultiples", "CorrelationPeriodAnalysis", "DrawdownCorrelations", "TradePNL", "ATRCorrelations", "PNLCorrelations", "LatestPositionData", "Latest Positions", _
+                        "Markets", "MarketCorrelations", "MarketVolatility")
     
     ' Delete standard tabs
     Dim tabname As Variant
@@ -509,9 +514,18 @@ Function GetDesiredTabOrder() As Variant
     Dim ws As Worksheet
     Dim i As Long, stratCount As Long
     
-    ' Initial fixed order
-    initialOrder = Array("Disclosure", "ReadMe", "Strategies", "Backtest", "Inputs", "Control", "MW Folder Locations", "Status Changes", "Summary", "BackTestGraphs", "BackTestDetails", "Portfolio", "PortfolioGraphs", _
-                        "SectorTypeGraphs", "SizingGraphs", "PortfolioMC", "Diversificator", "LeaveOneOut", "Correlations", "NegativeCorrelations", "DrawdownCorrelations", "CorrelationPeriodAnalysis", "ContractMarginTracking", "PNLCorrelations", "ATRCorrelations", "Latest Positions")
+    ' Tab order grouped by workflow stage:
+    '   Settings → Folder → Strategies → Portfolio → Backtest/WhatIf → Markets
+    initialOrder = Array( _
+        "Disclosure", "ReadMe", "Inputs", "Control", _
+        "MW Folder Locations", "Status Changes", _
+        "Strategies", "Backtest", _
+        "Summary", "Portfolio", "PortfolioGraphs", "SectorTypeGraphs", "SizingGraphs", _
+        "PortfolioMC", "Diversificator", "LeaveOneOut", _
+        "Correlations", "NegativeCorrelations", "DrawdownCorrelations", "CorrelationPeriodAnalysis", _
+        "PNLCorrelations", "ATRCorrelations", "ContractMarginTracking", "Latest Positions", _
+        "TotalBackTest", "BackTestGraphs", "BacktestDetails", _
+        "Markets", "MarketCorrelations", "MarketVolatility")
     
     ' Count and collect strategy tabs
     stratCount = 0
