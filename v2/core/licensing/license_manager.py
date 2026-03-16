@@ -185,6 +185,15 @@ def is_known_customer(customer_id: int) -> bool:
     return customer_id in _VALID_CUSTOMER_IDS
 
 
+def validate_lemon_squeezy(license_key: str) -> tuple[bool, str]:
+    """
+    Validate a Lemon Squeezy license key.
+    This is the primary path for new customers who purchased via the Lemon Squeezy store.
+    """
+    from core.licensing.lemon_squeezy import validate as _ls_validate
+    return _ls_validate(license_key)
+
+
 def validate_full(customer_id: int, multiwalk_folder: str = "") -> tuple[bool, str]:
     """
     Full license validation — mirrors IsLicenseValid() in B_Licencing_Checks.bas.

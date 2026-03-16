@@ -250,6 +250,7 @@ class AppConfig(BaseModel):
     margin_type: Literal["Maintenance", "Initial", "Average"] = "Maintenance"
     customer_id: int = 0
     multiwalk_folder: str = ""
+    ls_license_key: str = ""   # Lemon Squeezy license key (new customers)
     # Per-folder default status: maps folder path string → status applied to new strategies
     folder_default_status: dict[str, str] = Field(default_factory=dict)
 

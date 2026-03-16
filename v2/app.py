@@ -37,23 +37,41 @@ if "portfolio_data" not in st.session_state:
 # ── License check ─────────────────────────────────────────────────────────────
 def _check_license() -> bool:
     config: AppConfig = st.session_state.config
+
+    # ── Path 1: Lemon Squeezy license key (new customers) ────────────────────
+    ls_key = getattr(config, "ls_license_key", "") or ""
+    if ls_key:
+        try:
+            from core.licensing.lemon_squeezy import is_ls_key, validate as _ls_validate
+            if is_ls_key(ls_key):
+                valid, message = _ls_validate(ls_key)
+                if valid:
+                    return True
+                _show_license_entry(f"License check failed: {message}")
+                return False
+        except Exception as e:
+            _show_license_entry(f"License error: {e}")
+            return False
+
+    # ── Path 2: TradeStation Customer ID + MultiWalk DLL (existing customers) ─
     customer_id = config.customer_id
+    if customer_id:
+        try:
+            from core.licensing.license_manager import validate_full
+            valid, message = validate_full(customer_id, config.multiwalk_folder)
+        except Exception as e:
+            valid, message = False, str(e)
 
-    if not customer_id:
-        _show_license_entry("Enter your TradeStation Customer ID to activate Portfolio Tracker.")
-        return False
-
-    try:
-        from core.licensing.license_manager import validate_full
-        valid, message = validate_full(customer_id, config.multiwalk_folder)
-    except Exception as e:
-        valid, message = False, str(e)
-
-    if not valid:
+        if valid:
+            return True
         _show_license_entry(f"License check failed: {message}")
         return False
 
-    return True
+    # ── No license configured ─────────────────────────────────────────────────
+    _show_license_entry(
+        "Enter your **Portfolio Tracker license key** to activate the app."
+    )
+    return False
 
 
 def _show_license_entry(prompt: str) -> None:
@@ -63,35 +81,64 @@ def _show_license_entry(prompt: str) -> None:
 
     config: AppConfig = st.session_state.config
 
-    with st.form("license_form"):
+    tab_new, tab_legacy = st.tabs(["🔑 License Key", "🏦 TradeStation ID (existing customers)"])
+
+    with tab_new:
+        st.markdown("**License Key**")
+        st.caption(
+            "Enter the license key you received after purchasing Portfolio Tracker. "
+            "Format: `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`"
+        )
+        with st.form("ls_license_form"):
+            ls_key = st.text_input(
+                "License Key",
+                value=getattr(config, "ls_license_key", "") or "",
+                placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button("Activate", type="primary")
+            if submitted and ls_key.strip():
+                from core.licensing.lemon_squeezy import is_ls_key
+                if not is_ls_key(ls_key.strip()):
+                    st.error("That doesn't look like a valid license key. Check for typos.")
+                else:
+                    config.ls_license_key = ls_key.strip().upper()
+                    config.save()
+                    st.rerun()
+
+        st.markdown(
+            "Don't have a license key? "
+            "[Purchase Portfolio Tracker →](https://portfoliotracker.lemonsqueezy.com)"
+        )
+
+    with tab_legacy:
         st.markdown("**TradeStation Customer ID**")
         st.caption("The number you use to log in to TradeStation — verified against the MultiWalk license DLL.")
-        cid = st.number_input(
-            "Customer ID",
-            min_value=1,
-            max_value=9_999_999,
-            value=int(config.customer_id) if config.customer_id else 1,
-            step=1,
-            label_visibility="collapsed",
-        )
+        with st.form("ts_license_form"):
+            cid = st.number_input(
+                "Customer ID",
+                min_value=1,
+                max_value=9_999_999,
+                value=int(config.customer_id) if config.customer_id else 1,
+                step=1,
+                label_visibility="collapsed",
+            )
+            st.markdown("**MultiWalk Program Folder**")
+            st.caption("Folder containing `MultiWalkLicense64.dll`. Leave blank to auto-detect from registry.")
+            folder = st.text_input(
+                "MultiWalk Program Folder",
+                value=config.multiwalk_folder or "",
+                placeholder=r"e.g. C:\Users\you\Documents\MultiWalk\Program",
+                label_visibility="collapsed",
+            )
+            submitted_ts = st.form_submit_button("Activate", type="primary")
+            if submitted_ts and cid:
+                config.customer_id = int(cid)
+                config.multiwalk_folder = folder.strip()
+                config.save()
+                st.rerun()
 
-        st.markdown("**MultiWalk Program Folder**")
-        st.caption("Folder containing `MultiWalkLicense64.dll`. Leave blank to auto-detect from registry.")
-        folder = st.text_input(
-            "MultiWalk Program Folder",
-            value=config.multiwalk_folder or "",
-            placeholder=r"e.g. C:\Users\you\Documents\MultiWalk\Program",
-            label_visibility="collapsed",
-        )
-
-        submitted = st.form_submit_button("Activate", type="primary")
-        if submitted and cid:
-            st.session_state.config.customer_id = int(cid)
-            st.session_state.config.multiwalk_folder = folder.strip()
-            st.session_state.config.save()
-            st.rerun()
-
-    st.info("If you need help or don't have a license, contact david@portfoliotracker.com")
+    st.info("Need help? Contact david@portfoliotracker.com")
     st.stop()
 
 
