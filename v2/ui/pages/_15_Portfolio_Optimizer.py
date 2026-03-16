@@ -69,8 +69,17 @@ _RANK_METRIC_LABELS = {
     "sharpe_isoos":           "Sharpe IS+OOS",
     "profit_since_oos_start": "OOS Total ($)",
     "profit_last_12_months":  "Last 12M ($)",
+    "profit_last_9_months":   "Last 9M ($)",
+    "profit_last_6_months":   "Last 6M ($)",
+    "profit_last_3_months":   "Last 3M ($)",
     "k_factor":               "K-Factor",
     "ulcer_index":            "Ulcer Index",
+    "efficiency_oos":         "Efficiency (OOS)",
+    "efficiency_12m":         "Efficiency (12M)",
+    "efficiency_6m":          "Efficiency (6M)",
+    "oos_monthly_win_rate":   "Monthly Win Rate (OOS)",
+    "max_oos_drawdown":       "OOS Max Drawdown ($)",
+    "sharpe_oos":             "Sharpe (OOS)",
 }
 
 
@@ -189,6 +198,49 @@ with st.sidebar:
             key="opt_min_thresh",
         )
 
+    # ── Eligibility ───────────────────────────────────────────────────────
+    with st.expander("Eligibility Settings", expanded=False):
+        _e = config.eligibility
+        st.caption("Override eligibility rules for this optimiser run.")
+
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.markdown("**Profit Gates**")
+            st.checkbox("Last 12M > $0",         value=_e.profit_12m,    key="opt_elig_p12m")
+            st.checkbox("Last 3M OR 6M > $0",    value=_e.profit_3or6m, key="opt_elig_p3or6m")
+            st.checkbox("Since OOS start > $0",  value=_e.profit_oos,   key="opt_elig_poos")
+            st.checkbox("Last 9M > $0",          value=_e.profit_9m,    key="opt_elig_p9m")
+            st.checkbox("Last 6M > $0",          value=_e.profit_6m,    key="opt_elig_p6m")
+            st.checkbox("Last 3M > $0",          value=_e.profit_3m,    key="opt_elig_p3m")
+            st.checkbox("Last 1M > $0",          value=_e.profit_1m,    key="opt_elig_p1m")
+            st.markdown("**Loss Disqualifiers**")
+            st.checkbox("Last 1M < $0 → exclude", value=_e.loss_1m, key="opt_elig_l1m")
+            st.checkbox("Last 3M < $0 → exclude", value=_e.loss_3m, key="opt_elig_l3m")
+            st.checkbox("Last 6M < $0 → exclude", value=_e.loss_6m, key="opt_elig_l6m")
+
+        with ec2:
+            st.markdown("**Efficiency Gates**")
+            st.checkbox("OOS Efficiency > ratio",  value=_e.efficiency_oos,  key="opt_elig_effoos")
+            st.checkbox("12M Efficiency > ratio",  value=_e.efficiency_12m,  key="opt_elig_eff12m")
+            st.checkbox("6M Efficiency > ratio",   value=_e.efficiency_6m,   key="opt_elig_eff6m")
+            st.checkbox("3M Efficiency > ratio",   value=_e.efficiency_3m,   key="opt_elig_eff3m")
+            st.number_input(
+                "Efficiency ratio (%)",
+                min_value=0, max_value=500, step=5,
+                value=int(round(_e.efficiency_ratio * 100)),
+                key="opt_elig_effratio",
+            )
+            st.markdown("**Status Gates**")
+            st.checkbox("Incubation must be Passed",   value=_e.use_incubation, key="opt_elig_inc")
+            st.checkbox("Exclude Quit strategies",     value=_e.use_quitting,  key="opt_elig_quit")
+            st.markdown("**Thresholds**")
+            st.number_input(
+                "Max OOS DD / IS DD ratio",
+                min_value=0.0, max_value=10.0, step=0.1, format="%.1f",
+                value=float(_e.oos_dd_vs_is_cap),
+                key="opt_elig_oos_dd",
+            )
+
     # ── Ranking ───────────────────────────────────────────────────────────
     with st.expander("Ranking", expanded=False):
         opt_rank_metric = st.selectbox(
@@ -247,16 +299,20 @@ with st.sidebar:
 
     # ── Gross margins ─────────────────────────────────────────────────────
     with st.expander("Gross Margin Limits", expanded=False):
+        st.caption(
+            "Expressed as a share of total portfolio margin. "
+            "1% = very tight; 100% = no limit."
+        )
         opt_max_sym_pct = st.slider(
             "Max single symbol margin %",
-            0.05, 0.50, float(opt_cfg.max_single_contract_margin_pct), 0.025,
-            format="%.1f%%",
+            0.01, 1.0, float(opt_cfg.max_single_contract_margin_pct), 0.01,
+            format="%.0f%%",
             key="opt_max_sym_pct",
         )
         opt_max_sec_pct = st.slider(
             "Max single sector margin %",
-            0.05, 0.75, float(opt_cfg.max_sector_margin_pct), 0.025,
-            format="%.1f%%",
+            0.01, 1.0, float(opt_cfg.max_sector_margin_pct), 0.01,
+            format="%.0f%%",
             key="opt_max_sec_pct",
         )
 
@@ -264,14 +320,14 @@ with st.sidebar:
     with st.expander("Drawdown Controls", expanded=False):
         opt_max_avg_dd = st.slider(
             "Max avg strategy drawdown (% equity)",
-            0.01, 0.20, float(opt_cfg.max_avg_drawdown_pct), 0.005,
-            format="%.1f%%",
+            0.01, 1.0, float(opt_cfg.max_avg_drawdown_pct), 0.01,
+            format="%.0f%%",
             key="opt_max_avg_dd",
         )
         opt_max_single_dd = st.slider(
             "Max single strategy drawdown (% equity)",
-            0.01, 0.50, float(opt_cfg.max_single_drawdown_pct), 0.005,
-            format="%.1f%%",
+            0.01, 1.0, float(opt_cfg.max_single_drawdown_pct), 0.01,
+            format="%.0f%%",
             key="opt_max_single_dd",
         )
 
@@ -442,13 +498,31 @@ if run_btn and _prereqs_ok:
             default_margin=default_margin,
         )
 
-        # ── 3. Eligibility mask ───────────────────────────────────────────
+        # ── 3. Eligibility mask (with per-run overrides) ─────────────────
         _eligible_mask: dict[str, bool] = {}
         if _summary_df is not None and not _summary_df.empty:
             try:
-                _eligible_mask = apply_eligibility_rules(
-                    _summary_df, config.eligibility
-                )
+                _elig = config.eligibility.model_copy(deep=True)
+                ss = st.session_state
+                _elig.profit_1m       = bool(ss.get("opt_elig_p1m",    _elig.profit_1m))
+                _elig.profit_3m       = bool(ss.get("opt_elig_p3m",    _elig.profit_3m))
+                _elig.profit_6m       = bool(ss.get("opt_elig_p6m",    _elig.profit_6m))
+                _elig.profit_9m       = bool(ss.get("opt_elig_p9m",    _elig.profit_9m))
+                _elig.profit_12m      = bool(ss.get("opt_elig_p12m",   _elig.profit_12m))
+                _elig.profit_3or6m    = bool(ss.get("opt_elig_p3or6m", _elig.profit_3or6m))
+                _elig.profit_oos      = bool(ss.get("opt_elig_poos",   _elig.profit_oos))
+                _elig.loss_1m         = bool(ss.get("opt_elig_l1m",    _elig.loss_1m))
+                _elig.loss_3m         = bool(ss.get("opt_elig_l3m",    _elig.loss_3m))
+                _elig.loss_6m         = bool(ss.get("opt_elig_l6m",    _elig.loss_6m))
+                _elig.efficiency_oos  = bool(ss.get("opt_elig_effoos", _elig.efficiency_oos))
+                _elig.efficiency_12m  = bool(ss.get("opt_elig_eff12m", _elig.efficiency_12m))
+                _elig.efficiency_6m   = bool(ss.get("opt_elig_eff6m",  _elig.efficiency_6m))
+                _elig.efficiency_3m   = bool(ss.get("opt_elig_eff3m",  _elig.efficiency_3m))
+                _elig.efficiency_ratio = float(ss.get("opt_elig_effratio", int(round(_elig.efficiency_ratio * 100)))) / 100.0
+                _elig.use_incubation  = bool(ss.get("opt_elig_inc",    _elig.use_incubation))
+                _elig.use_quitting    = bool(ss.get("opt_elig_quit",   _elig.use_quitting))
+                _elig.oos_dd_vs_is_cap = float(ss.get("opt_elig_oos_dd", _elig.oos_dd_vs_is_cap))
+                _eligible_mask = apply_eligibility_rules(_summary_df, _elig)
             except Exception:
                 pass
 
