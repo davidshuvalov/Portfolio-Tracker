@@ -24,7 +24,7 @@ from core.portfolio.aggregator import (
     portfolio_summary_stats,
 )
 from core.portfolio.summary import apply_eligibility_rules, compute_summary
-from ui.strategy_labels import render_strategy_picker
+from ui.strategy_labels import render_strategy_picker, build_label_map, render_legend
 
 st.set_page_config(page_title="Portfolio", layout="wide")
 
@@ -683,45 +683,42 @@ if not portfolio.summary_metrics.empty:
 
             # ── By Strategy ───────────────────────────────────────────────────
             with _tab_strat:
-                _strat_df = _cdf.sort_values(_sel_metric, ascending=True)
-                _colors = [_sec_color.get(s, "#888") for s in _strat_df["sector"]]
+                _label_map = build_label_map(portfolio.strategies)
+                _strat_df = _cdf.copy()
+                _strat_df["short_label"] = _strat_df["Strategy"].map(
+                    lambda n: _label_map.get(n, n)
+                )
+                _strat_df = _strat_df.sort_values(_sel_metric, ascending=True)
 
-                # Add invisible dummy traces for sector legend
-                _legend_traces = []
-                for _sec in _unique_sectors:
-                    if _sec in _strat_df["sector"].values:
-                        _legend_traces.append(go.Bar(
-                            x=[None], y=[None],
-                            name=_sec,
-                            marker_color=_sec_color[_sec],
-                            showlegend=True,
-                        ))
+                _strat_palette = _SECTOR_PALETTE  # reuse same 15-color palette
+                _strat_colors = [
+                    _strat_palette[i % len(_strat_palette)]
+                    for i in range(len(_strat_df))
+                ]
 
                 _fig_strat = go.Figure()
-                for _lt in _legend_traces:
-                    _fig_strat.add_trace(_lt)
+                for i, row in enumerate(_strat_df.itertuples()):
+                    _fig_strat.add_trace(go.Bar(
+                        y=[row.short_label],
+                        x=[getattr(row, _sel_metric)],
+                        orientation="h",
+                        name=row.short_label,
+                        marker_color=_strat_colors[i],
+                        text=[_fmt(getattr(row, _sel_metric))],
+                        textposition="outside",
+                        showlegend=False,
+                        hovertemplate=f"{row.short_label} ({row.Strategy}): %{{text}}<extra></extra>",
+                    ))
 
-                _fig_strat.add_trace(go.Bar(
-                    y=_strat_df["Strategy"],
-                    x=_strat_df[_sel_metric],
-                    orientation="h",
-                    marker_color=_colors,
-                    text=[_fmt(v) for v in _strat_df[_sel_metric]],
-                    textposition="outside",
-                    showlegend=False,
-                    hovertemplate="%{y}: %{text}<extra></extra>",
-                ))
                 _fig_strat.update_layout(
                     xaxis_title=_avail[_sel_metric],
-                    height=max(350, len(_strat_df) * 22 + 80),
+                    height=max(350, len(_strat_df) * 28 + 80),
                     margin=dict(l=0, r=80, t=10, b=0),
-                    legend=dict(
-                        title="Sector",
-                        orientation="v",
-                        x=1.01, y=1,
-                    ),
+                    showlegend=False,
+                    barmode="stack",
                 )
                 st.plotly_chart(_fig_strat, use_container_width=True)
+                render_legend(portfolio.strategies)
 
             # ── By Symbol ─────────────────────────────────────────────────────
             with _tab_sym:
