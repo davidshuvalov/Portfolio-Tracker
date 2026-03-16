@@ -23,8 +23,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from core.data.contract_registry import ContractFamily
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -149,24 +153,56 @@ def step_filter_excluded_symbols(
 def step_filter_contract_size(
     state: OptimizerState,
     min_threshold: float = 0.65,
+    contract_registry: "dict[str, ContractFamily] | None" = None,
 ) -> OptimizerState:
     """
-    Remove strategies where the computed contract count is below
-    ``min_threshold``.  A count below this means the contract is too large
-    to trade with a meaningful fraction of equity (no micro/mini available).
+    Remove strategies where the computed contract count is below the effective
+    minimum threshold, accounting for micro/mini contract availability.
+
+    When ``contract_registry`` is provided and a symbol has a micro or mini
+    variant, the threshold is scaled down by the micro/mini ratio.  This lets
+    the optimizer keep strategies that would be too small to trade as a full
+    (or E-mini) contract but are perfectly viable as micro contracts.
+
+    Examples with ``min_threshold=0.65``:
+
+    - NQ (MNQ = 0.1×): effective threshold = 0.065  (= 0.65 MNQ)
+    - ZC (XC  = 0.2×): effective threshold = 0.13   (= 0.65 mini ZC)
+    - ZN (no micro):   effective threshold = 0.65    (unchanged)
+
+    A strategy with 0.3 NQ contracts survives because 0.3 NQ = 3 MNQ ≥ 0.65
+    MNQ.  The contracts dict is left unchanged (still expressed in standard
+    units); the execution layer handles the micro translation.
     """
-    to_remove = [
-        c for c in state.candidates
-        if state.contracts.get(c["name"], 0.0) < min_threshold
-    ]
-    for c in to_remove:
-        raw = state.contracts.get(c["name"], 0.0)
-        state.exclude_strategy(
-            c["name"], "contract_size",
-            f"Contract count {raw:.2f} < minimum threshold {min_threshold}",
-        )
+    removed = 0
+    for c in list(state.candidates):
+        name = c["name"]
+        symbol = c.get("symbol", "")
+        count = state.contracts.get(name, 0.0)
+
+        # Determine effective threshold for this symbol
+        effective_threshold = min_threshold
+        family = contract_registry.get(symbol) if contract_registry else None
+        if family and family.has_smaller_contract():
+            effective_threshold = min_threshold * family.smallest_unit
+
+        if count < effective_threshold:
+            state.exclude_strategy(
+                name, "contract_size",
+                f"Contract count {count:.3f} < effective threshold {effective_threshold:.3f}"
+                + (f" (no micro/mini for {symbol})" if not family or not family.has_smaller_contract() else ""),
+            )
+            removed += 1
+        elif family and family.has_smaller_contract() and count < min_threshold:
+            # Survives via micro/mini — log the equivalent micro count
+            micro_count = count / family.smallest_unit
+            state.log.append(
+                f"[contract_size] '{name}' ({symbol}): {count:.3f} std contracts "
+                f"→ kept as ~{micro_count:.1f} {family.smallest_symbol}"
+            )
+
     state.log.append(
-        f"[contract_size] Removed {len(to_remove)}, {len(state.candidates)} remain"
+        f"[contract_size] Removed {removed}, {len(state.candidates)} remain"
     )
     return state
 
@@ -209,6 +245,7 @@ def step_size_contracts(
     ratio: float,
     contract_margin_multiple: float = 0.33,
     min_fraction: float = 0.1,
+    contract_registry: "dict[str, ContractFamily] | None" = None,
 ) -> OptimizerState:
     """
     Compute fractional contract counts for all active candidates.
@@ -217,13 +254,18 @@ def step_size_contracts(
 
         dollar_risk = atr × ratio + (margin × margin_multiple) × (1 - ratio)
         raw_contracts = equity × contract_size_pct / dollar_risk
-        contracts = floor(raw_contracts / min_fraction) × min_fraction
+        contracts = floor(raw_contracts / sym_min_fraction) × sym_min_fraction
 
     ``ratio=0.5`` and ``contract_margin_multiple=0.33`` replicates the
     user's workflow: "average of 3M ATR and 33% of maintenance margin".
 
+    When ``contract_registry`` is provided, the rounding precision
+    (``sym_min_fraction``) is reduced for symbols that have a micro or mini
+    contract available.  For example, NQ with MNQ (0.1×) uses a min_fraction
+    of 0.01 (= 0.1 MNQ) instead of the default 0.1, so sizing is more precise.
+
     Unlike :func:`~core.analytics.atr.contract_size_from_atr`, this step
-    preserves fractional precision (rounds to ``min_fraction``, not to int).
+    preserves fractional precision (rounds to ``sym_min_fraction``, not int).
     """
     new_contracts: dict[str, float] = {}
     for c in state.candidates:
@@ -238,7 +280,15 @@ def step_size_contracts(
             raw_float = 0.0
         else:
             raw_float = (equity * contract_size_pct) / effective_risk
-        new_contracts[name] = _round_to_fraction(raw_float, min_fraction)
+
+        # Use finer rounding granularity when a micro/mini is available
+        family = contract_registry.get(symbol) if contract_registry else None
+        sym_min_fraction = (
+            min_fraction * family.smallest_unit
+            if family and family.has_smaller_contract()
+            else min_fraction
+        )
+        new_contracts[name] = _round_to_fraction(raw_float, sym_min_fraction)
 
     state.contracts = new_contracts
     state.equity = equity

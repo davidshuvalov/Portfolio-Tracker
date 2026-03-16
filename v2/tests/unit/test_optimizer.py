@@ -32,6 +32,12 @@ from core.portfolio.optimizer import (
     portfolio_summary,
     _round_to_fraction,
 )
+from core.data.contract_registry import (
+    CONTRACT_REGISTRY,
+    ContractFamily,
+    get_family,
+    effective_min_fraction,
+)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -153,6 +159,219 @@ class TestStepFilterContractSize:
         state.contracts = {"A": 0.0}
         state = step_filter_contract_size(state, min_threshold=0.1)
         assert len(state.candidates) == 0
+
+
+# ── step_filter_contract_size  (micro/mini registry) ──────────────────────────
+
+# Minimal registry used in tests: NQ has MNQ (0.1×), ZC has XC (0.2×),
+# ZN has no micro.
+_REGISTRY = {
+    "NQ": ContractFamily("NQ", "E-mini Nasdaq-100", "Index", "CME",
+                         micro_symbol="MNQ", micro_ratio=0.1),
+    "ZC": ContractFamily("ZC", "Corn", "Agriculture", "CBOT",
+                         mini_symbol="XC", mini_ratio=0.2),
+    "ZN": ContractFamily("ZN", "10-Year T-Note", "Rates", "CBOT"),
+}
+
+
+class TestStepFilterContractSizeMicro:
+    """Registry-aware contract size filtering."""
+
+    def test_micro_available_survives_below_std_threshold(self):
+        # 0.3 NQ < 0.65 threshold, but 0.3 NQ = 3 MNQ ≥ 0.65 MNQ → keep
+        state = _state([_strat("A", symbol="NQ")])
+        state.contracts = {"A": 0.3}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert len(state.candidates) == 1
+        assert state.contracts["A"] == pytest.approx(0.3)
+
+    def test_micro_available_excluded_below_micro_threshold(self):
+        # 0.05 NQ = 0.5 MNQ < 0.65 MNQ effective threshold → exclude
+        state = _state([_strat("A", symbol="NQ")])
+        state.contracts = {"A": 0.05}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert len(state.candidates) == 0
+        assert state.excluded[0].name == "A"
+
+    def test_mini_available_survives_below_std_threshold(self):
+        # 0.1 ZC = 0.5 XC; effective threshold = 0.65 × 0.2 = 0.13 → 0.1 < 0.13 → exclude
+        # 0.14 ZC = 0.7 XC ≥ 0.65 XC → keep
+        state = _state([_strat("A", symbol="ZC")])
+        state.contracts = {"A": 0.14}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert len(state.candidates) == 1
+
+    def test_no_micro_still_uses_standard_threshold(self):
+        # ZN has no micro — threshold unchanged at 0.65
+        state = _state([_strat("A", symbol="ZN")])
+        state.contracts = {"A": 0.3}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert len(state.candidates) == 0
+
+    def test_no_registry_behaves_as_before(self):
+        # Without a registry, original behaviour: 0.3 < 0.65 → exclude
+        state = _state([_strat("A", symbol="NQ")])
+        state.contracts = {"A": 0.3}
+        state = step_filter_contract_size(state, min_threshold=0.65)
+        assert len(state.candidates) == 0
+
+    def test_micro_log_message_on_kept_strategy(self):
+        state = _state([_strat("A", symbol="NQ")])
+        state.contracts = {"A": 0.3}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert any("MNQ" in msg for msg in state.log)
+
+    def test_exactly_at_micro_threshold_is_kept(self):
+        # Exactly 0.065 NQ = exactly 0.65 MNQ → kept (not strictly less than)
+        state = _state([_strat("A", symbol="NQ")])
+        state.contracts = {"A": 0.065}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        assert len(state.candidates) == 1
+
+    def test_mix_of_symbols_correct_filtering(self):
+        # NQ with 0.1 contracts → 1 MNQ, survives (eff threshold 0.065)
+        # ZN with 0.3 contracts → no micro, 0.3 < 0.65 → excluded
+        # NQ with 0.07 contracts → 0.7 MNQ, survives
+        strategies = [
+            _strat("NQ_ok",  symbol="NQ", contracts=0.1),
+            _strat("ZN_bad", symbol="ZN", contracts=0.3),
+            _strat("NQ_ok2", symbol="NQ", contracts=0.07),
+        ]
+        state = _state(strategies)
+        state.contracts = {s["name"]: s["contracts"] for s in strategies}
+        state = step_filter_contract_size(
+            state, min_threshold=0.65, contract_registry=_REGISTRY
+        )
+        names = {c["name"] for c in state.candidates}
+        assert names == {"NQ_ok", "NQ_ok2"}
+
+
+# ── step_size_contracts  (micro registry — finer granularity) ─────────────────
+
+class TestStepSizeContractsMicro:
+    """step_size_contracts uses finer min_fraction when micro is available."""
+
+    def _run(self, symbol: str, equity: float, pct: float, atr_val: float,
+             margin_val: float, registry=None) -> float:
+        strat = _strat("S", symbol=symbol)
+        state = _state([strat], equity=equity)
+        margins = {symbol: margin_val}
+        state = step_size_contracts(
+            state, equity=equity, contract_size_pct=pct,
+            atr={}, margins=margins, ratio=0.0,
+            contract_margin_multiple=1.0, min_fraction=0.1,
+            contract_registry=registry,
+        )
+        return state.contracts["S"]
+
+    def test_no_registry_rounds_to_0_1(self):
+        # margin_val=1000, pct=0.01, equity=100000 → raw=1.0
+        # With no micro: rounds to nearest 0.1 = 1.0
+        result = self._run("NQ", 100_000, 0.01, 0.0, 1_000.0, registry=None)
+        assert result == pytest.approx(1.0)
+
+    def test_micro_available_rounds_to_finer_granularity(self):
+        # raw ≈ 0.37 → without micro rounds down to 0.3
+        # with MNQ (0.1×): min_fraction = 0.01 → rounds to 0.37
+        # equity=100_000, pct=0.01, ratio=0.0, contract_margin_multiple=1.0
+        # dollar_risk = margin × (1-ratio) = 2_700 × 1.0 = 2700
+        # raw = 100_000 × 0.01 / 2_700 ≈ 0.3703...
+        result_no_reg = self._run("NQ", 100_000, 0.01, 0.0, 2_700.0, registry=None)
+        result_with_reg = self._run("NQ", 100_000, 0.01, 0.0, 2_700.0, registry=_REGISTRY)
+        assert result_no_reg == pytest.approx(0.3)    # rounded to 0.1
+        assert result_with_reg == pytest.approx(0.37)  # rounded to 0.01
+
+    def test_no_micro_symbol_unchanged_behaviour(self):
+        # ZN has no micro in _REGISTRY — same result with or without registry
+        result_no_reg  = self._run("ZN", 100_000, 0.01, 0.0, 2_700.0, registry=None)
+        result_with_reg = self._run("ZN", 100_000, 0.01, 0.0, 2_700.0, registry=_REGISTRY)
+        assert result_no_reg == result_with_reg
+
+
+# ── ContractRegistry helpers ───────────────────────────────────────────────────
+
+class TestContractRegistry:
+    def test_nq_has_mnq(self):
+        fam = CONTRACT_REGISTRY["NQ"]
+        assert fam.micro_symbol == "MNQ"
+        assert fam.micro_ratio == pytest.approx(0.1)
+
+    def test_es_has_mes(self):
+        fam = CONTRACT_REGISTRY["ES"]
+        assert fam.micro_symbol == "MES"
+        assert fam.micro_ratio == pytest.approx(0.1)
+
+    def test_cl_has_mcl(self):
+        fam = CONTRACT_REGISTRY["CL"]
+        assert fam.micro_symbol == "MCL"
+        assert fam.micro_ratio == pytest.approx(0.1)
+
+    def test_zc_has_xc_mini(self):
+        fam = CONTRACT_REGISTRY["ZC"]
+        assert fam.mini_symbol == "XC"
+        assert fam.mini_ratio == pytest.approx(0.2)
+
+    def test_zn_has_no_smaller_contract(self):
+        fam = CONTRACT_REGISTRY["ZN"]
+        assert not fam.has_smaller_contract()
+
+    def test_btc_micro_ratio(self):
+        # MBT = 0.1 BTC, BTC contract = 5 BTC → ratio = 0.02
+        fam = CONTRACT_REGISTRY["BTC"]
+        assert fam.micro_ratio == pytest.approx(0.02)
+
+    def test_si_silver_micro_ratio(self):
+        # SIL = 1000 oz, SI = 5000 oz → ratio = 0.2
+        fam = CONTRACT_REGISTRY["SI"]
+        assert fam.micro_ratio == pytest.approx(0.2)
+
+    def test_get_family_by_standard_symbol(self):
+        assert get_family("NQ") is CONTRACT_REGISTRY["NQ"]
+
+    def test_get_family_by_micro_symbol(self):
+        assert get_family("MNQ") is CONTRACT_REGISTRY["NQ"]
+
+    def test_get_family_unknown_returns_none(self):
+        assert get_family("UNKNOWN_XYZ") is None
+
+    def test_effective_min_fraction_with_micro(self):
+        # NQ with MNQ (0.1×): base 0.1 × 0.1 = 0.01
+        assert effective_min_fraction("NQ", 0.1) == pytest.approx(0.01)
+
+    def test_effective_min_fraction_with_mini(self):
+        # ZC with XC (0.2×): base 0.1 × 0.2 = 0.02
+        assert effective_min_fraction("ZC", 0.1) == pytest.approx(0.02)
+
+    def test_effective_min_fraction_no_micro(self):
+        # ZN: no smaller contract → unchanged
+        assert effective_min_fraction("ZN", 0.1) == pytest.approx(0.1)
+
+    def test_effective_min_fraction_unknown_symbol(self):
+        # Unknown symbol: falls back to base
+        assert effective_min_fraction("UNKNOWN", 0.1) == pytest.approx(0.1)
+
+    def test_smallest_symbol_nq(self):
+        assert CONTRACT_REGISTRY["NQ"].smallest_symbol == "MNQ"
+
+    def test_currencies_have_micros(self):
+        for sym in ("6E", "6J", "6B", "6A", "6C", "6S"):
+            assert CONTRACT_REGISTRY[sym].has_smaller_contract(), f"{sym} should have micro"
+
+    def test_all_equity_index_micros_present(self):
+        for sym in ("ES", "NQ", "RTY", "YM"):
+            assert CONTRACT_REGISTRY[sym].micro_symbol is not None
 
 
 # ── step_rank ─────────────────────────────────────────────────────────────────
