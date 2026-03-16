@@ -25,6 +25,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -590,6 +591,187 @@ def step_adjust_drawdowns(
     state.log.append(
         f"[drawdowns] Made {adjusted} adjustments, "
         f"{len(state.candidates)} strategies remain"
+    )
+    return state
+
+
+def step_adjust_mc(
+    state: OptimizerState,
+    margins: dict[str, float],
+    contract_margin_multiple: float,
+    daily_m2m: "pd.DataFrame | None" = None,
+    target_drawdown_pct: float | None = None,
+    target_margin_pct: float | None = None,
+    n_simulations: int = 2_000,
+    max_scale: float = 3.0,
+    tolerance: float = 0.02,
+    max_iter: int = 10,
+    min_fraction: float = 0.1,
+    contract_registry: "dict | None" = None,
+) -> OptimizerState:
+    """
+    Final portfolio sizing step — scales all contract counts to reach a
+    target portfolio-level metric.
+
+    Two modes (``target_margin_pct`` is checked first):
+
+    **Margin mode** (``target_margin_pct`` is not None):
+        Scale contracts uniformly so that total margin usage equals
+        ``target_margin_pct × equity``.  Single-shot — no MC simulation.
+
+        Example: ``target_margin_pct=0.60`` → 60% of equity in margin.
+
+    **Drawdown mode** (``target_drawdown_pct`` is not None, requires ``daily_m2m``):
+        Iteratively scale contracts until the MC-simulated median max
+        portfolio drawdown converges to ``target_drawdown_pct`` (fraction
+        of starting equity, e.g. 0.20 = 20%).
+
+        The portfolio daily PnL is computed as the weighted sum of each
+        strategy's ``daily_m2m`` column scaled by its current contract count,
+        then resampled 252 times per simulated year.
+
+    In both modes the scale is applied uniformly across all strategies.
+    Strategies whose contract count drops below their effective minimum
+    (accounting for micro contracts if ``contract_registry`` is provided)
+    are excluded from the portfolio.
+
+    Args:
+        margins:             Per-symbol maintenance margin in $.
+        contract_margin_multiple: Fraction of maintenance margin used in sizing.
+        daily_m2m:           Per-strategy daily M2M PnL DataFrame (columns =
+                             strategy names).  Required for drawdown mode.
+        target_drawdown_pct: Target median MC max drawdown as a fraction of
+                             equity.  Ignored when ``target_margin_pct`` set.
+        target_margin_pct:   Target total margin as a fraction of equity.
+                             Takes precedence over ``target_drawdown_pct``.
+        n_simulations:       MC scenarios per iteration (fewer = faster).
+        max_scale:           Cap on upward scaling (default 3×) to prevent
+                             over-leveraging.
+        tolerance:           Convergence threshold for drawdown mode.
+        max_iter:            Maximum scaling iterations (drawdown mode only).
+        min_fraction:        Base minimum contract fraction (standard contracts).
+        contract_registry:   Optional registry for micro-aware min thresholds.
+    """
+    step_name = "adjust_mc"
+
+    # Determine mode — margin takes precedence
+    if target_margin_pct is not None:
+        mode = "margin"
+    elif target_drawdown_pct is not None:
+        mode = "drawdown"
+    else:
+        state.log.append(f"[{step_name}] No target specified — skipped")
+        return state
+
+    # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _eff_min(symbol: str) -> float:
+        family = (contract_registry or {}).get(symbol)
+        if family and family.has_smaller_contract():
+            return min_fraction * family.smallest_unit
+        return min_fraction
+
+    def _apply_scale(scale: float) -> int:
+        """Scale contracts, exclude those that fall below effective min. Returns removal count."""
+        removed = 0
+        for c in list(state.candidates):
+            name   = c["name"]
+            symbol = c.get("symbol", "")
+            new_n  = _round_to_fraction(state.contracts.get(name, 0.0) * scale, _eff_min(symbol))
+            if new_n < _eff_min(symbol):
+                state.exclude_strategy(
+                    name, step_name,
+                    f"Contract count {new_n:.3f} below minimum after MC scale ({scale:.3f}×)",
+                )
+                removed += 1
+            else:
+                state.contracts[name] = new_n
+        return removed
+
+    def _portfolio_pnl() -> np.ndarray:
+        if daily_m2m is None or daily_m2m.empty:
+            return np.array([], dtype=np.float64)
+        cols = [c["name"] for c in state.candidates if c["name"] in daily_m2m.columns]
+        if not cols:
+            return np.array([], dtype=np.float64)
+        scaled = daily_m2m[cols].multiply(
+            pd.Series({n: state.contracts.get(n, 1.0) for n in cols})
+        )
+        return scaled.sum(axis=1).dropna().values.astype(np.float64)
+
+    def _run_mc(pnl: np.ndarray) -> float:
+        """Return median max drawdown fraction from MC scenarios."""
+        if len(pnl) == 0:
+            return 0.0
+        from core.analytics.monte_carlo import _mc_core
+        _, dd, _ = _mc_core(pnl, state.equity, 0.0, n_simulations, 252, 0.0)
+        return float(np.median(dd))
+
+    # ── Margin mode ────────────────────────────────────────────────────────
+
+    if mode == "margin":
+        current_margin = state.total_margin_used(margins, contract_margin_multiple)
+        if current_margin <= 0:
+            state.log.append(f"[{step_name}] Margin mode: no margin usage — skipped")
+            return state
+        scale   = min((target_margin_pct * state.equity) / current_margin, max_scale)
+        removed = _apply_scale(scale)
+        final_m = state.total_margin_used(margins, contract_margin_multiple)
+        state.log.append(
+            f"[{step_name}] Margin mode: scale={scale:.3f}×, "
+            f"margin {current_margin:,.0f} → {final_m:,.0f} "
+            f"({final_m/state.equity:.1%} of equity). "
+            f"{removed} excluded, {len(state.candidates)} remain"
+        )
+        return state
+
+    # ── Drawdown mode ──────────────────────────────────────────────────────
+
+    if daily_m2m is None or daily_m2m.empty:
+        state.log.append(f"[{step_name}] Drawdown mode: no daily PnL data — skipped")
+        return state
+
+    total_removed = 0
+    current_dd    = 0.0
+
+    for iteration in range(max_iter):
+        pnl = _portfolio_pnl()
+        if len(pnl) == 0:
+            state.log.append(f"[{step_name}] Drawdown mode: no portfolio PnL — stopped")
+            break
+
+        current_dd = _run_mc(pnl)
+        if current_dd < 1e-6:
+            state.log.append(f"[{step_name}] Drawdown negligible after MC — no scaling needed")
+            break
+
+        if abs(current_dd - target_drawdown_pct) <= tolerance:
+            state.log.append(
+                f"[{step_name}] Converged (iter {iteration}): "
+                f"MC dd={current_dd:.1%} ≈ target {target_drawdown_pct:.1%}"
+            )
+            break
+
+        scale = min(target_drawdown_pct / current_dd, max_scale)
+        scale = max(scale, 0.01)   # floor guard against infinite-loop on extreme dd
+        n_removed      = _apply_scale(scale)
+        total_removed += n_removed
+        state.log.append(
+            f"[{step_name}] Iter {iteration + 1}: MC dd={current_dd:.1%}, "
+            f"target={target_drawdown_pct:.1%}, scale={scale:.3f}×, "
+            f"excluded={n_removed}"
+        )
+    else:
+        state.log.append(
+            f"[{step_name}] Max iterations ({max_iter}) reached. "
+            f"Final MC dd≈{current_dd:.1%}, target={target_drawdown_pct:.1%}"
+        )
+
+    final_m = state.total_margin_used(margins, contract_margin_multiple)
+    state.log.append(
+        f"[{step_name}] Done: {len(state.candidates)} strategies, "
+        f"{total_removed} excluded. "
+        f"Margin: {final_m:,.0f} ({final_m/state.equity:.1%})"
     )
     return state
 

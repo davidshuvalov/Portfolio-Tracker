@@ -29,6 +29,7 @@ from core.portfolio.optimizer import (
     step_adjust_correlations,
     step_adjust_gross_margins,
     step_adjust_drawdowns,
+    step_adjust_mc,
     portfolio_summary,
     _round_to_fraction,
 )
@@ -664,6 +665,178 @@ class TestStepAdjustDrawdowns:
             max_single_trade_pct=0.01, min_fraction=0.1,
         )
         assert state.contracts["A"] == pytest.approx(5.0)
+
+
+# ── step_adjust_mc ────────────────────────────────────────────────────────────
+
+_MC_MARGINS = {"ES": 10_000.0, "NQ": 15_000.0}
+_MC_MULT    = 1.0
+
+
+def _mc_state(contracts: dict[str, float], equity: float = 500_000.0) -> OptimizerState:
+    """Build a state where each name has symbol=ES and the given contracts."""
+    strats = [_strat(n, symbol="ES") for n in contracts]
+    s = _state(strats, equity=equity)
+    s.contracts = dict(contracts)
+    return s
+
+
+def _daily_m2m(names: list[str], n_days: int = 500, seed: int = 42) -> pd.DataFrame:
+    """Random daily PnL DataFrame for the given strategy names."""
+    rng = __import__("numpy").random.default_rng(seed)
+    data = rng.normal(500, 2_000, size=(n_days, len(names)))
+    return pd.DataFrame(data, columns=names)
+
+
+class TestStepAdjustMcMarginMode:
+    """Margin-mode: single-shot uniform contract scaling."""
+
+    def test_scales_up_to_target(self):
+        # current margin = 2 × 10_000 = 20_000; target = 60% of 100_000 = 60_000
+        # scale = 60_000 / 20_000 = 3.0  (exactly at max_scale default)
+        s = _mc_state({"A": 1.0, "B": 1.0}, equity=100_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_margin_pct=0.60, max_scale=3.0, min_fraction=0.1,
+        )
+        assert s.contracts["A"] == pytest.approx(3.0)
+        assert s.contracts["B"] == pytest.approx(3.0)
+
+    def test_scales_down_to_target(self):
+        # current margin = 2 × 10_000 = 20_000; equity = 20_000; target = 50% = 10_000
+        # scale = 10_000 / 20_000 = 0.5
+        s = _mc_state({"A": 1.0, "B": 1.0}, equity=20_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_margin_pct=0.50, max_scale=3.0, min_fraction=0.1,
+        )
+        assert s.contracts["A"] == pytest.approx(0.5)
+        assert s.contracts["B"] == pytest.approx(0.5)
+
+    def test_max_scale_caps_upward_scaling(self):
+        # Would need scale=10; capped at max_scale=2.0
+        s = _mc_state({"A": 1.0}, equity=100_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_margin_pct=1.0, max_scale=2.0, min_fraction=0.1,
+        )
+        assert s.contracts["A"] == pytest.approx(2.0)
+
+    def test_strategy_excluded_after_scale_below_min(self):
+        # scale = 0.5; 1.0 × 0.5 = 0.5 < min_fraction=0.65 → excluded
+        s = _mc_state({"A": 1.0}, equity=1_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_margin_pct=0.50, max_scale=3.0, min_fraction=0.65,
+        )
+        assert len(s.candidates) == 0
+        assert s.excluded[0].step == "adjust_mc"
+
+    def test_no_candidates_returns_unchanged(self):
+        s = _mc_state({})
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT, target_margin_pct=0.60,
+        )
+        assert len(s.candidates) == 0
+
+    def test_zero_margin_usage_skips(self):
+        # Symbol not in margins dict → uses default 5_000 margin
+        # but if we pass empty margins and equity=0 it still runs safely
+        s = _mc_state({"A": 0.0})   # 0 contracts → 0 margin
+        before_log = len(s.log)
+        s = step_adjust_mc(
+            s, {}, _MC_MULT, target_margin_pct=0.60,
+        )
+        assert any("skipped" in line or "no margin" in line for line in s.log[before_log:])
+
+    def test_log_message_contains_scale_and_margin(self):
+        s = _mc_state({"A": 1.0}, equity=100_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_margin_pct=0.50, max_scale=3.0, min_fraction=0.1,
+        )
+        assert any("Margin mode" in line for line in s.log)
+
+    def test_both_targets_none_logs_skipped(self):
+        s = _mc_state({"A": 1.0})
+        s = step_adjust_mc(s, _MC_MARGINS, _MC_MULT)
+        assert any("skipped" in line for line in s.log)
+        assert s.contracts["A"] == pytest.approx(1.0)   # unchanged
+
+    def test_margin_mode_takes_precedence_over_drawdown(self):
+        # Both targets set — margin should win (no MC run)
+        s = _mc_state({"A": 1.0, "B": 1.0}, equity=100_000)
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            target_drawdown_pct=0.20,
+            target_margin_pct=0.20,   # margin wins
+            max_scale=3.0, min_fraction=0.1,
+        )
+        # scale = (0.20 × 100_000) / 20_000 = 1.0 → contracts unchanged
+        assert s.contracts["A"] == pytest.approx(1.0)
+        assert any("Margin mode" in line for line in s.log)
+
+
+class TestStepAdjustMcDrawdownMode:
+    """Drawdown-mode: MC-based iterative contract scaling."""
+
+    def test_no_daily_m2m_logs_skipped(self):
+        s = _mc_state({"A": 1.0, "B": 1.0})
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            daily_m2m=None, target_drawdown_pct=0.20,
+        )
+        assert any("skipped" in line for line in s.log)
+        assert s.contracts["A"] == pytest.approx(1.0)
+
+    def test_empty_daily_m2m_skips(self):
+        s = _mc_state({"A": 1.0})
+        s = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            daily_m2m=pd.DataFrame(), target_drawdown_pct=0.20,
+        )
+        assert any("skipped" in line for line in s.log)
+
+    def test_contracts_change_to_reduce_drawdown(self):
+        # Very large contracts with volatile PnL → high MC drawdown → scale down
+        s = _mc_state({"A": 10.0, "B": 10.0}, equity=500_000)
+        m2m = _daily_m2m(["A", "B"], n_days=500, seed=7)
+        # Use tight target (5%) to force a downward scale
+        s_after = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            daily_m2m=m2m, target_drawdown_pct=0.05,
+            n_simulations=500, max_scale=3.0, min_fraction=0.1, max_iter=5,
+        )
+        # Contracts must have been scaled down
+        assert s_after.contracts.get("A", 0.0) < 10.0 or s_after.contracts.get("B", 0.0) < 10.0
+
+    def test_already_at_target_leaves_contracts_unchanged(self):
+        # Very small contracts → near-zero drawdown; target 50% → well above current dd
+        # Strategy: target_drawdown_pct = 0.99 (99%) means no scale needed
+        # since current dd << 0.99, scale = 0.99 / current_dd → capped at max_scale=1.0
+        s = _mc_state({"A": 0.1, "B": 0.1}, equity=500_000)
+        m2m = _daily_m2m(["A", "B"], n_days=500, seed=7)
+        contracts_before = dict(s.contracts)
+        s_after = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            daily_m2m=m2m, target_drawdown_pct=0.99,
+            n_simulations=500, max_scale=1.0,   # cap at 1× → no upward scale
+            min_fraction=0.1, max_iter=3,
+        )
+        # With max_scale=1.0 contracts can only stay or decrease
+        for name, old in contracts_before.items():
+            assert s_after.contracts.get(name, 0.0) <= old + 1e-9
+
+    def test_strategies_not_in_daily_m2m_ignored_gracefully(self):
+        # Strategy "C" has no data column — should not crash
+        s = _mc_state({"A": 1.0, "B": 1.0, "C": 1.0}, equity=500_000)
+        m2m = _daily_m2m(["A", "B"], n_days=300, seed=3)  # no "C" column
+        s_after = step_adjust_mc(
+            s, _MC_MARGINS, _MC_MULT,
+            daily_m2m=m2m, target_drawdown_pct=0.20,
+            n_simulations=500, max_scale=3.0, min_fraction=0.1, max_iter=3,
+        )
+        assert "C" in s_after.contracts   # still in portfolio (not excluded by this step)
 
 
 # ── build_candidates ──────────────────────────────────────────────────────────

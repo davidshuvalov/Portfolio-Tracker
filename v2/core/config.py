@@ -94,6 +94,7 @@ class PortfolioOptimizerConfig(BaseModel):
             "adjust_correlations",
             "adjust_gross_margins",
             "adjust_drawdowns",
+            "adjust_mc",
         ]
     )
     # Set of currently-enabled step keys (subset of workflow_steps)
@@ -108,6 +109,7 @@ class PortfolioOptimizerConfig(BaseModel):
             "adjust_correlations",
             "adjust_gross_margins",
             "adjust_drawdowns",
+            "adjust_mc",
         ]
     )
     # ── Filter step params ─────────────────────────────────────────────────
@@ -132,6 +134,13 @@ class PortfolioOptimizerConfig(BaseModel):
     max_avg_drawdown_pct: float = 0.05          # 5% of equity
     max_single_drawdown_pct: float = 0.125      # 12.5% of equity
     max_single_trade_loss_pct: float = 0.05     # 5% of equity
+    # ── Monte Carlo targeting ──────────────────────────────────────────────
+    mc_target_mode: Literal["drawdown", "margin", "off"] = "drawdown"
+    mc_target_drawdown_pct: float = 0.20        # 20% of equity — target MC median max dd
+    mc_target_margin_pct: float = 0.60          # 60% of equity — target margin utilisation
+    mc_simulations: int = 2_000                 # scenarios per iteration (speed vs precision)
+    mc_max_scale: float = 3.0                   # cap on upward contract scaling
+    mc_tolerance: float = 0.02                  # convergence band for drawdown mode
 
 
 class IncubationConfig(BaseModel):

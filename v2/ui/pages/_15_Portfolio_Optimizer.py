@@ -53,6 +53,7 @@ _STEP_LABELS: dict[str, str] = {
     "adjust_correlations":     "Adjust: Correlation Limits",
     "adjust_gross_margins":    "Adjust: Gross Margin Limits",
     "adjust_drawdowns":        "Adjust: Drawdown Controls",
+    "adjust_mc":               "Adjust: Monte Carlo Target",
 }
 
 _STEP_ICONS: dict[str, str] = {
@@ -65,6 +66,7 @@ _STEP_ICONS: dict[str, str] = {
     "adjust_correlations":     "🟠",
     "adjust_gross_margins":    "🟠",
     "adjust_drawdowns":        "🟠",
+    "adjust_mc":               "🎲",
 }
 
 _ALL_STEPS = list(_STEP_LABELS.keys())
@@ -281,6 +283,59 @@ with st.sidebar:
             key="opt_max_single_dd",
         )
 
+    # ── Monte Carlo Targeting ─────────────────────────────────────────────
+    with st.expander("Monte Carlo Target", expanded=False):
+        _MC_MODE_LABELS = {
+            "drawdown": "Max Drawdown",
+            "margin":   "Margin Utilisation",
+            "off":      "Off",
+        }
+        opt_mc_mode = st.radio(
+            "Target mode",
+            options=list(_MC_MODE_LABELS.keys()),
+            index=list(_MC_MODE_LABELS.keys()).index(
+                opt_cfg.mc_target_mode
+                if opt_cfg.mc_target_mode in _MC_MODE_LABELS else "drawdown"
+            ),
+            format_func=lambda m: _MC_MODE_LABELS[m],
+            key="opt_mc_mode",
+            help=(
+                "**Max Drawdown**: scale all contracts via MC simulation until "
+                "the portfolio's median max drawdown hits the target.\n\n"
+                "**Margin Utilisation**: scale contracts so total margin equals "
+                "the target fraction of equity (no MC needed)."
+            ),
+        )
+        if opt_mc_mode == "drawdown":
+            st.slider(
+                "Target max drawdown (% equity)",
+                0.05, 0.50, float(opt_cfg.mc_target_drawdown_pct), 0.01,
+                format="%.0f%%",
+                key="opt_mc_dd_target",
+                help="Contracts are scaled until MC median max dd ≈ this level.",
+            )
+        elif opt_mc_mode == "margin":
+            st.slider(
+                "Target margin utilisation (% equity)",
+                0.10, 1.00, float(opt_cfg.mc_target_margin_pct), 0.05,
+                format="%.0f%%",
+                key="opt_mc_margin_target",
+                help="Contracts are scaled so total margin usage = target × equity.",
+            )
+        st.number_input(
+            "MC simulations",
+            min_value=500, max_value=20_000, step=500,
+            value=int(opt_cfg.mc_simulations), format="%d",
+            key="opt_mc_sims",
+            help="Number of scenarios per iteration. 2,000 balances speed and precision.",
+        )
+        st.slider(
+            "Max scale factor",
+            1.0, 5.0, float(opt_cfg.mc_max_scale), 0.5,
+            key="opt_mc_max_scale",
+            help="Cap on upward contract scaling. Prevents over-leveraging.",
+        )
+
     st.divider()
     if st.button("Save as Defaults", key="opt_save_defaults"):
         config.optimizer.workflow_steps      = list(st.session_state.opt_workflow)
@@ -300,6 +355,11 @@ with st.sidebar:
         config.optimizer.max_sector_margin_pct          = float(opt_max_sec_pct)
         config.optimizer.max_avg_drawdown_pct    = float(opt_max_avg_dd)
         config.optimizer.max_single_drawdown_pct = float(opt_max_single_dd)
+        config.optimizer.mc_target_mode          = st.session_state.get("opt_mc_mode", opt_cfg.mc_target_mode)
+        config.optimizer.mc_target_drawdown_pct  = float(st.session_state.get("opt_mc_dd_target", opt_cfg.mc_target_drawdown_pct))
+        config.optimizer.mc_target_margin_pct    = float(st.session_state.get("opt_mc_margin_target", opt_cfg.mc_target_margin_pct))
+        config.optimizer.mc_simulations          = int(st.session_state.get("opt_mc_sims", opt_cfg.mc_simulations))
+        config.optimizer.mc_max_scale            = float(st.session_state.get("opt_mc_max_scale", opt_cfg.mc_max_scale))
         config.save()
         st.session_state.config = config
         st.success("Defaults saved.")
@@ -364,6 +424,7 @@ if run_btn and _prereqs_ok:
             step_adjust_correlations,
             step_adjust_gross_margins,
             step_adjust_drawdowns,
+            step_adjust_mc,
             portfolio_summary,
         )
         from core.analytics.atr import compute_atr
@@ -399,16 +460,15 @@ if run_btn and _prereqs_ok:
             except Exception:
                 pass
 
-        # ── 4. Correlation matrix ─────────────────────────────────────────
+        # ── 4. Correlation matrix (and daily_m2m for MC step) ────────────
+        daily_m2m = getattr(_imported, "daily_m2m", None)
         _corr: pd.DataFrame | None = st.session_state.get("correlation_matrix")
-        if _corr is None:
-            daily_m2m = getattr(_imported, "daily_m2m", None)
-            if daily_m2m is not None and not daily_m2m.empty:
-                try:
-                    from core.analytics.correlations import compute_correlation_matrix
-                    _corr = compute_correlation_matrix(daily_m2m)
-                except Exception:
-                    pass
+        if _corr is None and daily_m2m is not None and not daily_m2m.empty:
+            try:
+                from core.analytics.correlations import compute_correlation_matrix
+                _corr = compute_correlation_matrix(daily_m2m)
+            except Exception:
+                pass
 
         # ── 5. Build workflow steps ───────────────────────────────────────
         _active_workflow = [
@@ -488,6 +548,28 @@ if run_btn and _prereqs_ok:
                     "max_avg_pct": float(st.session_state.get("opt_max_avg_dd", opt_cfg.max_avg_drawdown_pct)),
                     "max_single_pct": float(st.session_state.get("opt_max_single_dd", opt_cfg.max_single_drawdown_pct)),
                     "max_single_trade_pct": float(opt_cfg.max_single_trade_loss_pct),
+                    "min_fraction": float(st.session_state.get("opt_min_frac", opt_cfg.min_contract_fraction)),
+                },
+            ),
+            "adjust_mc": (
+                step_adjust_mc,
+                {
+                    "margins": margins,
+                    "contract_margin_multiple": float(st.session_state.get("opt_margin_mult", cs_cfg.contract_margin_multiple)),
+                    "daily_m2m": daily_m2m,
+                    "target_drawdown_pct": (
+                        float(st.session_state.get("opt_mc_dd_target", opt_cfg.mc_target_drawdown_pct))
+                        if st.session_state.get("opt_mc_mode", opt_cfg.mc_target_mode) == "drawdown"
+                        else None
+                    ),
+                    "target_margin_pct": (
+                        float(st.session_state.get("opt_mc_margin_target", opt_cfg.mc_target_margin_pct))
+                        if st.session_state.get("opt_mc_mode", opt_cfg.mc_target_mode) == "margin"
+                        else None
+                    ),
+                    "n_simulations": int(st.session_state.get("opt_mc_sims", opt_cfg.mc_simulations)),
+                    "max_scale": float(st.session_state.get("opt_mc_max_scale", opt_cfg.mc_max_scale)),
+                    "tolerance": float(opt_cfg.mc_tolerance),
                     "min_fraction": float(st.session_state.get("opt_min_frac", opt_cfg.min_contract_fraction)),
                 },
             ),
