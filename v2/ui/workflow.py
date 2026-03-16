@@ -101,6 +101,9 @@ def render_workflow_sidebar() -> None:
             ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py"),
             ("Margin Tracking",      "ui/pages/_10_Margin_Tracking.py"),
             ("Position Check",       "ui/pages/_11_Position_Check.py"),
+            ("Diversificator",       "ui/pages/_13_Diversificator.py"),
+            ("Portfolio Compare",    "ui/pages/_14_Portfolio_Compare.py"),
+            ("Portfolio Optimizer",  "ui/pages/_15_Portfolio_Optimizer.py"),
         ]
         for _label, _page in _analytics:
             st.page_link(_page, label=_label)
