@@ -446,32 +446,36 @@ Sub UpdateStrategyStatuses()
 
     If updatedCount > 0 Then
         Call OrganizeStrategiesTab
-    
+
         Call FormatStrategiesTab(wsStrategies)
-    
-        Call UpdateStrategySummaryWithArray("Yes")
-        
-        Call ResetAndMoveSummaryTab
-    
+
+        ' Performance recalculation is intentionally NOT triggered here.
+        ' Run "Recalculate Performance" separately to rebuild Summary metrics
+        ' once you are happy with all status changes.
     End If
-    
-    
+
+
     Application.ScreenUpdating = True
     Application.StatusBar = False
     Application.EnableEvents = True
-    
+
     ' Report results
     If updatedCount > 0 Or notFoundCount > 0 Then
         Dim msg As String
-        msg = "Update Complete:" & vbNewLine & _
-              updatedCount & " strategies updated"
-        
+        msg = "Status changes saved:" & vbNewLine & _
+              updatedCount & " strategy status(es) updated in Strategies sheet."
+
+        If updatedCount > 0 Then
+            msg = msg & vbNewLine & vbNewLine & _
+                  "Next step: click 'Recalculate Performance' to update Summary metrics."
+        End If
+
         If notFoundCount > 0 Then
             msg = msg & vbNewLine & vbNewLine & _
-                  notFoundCount & " strategies not found:" & vbNewLine & _
+                  notFoundCount & " strategies not found in Strategies sheet:" & vbNewLine & _
                   strategyList
         End If
-        
+
         MsgBox msg, vbInformation
     Else
         MsgBox "No updates needed. All statuses are current.", vbInformation

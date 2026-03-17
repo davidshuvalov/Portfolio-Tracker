@@ -2602,6 +2602,57 @@ End Function
 
 
 
+Sub RecalculatePerformance()
+    ' Phase 2 of the three-phase workflow:
+    '   Phase 1 — Save Status Changes  (UpdateStrategyStatuses)
+    '   Phase 2 — Recalculate Performance  (this sub)
+    '   Phase 3 — Update Portfolio  (CreatePortfolioSummary)
+    '
+    ' Rebuilds all Summary performance metrics using existing imported data.
+    ' Requires DailyM2MEquity (and Walkforward Details) to already be present
+    ' in the workbook — run "Import Data" first if they are missing.
+
+    If Not IsLicenseValid() Then
+        MsgBox "Invalid or missing license. The tool will not function without a valid license.", vbCritical
+        Exit Sub
+    End If
+
+    ' Validate that the required data sheets are present
+    Dim wsDM2M As Worksheet
+    Dim wsWF As Worksheet
+    On Error Resume Next
+    Set wsDM2M = ThisWorkbook.Sheets("DailyM2MEquity")
+    Set wsWF   = ThisWorkbook.Sheets("Walkforward Details")
+    On Error GoTo 0
+
+    If wsDM2M Is Nothing Then
+        MsgBox "DailyM2MEquity sheet not found." & vbCrLf & vbCrLf & _
+               "Please run 'Import Data' first to load strategy data, " & _
+               "then re-run Recalculate Performance.", _
+               vbExclamation, "Data Not Found"
+        Exit Sub
+    End If
+
+    If wsWF Is Nothing Then
+        MsgBox "Walkforward Details sheet not found." & vbCrLf & vbCrLf & _
+               "Please run 'Import Data' first to load strategy data, " & _
+               "then re-run Recalculate Performance.", _
+               vbExclamation, "Data Not Found"
+        Exit Sub
+    End If
+
+    ' Rebuild Summary metrics from existing data sheets
+    Call UpdateStrategySummaryWithArray("Yes")
+
+    ' Reposition the Summary tab in the correct place
+    Call ResetAndMoveSummaryTab
+
+    MsgBox "Performance recalculation complete." & vbCrLf & vbCrLf & _
+           "Next step: click 'Update Portfolio' to rebuild the Portfolio sheet.", _
+           vbInformation, "Recalculate Performance"
+End Sub
+
+
 Sub CreateSummaryButtons(ws As Worksheet, colNumber As Long, currenttab As String)
     Dim btn As Object
     Dim captions As Variant
@@ -2611,9 +2662,14 @@ Sub CreateSummaryButtons(ws As Worksheet, colNumber As Long, currenttab As Strin
     
     
     If currenttab = "Summary" Then
-    ' Define button captions and their corresponding macros
-    captions = Array("Control Tab", "Strategies Tab", "Inputs Tab", "Portfolio Tab", "Update Portfolio", "Save Status Changes")
-    actions = Array("GoToControl", "GoToStrategies", "GoToInputs", "GoToPortfolio", "CreatePortfolioSummary", "UpdateStrategyStatuses")
+    ' Three-phase workflow buttons:
+    '   Navigation  |  Phase 1: Save Status Changes
+    '               |  Phase 2: Recalculate Performance
+    '               |  Phase 3: Update Portfolio
+    captions = Array("Control Tab", "Strategies Tab", "Inputs Tab", "Portfolio Tab", _
+                     "Save Status Changes", "Recalculate Performance", "Update Portfolio")
+    actions  = Array("GoToControl", "GoToStrategies", "GoToInputs", "GoToPortfolio", _
+                     "UpdateStrategyStatuses", "RecalculatePerformance", "CreatePortfolioSummary")
     End If
     
     If currenttab = "Portfolio" Then
