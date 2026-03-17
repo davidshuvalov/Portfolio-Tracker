@@ -404,6 +404,7 @@ def main():
             st.Page("ui/pages/_13_Diversificator.py", title="Diversificator"),
             st.Page("ui/pages/_14_Portfolio_Compare.py", title="Portfolio Compare"),
             st.Page("ui/pages/_15_Portfolio_Optimizer.py", title="Portfolio Optimizer"),
+            st.Page("ui/pages/00_Inputs.py", title="Inputs"),
             st.Page("ui/pages/00_Migrate.py", title="Migrate"),
             st.Page("ui/pages/_Strategy_Detail.py", title="Strategy Detail"),
         ],
