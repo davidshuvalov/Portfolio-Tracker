@@ -520,7 +520,7 @@ Function GetDesiredTabOrder() As Variant
         "Disclosure", "ReadMe", "Inputs", "Control", _
         "MW Folder Locations", "Status Changes", _
         "Strategies", "Backtest", _
-        "Summary", "Portfolio", "PortfolioGraphs", "SectorTypeGraphs", "SizingGraphs", _
+        "Summary", "Portfolio", "PortfolioHistory", "PortfolioGraphs", "SectorTypeGraphs", "SizingGraphs", _
         "PortfolioMC", "Diversificator", "LeaveOneOut", _
         "Correlations", "NegativeCorrelations", "DrawdownCorrelations", "CorrelationPeriodAnalysis", _
         "PNLCorrelations", "ATRCorrelations", "ContractMarginTracking", "Latest Positions", _
