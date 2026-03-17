@@ -2674,8 +2674,8 @@ Sub CreateSummaryButtons(ws As Worksheet, colNumber As Long, currenttab As Strin
     
     If currenttab = "Portfolio" Then
     ' Define button captions and their corresponding macros
-    captions = Array("Control Tab", "Inputs Tab", "Check New Strats", "Summary Tab", "Update Portfolio", "Save Contract Changes")
-    actions = Array("GoToControl", "GoToInputs", "IdentifyNewStrategiesAndContractChanges", "GoToSummary", "CreatePortfolioSummary", "UpdateStrategyContracts")
+    captions = Array("Control Tab", "Inputs Tab", "Check New Strats", "Summary Tab", "Update Portfolio", "Save Contract Changes", "Portfolio History")
+    actions = Array("GoToControl", "GoToInputs", "IdentifyNewStrategiesAndContractChanges", "GoToSummary", "CreatePortfolioSummary", "UpdateStrategyContracts", "GoToPortfolioHistory")
     End If
     
     
