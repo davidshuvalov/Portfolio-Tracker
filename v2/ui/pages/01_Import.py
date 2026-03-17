@@ -212,6 +212,24 @@ if scan_clicked:
                 "WF Details": "Yes" if sf.walkforward_csv else "No",
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        # Export folder paths for pasting into MultiWalk
+        _paths = "\n".join(str(sf.path) for sf in result.strategies)
+        with st.expander("Export folder paths (for MultiWalk)"):
+            st.text_area(
+                "Strategy folder paths — one per line",
+                value=_paths,
+                height=200,
+                label_visibility="collapsed",
+                help="Copy and paste these paths into MultiWalk.",
+            )
+            st.download_button(
+                "Download as .txt",
+                data=_paths,
+                file_name="strategy_folders.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
     else:
         st.warning("No strategies found. Check your folder paths.")
 
