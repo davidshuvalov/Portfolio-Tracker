@@ -120,6 +120,8 @@ Sub CreateMarketsSummary()
     Dim v As Double
     Dim belowCount As Long, totalCount As Long
     Dim ratio As Double
+    Dim rollAvg As Double, rollSum As Double, rollN As Long
+    Dim k As Long, dateJ As Date, dateK As Date
 
     For i = 1 To contractCount
         ' Trend: current 3M ATR relative to 12M average
@@ -136,16 +138,31 @@ Sub CreateMarketsSummary()
             atrTrend(i) = "N/A"
         End If
 
-        ' Percentile: where does atr3M sit in the full distribution of exit-trade ATRs?
+        ' Percentile: rank of current 90-day avg (atr3M) among all historical 90-day rolling averages.
+        ' This matches the calendar-based window used by CalculateAverageATR (dateCutoff = 90 days).
         col = trColMap(i)
         If col > 0 Then
             belowCount = 0
             totalCount = 0
             For j = 1 To trRowCount
-                v = trData(j, col)
-                If v > 0 Then
-                    totalCount = totalCount + 1
-                    If v <= atr3M(i) Then belowCount = belowCount + 1
+                If IsDate(trData(j, 1)) Then
+                    dateJ = CDate(trData(j, 1))
+                    rollSum = 0: rollN = 0
+                    For k = j To 1 Step -1
+                        If IsDate(trData(k, 1)) Then
+                            dateK = CDate(trData(k, 1))
+                            If DateDiff("d", dateK, dateJ) > 90 Then Exit For
+                            If trData(k, col) > 0 Then
+                                rollSum = rollSum + trData(k, col)
+                                rollN = rollN + 1
+                            End If
+                        End If
+                    Next k
+                    If rollN > 0 Then
+                        rollAvg = rollSum / rollN
+                        totalCount = totalCount + 1
+                        If rollAvg <= atr3M(i) Then belowCount = belowCount + 1
+                    End If
                 End If
             Next j
             If totalCount > 0 Then
@@ -176,10 +193,8 @@ Sub CreateMarketsSummary()
             sec = CStr(wsSummary.Cells(j, COL_SECTOR).Value)
             If sym = "" Then GoTo NextSumRow
             For i = 1 To contractCount
-                ' Flexible match: contract name as substring of symbol or vice-versa
-                If StrComp(sym, contracts(i), vbTextCompare) = 0 _
-                Or InStr(1, sym, contracts(i), vbTextCompare) > 0 _
-                Or InStr(1, contracts(i), sym, vbTextCompare) > 0 Then
+                ' Exact case-insensitive match only — avoids false positives (e.g. "ES" matching "ESET")
+                If StrComp(sym, contracts(i), vbTextCompare) = 0 Then
                     stratCounts(i) = stratCounts(i) + 1
                     If sectors(i) = "" And sec <> "" Then sectors(i) = sec
                     Exit For
