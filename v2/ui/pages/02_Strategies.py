@@ -487,6 +487,7 @@ with tab_summary:
                     date_format=_cfg.date_format,
                     use_cutoff=_cfg.portfolio.use_cutoff,
                     cutoff_date=_cutoff,
+                    days_threshold=_cfg.eligibility.days_threshold_oos,
                 )
             st.success(f"Summary computed for {len(st.session_state[_SUMMARY_KEY])} strategies.")
 

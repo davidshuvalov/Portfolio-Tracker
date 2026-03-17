@@ -1317,7 +1317,7 @@ Sub CalculateProfitAndDrawdown(wsM2MEquity As Worksheet, strategyColumn As Long,
             If profitLast9Months = "" Then
                 wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = ""
             Else
-                wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = profitLast9Months / (ISAnnualizedProfit / (3 / 4))
+                wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = profitLast9Months / (ISAnnualizedProfit * (3 / 4))
             End If
             
             If profitLast12Months = "" Then

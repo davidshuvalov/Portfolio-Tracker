@@ -350,19 +350,33 @@ def _compute_dynamic_metrics(
             )
         # else: leave as None (not enough history in scope)
 
-    # ── Efficiency (profit / expected_monthly) ────────────────────────────────
-    # expected monthly = expected_annual_profit / 12
-    exp_monthly = expected_annual_profit / 12.0 if expected_annual_profit > 0 else 0.0
-    for months, profit_key, eff_key in [
-        (1,  "profit_last_1_month",  "efficiency_last_1_month"),
-        (3,  "profit_last_3_months", "efficiency_last_3_months"),
-        (6,  "profit_last_6_months", "efficiency_last_6_months"),
-        (9,  "profit_last_9_months", "efficiency_last_9_months"),
-        (12, "profit_last_12_months", "efficiency_last_12_months"),
-    ]:
-        p = result[profit_key]
-        if p is not None and exp_monthly > 0:
-            result[eff_key] = p / (exp_monthly * months)
+    # ── Efficiency (profit / expected_annual × window_fraction) ──────────────
+    # Calendar mode (days_threshold > 0): mirrors VBA — use actual calendar days
+    #     efficiency = profit / (expected_annual × actual_days / 365.25)
+    # Rolling mode (days_threshold = 0): use months/12
+    #     efficiency = profit / (expected_annual × months / 12)
+    if expected_annual_profit > 0:
+        for wkey, profit_key, eff_key in [
+            ("1m",  "profit_last_1_month",   "efficiency_last_1_month"),
+            ("3m",  "profit_last_3_months",  "efficiency_last_3_months"),
+            ("6m",  "profit_last_6_months",  "efficiency_last_6_months"),
+            ("9m",  "profit_last_9_months",  "efficiency_last_9_months"),
+            ("12m", "profit_last_12_months", "efficiency_last_12_months"),
+        ]:
+            p = result[profit_key]
+            if p is None:
+                continue
+            start_ts = window_starts.get(wkey)
+            if start_ts is not None and days_threshold > 0:
+                # Calendar mode: actual days in window (matches VBA daysN = DateDiff + 1)
+                actual_days = (effective_end_ts - start_ts).days + 1
+                denom = expected_annual_profit * actual_days / 365.25
+            else:
+                # Rolling mode: fixed months/12 fraction
+                months_map = {"1m": 1, "3m": 3, "6m": 6, "9m": 9, "12m": 12}
+                denom = expected_annual_profit * months_map[wkey] / 12.0
+            if denom != 0:
+                result[eff_key] = p / denom
 
     # ── Profit since OOS start ────────────────────────────────────────────────
     result["profit_since_oos_start"] = float(oos_pnl.sum())

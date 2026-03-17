@@ -108,6 +108,7 @@ if _needs_rebuild:
             date_format=config.date_format,
             use_cutoff=config.portfolio.use_cutoff,
             cutoff_date=cutoff,
+            days_threshold=config.eligibility.days_threshold_oos,
             incubation_months=config.incubation.months,
             min_incubation_ratio=config.incubation.min_profit_ratio,
             eligibility_months=config.eligibility.eligibility_months,
