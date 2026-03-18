@@ -96,6 +96,7 @@ def render_workflow_sidebar() -> None:
             unsafe_allow_html=True,
         )
         _analytics = [
+            ("Live Backtest",        "ui/pages/_03b_Live_Backtest.py"),
             ("Monte Carlo",          "ui/pages/_04_Monte_Carlo.py"),
             ("Correlations",         "ui/pages/_05_Correlations.py"),
             ("Diversification",      "ui/pages/_06_Diversification.py"),

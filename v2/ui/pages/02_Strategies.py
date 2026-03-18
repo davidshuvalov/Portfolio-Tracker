@@ -34,8 +34,8 @@ if not strategies:
     st.stop()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_config, tab_summary, tab_backtest = st.tabs([
-    "⚙ Configure", "📊 Performance Summary", "📈 Live Backtest"
+tab_config, tab_summary, tab_screener = st.tabs([
+    "⚙ Configure", "📊 Performance Summary", "🔍 Strategy Screener"
 ])
 
 
@@ -965,212 +965,237 @@ with tab_summary:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Live Backtest tab
+# Strategy Screener tab
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_backtest:
-    import plotly.express as px
-    from core.portfolio.snapshot import list_snapshots as _list_snaps_bt, load_snapshot as _load_snap_bt
-
+with tab_screener:
     st.caption(
-        "Reconstruct your live trading performance by defining which strategies you were "
-        "trading and for which periods. The equity curve is built from the imported daily M2M data."
+        "Screen strategies against key performance metrics to identify candidates for the portfolio. "
+        "Apply filters, review the shortlist, and add selected strategies to Live with one click."
     )
 
-    _bt_imported = st.session_state.get("imported_data")
-    if _bt_imported is None:
-        st.info("Import data first to use the Live Backtest.")
-        st.stop()
+    _scr_sm = st.session_state.get("all_strategies_summary_cache")
+    _scr_imported = st.session_state.get("imported_data")
 
-    _bt_all_names = sorted({s.get("name", "") for s in strategies if s.get("name")})
-    _bt_m2m: pd.DataFrame = _bt_imported.daily_m2m
+    if _scr_sm is None or _scr_sm.empty:
+        st.info(
+            "No summary data computed yet. "
+            "Go to **Performance Summary → Compute / Refresh** to load strategy metrics first."
+        )
+        st.page_link("ui/pages/02_Strategies.py", label="Go to Performance Summary →")
+    else:
+        from core.config import AppConfig as _AC_scr
 
-    _bt_mode = st.radio(
-        "Backtest mode",
-        ["Manual Entries", "Portfolio Periods"],
-        horizontal=True,
-        help=(
-            "**Manual**: Add individual strategies with custom contracts and date ranges.  \n"
-            "**Portfolio Periods**: Use saved portfolio snapshots to stitch together your "
-            "actual live-trading history across multiple portfolio versions."
-        ),
-    )
+        _scr_cfg = st.session_state.get("config", _AC_scr.load())
+        _scr_live_status = _scr_cfg.portfolio.live_status
 
-    st.divider()
+        # Merge status into summary
+        _scr_strats_map = {s.get("name"): s for s in strategies}
+        _scr_df = _scr_sm.copy()
+        _scr_df["status"] = _scr_df.index.map(
+            lambda n: _scr_strats_map.get(n, {}).get("status", "")
+        )
+        _scr_df["contracts"] = _scr_df.index.map(
+            lambda n: int(_scr_strats_map.get(n, {}).get("contracts") or 1)
+        )
+        _scr_df["in_portfolio"] = _scr_df["status"] == _scr_live_status
 
-    # ── Manual mode ───────────────────────────────────────────────────────────
-    if _bt_mode == "Manual Entries":
-        st.markdown("### Add Strategy Entries")
-        st.caption(
-            "Each row represents a strategy you were trading with a specific contract count "
-            "over a date range. Add multiple rows — they are summed to produce the combined curve."
+        # ── Screener filters ──────────────────────────────────────────────────
+        st.subheader("Filters")
+        _sf1, _sf2, _sf3 = st.columns(3)
+
+        with _sf1:
+            # Return efficiency filter
+            _eff_min = float(
+                _scr_df["return_efficiency"].min()
+                if "return_efficiency" in _scr_df.columns else 0
+            )
+            _eff_max = float(
+                _scr_df["return_efficiency"].max()
+                if "return_efficiency" in _scr_df.columns else 100
+            )
+            _eff_filter = st.slider(
+                "Min Return Efficiency (%)",
+                min_value=0.0, max_value=max(_eff_max, 0.1),
+                value=0.0, step=5.0,
+                key="scr_eff_filter",
+                help="Filter to strategies with return efficiency above this threshold.",
+            )
+
+            # OOS drawdown filter
+            _dd_vals = _scr_df["max_oos_drawdown"].dropna() if "max_oos_drawdown" in _scr_df.columns else pd.Series([0])
+            _dd_min_val = float(_dd_vals.min()) if len(_dd_vals) else 0.0
+            _dd_max_val = float(_dd_vals.max()) if len(_dd_vals) else 0.0
+            _dd_filter = st.slider(
+                "Max OOS Drawdown ($) — absolute value",
+                min_value=0.0,
+                max_value=max(abs(_dd_min_val), abs(_dd_max_val), 1.0),
+                value=max(abs(_dd_min_val), abs(_dd_max_val), 1.0),
+                step=500.0,
+                key="scr_dd_filter",
+                help="Exclude strategies whose OOS max drawdown exceeds this amount (absolute).",
+            )
+
+        with _sf2:
+            # Sharpe filter
+            _sharpe_min = float(
+                _scr_df["sharpe_isoos"].min()
+                if "sharpe_isoos" in _scr_df.columns else -5
+            )
+            _sharpe_filter = st.slider(
+                "Min Sharpe (IS+OOS)",
+                min_value=-5.0, max_value=5.0,
+                value=0.0, step=0.1,
+                key="scr_sharpe_filter",
+            )
+
+            # Last 12M P&L filter
+            _p12_filter = st.number_input(
+                "Min Last 12M P&L ($)",
+                value=0.0, step=1000.0,
+                key="scr_p12_filter",
+                help="Only show strategies with last-12-month P&L above this amount.",
+            )
+
+        with _sf3:
+            # Status filter
+            _scr_all_statuses = sorted({s.get("status", "") for s in strategies if s.get("status")})
+            _scr_status_filter = st.multiselect(
+                "Status filter",
+                options=_scr_all_statuses,
+                default=[],
+                key="scr_status_filter",
+                help="Leave empty to include all statuses.",
+            )
+
+            # Sector filter
+            _scr_all_sectors = sorted({s.get("sector", "") for s in strategies if s.get("sector")})
+            _scr_sector_filter = st.multiselect(
+                "Sector filter",
+                options=_scr_all_sectors,
+                default=[],
+                key="scr_sector_filter",
+            )
+
+            # Eligibility filter
+            _scr_elig_only = st.checkbox(
+                "Eligible only",
+                value=False,
+                key="scr_elig_only",
+                help="Only show strategies that pass the eligibility rules.",
+            )
+
+        # ── Apply filters ─────────────────────────────────────────────────────
+        _scr_mask = pd.Series(True, index=_scr_df.index)
+
+        if "return_efficiency" in _scr_df.columns:
+            _scr_mask &= _scr_df["return_efficiency"].fillna(0) >= _eff_filter
+
+        if "max_oos_drawdown" in _scr_df.columns:
+            _scr_mask &= _scr_df["max_oos_drawdown"].fillna(0).abs() <= _dd_filter
+
+        if "sharpe_isoos" in _scr_df.columns:
+            _scr_mask &= _scr_df["sharpe_isoos"].fillna(-999) >= _sharpe_filter
+
+        if "profit_last_12_months" in _scr_df.columns:
+            _scr_mask &= _scr_df["profit_last_12_months"].fillna(-999_999) >= _p12_filter
+
+        if _scr_status_filter:
+            _scr_mask &= _scr_df["status"].isin(_scr_status_filter)
+
+        if _scr_sector_filter:
+            _sector_col = _scr_df.index.map(
+                lambda n: _scr_strats_map.get(n, {}).get("sector", "")
+            )
+            _scr_mask &= pd.Series(_sector_col, index=_scr_df.index).isin(_scr_sector_filter)
+
+        if _scr_elig_only and "eligibility_status" in _scr_df.columns:
+            _scr_mask &= _scr_df["eligibility_status"] == "Eligible"
+
+        _scr_filtered = _scr_df[_scr_mask].copy()
+
+        # ── Eligibility status (compute if not present) ───────────────────────
+        if "eligibility_status" not in _scr_filtered.columns:
+            from core.portfolio.summary import apply_eligibility_rules as _apply_elig_scr
+            _elig_m = _apply_elig_scr(_scr_sm[_scr_mask], _scr_cfg.eligibility)
+            _scr_filtered["eligibility_status"] = _elig_m.map({True: "Eligible", False: "Ineligible"})
+
+        st.divider()
+
+        # ── Results table ─────────────────────────────────────────────────────
+        _scr_live_count   = int(_scr_filtered["in_portfolio"].sum())
+        _scr_total_passed = len(_scr_filtered)
+
+        _sc1, _sc2 = st.columns([3, 1])
+        _sc1.markdown(
+            f"**{_scr_total_passed}** strategies match filters "
+            f"({_scr_live_count} already Live)"
         )
 
-        if "live_bt_entries" not in st.session_state:
-            st.session_state.live_bt_entries = []
+        # Display columns
+        _scr_disp_cols = [c for c in [
+            "in_portfolio", "status", "contracts",
+            "return_efficiency", "sharpe_isoos",
+            "profit_last_12_months", "profit_last_3_months",
+            "max_oos_drawdown", "rtd_oos",
+            "eligibility_status",
+            "expected_annual_profit", "actual_annual_profit",
+        ] if c in _scr_filtered.columns]
 
-        with st.form("add_bt_entry_form", clear_on_submit=True):
-            _fc1, _fc2, _fc3, _fc4, _fc5 = st.columns([4, 1, 2, 2, 1])
-            _bt_name = _fc1.selectbox("Strategy", _bt_all_names, key="bt_entry_name")
-            _bt_contracts = _fc2.number_input("Contracts", min_value=1, max_value=999, value=1, step=1, key="bt_entry_contracts")
-            _bt_start = _fc3.date_input("Start date", key="bt_entry_start")
-            _bt_end   = _fc4.date_input("End date",   key="bt_entry_end")
-            if _fc5.form_submit_button("Add", use_container_width=True):
-                if _bt_end >= _bt_start:
-                    st.session_state.live_bt_entries.append({
-                        "name":      _bt_name,
-                        "contracts": int(_bt_contracts),
-                        "start":     str(_bt_start),
-                        "end":       str(_bt_end),
-                    })
+        _scr_display = _scr_filtered[_scr_disp_cols].reset_index()
+        _scr_display.rename(columns={"strategy_name": "Strategy"}, inplace=True)
+
+        _scr_ro = [c for c in _scr_display.columns if c not in ("in_portfolio",)]
+
+        _scr_edited = st.data_editor(
+            _scr_display,
+            use_container_width=True,
+            hide_index=True,
+            disabled=_scr_ro,
+            key="screener_editor",
+            column_config={
+                "in_portfolio": st.column_config.CheckboxColumn(
+                    "Add to Portfolio",
+                    help="Tick to mark as Live.",
+                    width="small",
+                ),
+                "return_efficiency": st.column_config.NumberColumn("Efficiency", format="%.1f%%"),
+                "sharpe_isoos": st.column_config.NumberColumn("Sharpe IS+OOS", format="%.2f"),
+                "profit_last_12_months": st.column_config.NumberColumn("Last 12M ($)", format="$%.0f"),
+                "profit_last_3_months": st.column_config.NumberColumn("Last 3M ($)", format="$%.0f"),
+                "max_oos_drawdown": st.column_config.NumberColumn("OOS Max DD ($)", format="$%.0f"),
+                "rtd_oos": st.column_config.NumberColumn("R:DD OOS", format="%.2f"),
+                "eligibility_status": st.column_config.TextColumn("Eligibility"),
+                "expected_annual_profit": st.column_config.NumberColumn("Exp. Annual ($)", format="$%.0f"),
+                "actual_annual_profit": st.column_config.NumberColumn("Act. Annual ($)", format="$%.0f"),
+                "contracts": st.column_config.NumberColumn("Contr.", format="%d"),
+            },
+        )
+
+        # ── Add selected to portfolio ──────────────────────────────────────────
+        _scr_add_col, _ = st.columns([2, 4])
+        with _scr_add_col:
+            if st.button("➕ Add ticked strategies to Live", type="primary", key="scr_add_btn"):
+                _scr_to_add = [
+                    r["Strategy"] for r in _scr_edited.to_dict(orient="records")
+                    if r.get("in_portfolio") and
+                    _scr_strats_map.get(r["Strategy"], {}).get("status") != _scr_live_status
+                ]
+                if _scr_to_add:
+                    _scr_updated = []
+                    for _s in strategies:
+                        if _s.get("name") in _scr_to_add:
+                            _s = dict(_s, status=_scr_live_status)
+                        _scr_updated.append(_s)
+                    save_strategies(_scr_updated)
+                    st.session_state.portfolio_data = None
+                    st.success(
+                        f"Added {len(_scr_to_add)} strategies to Live portfolio: "
+                        + ", ".join(_scr_to_add[:5])
+                        + ("…" if len(_scr_to_add) > 5 else "")
+                    )
                     st.rerun()
                 else:
-                    st.warning("End date must be on or after start date.")
+                    st.info("No new strategies ticked — all already Live or none selected.")
 
-        if st.session_state.live_bt_entries:
-            _entries_df = pd.DataFrame(st.session_state.live_bt_entries)
-            st.dataframe(_entries_df, use_container_width=True, hide_index=True)
-
-            _rm_col, _ = st.columns([1, 4])
-            if _rm_col.button("Clear all entries"):
-                st.session_state.live_bt_entries = []
-                st.rerun()
-
-    # ── Portfolio Periods mode ────────────────────────────────────────────────
-    else:
-        st.markdown("### Define Portfolio Periods")
-        st.caption(
-            "Each period maps a saved portfolio snapshot to a date range. "
-            "The Live strategies in each snapshot are used for that period. "
-            "Periods may overlap — P&L is summed across all active strategies."
-        )
-
-        if "live_bt_periods" not in st.session_state:
-            st.session_state.live_bt_periods = []
-
-        _snaps_bt = _list_snaps_bt()
-        if not _snaps_bt:
-            st.info(
-                "No portfolio snapshots saved yet. "
-                "Go to **Performance Summary → 📸 Set Live Portfolio** to save your first snapshot."
-            )
-        else:
-            _snap_labels = [s["label"] for s in _snaps_bt]
-
-            with st.form("add_bt_period_form", clear_on_submit=True):
-                _pc1, _pc2, _pc3, _pc4 = st.columns([3, 2, 2, 1])
-                _bt_snap  = _pc1.selectbox("Portfolio snapshot", _snap_labels, key="bt_period_snap")
-                _bt_pstart = _pc2.date_input("Start date", key="bt_period_start")
-                _bt_pend   = _pc3.date_input("End date",   key="bt_period_end")
-                if _pc4.form_submit_button("Add", use_container_width=True):
-                    if _bt_pend >= _bt_pstart:
-                        st.session_state.live_bt_periods.append({
-                            "snapshot": _bt_snap,
-                            "start":    str(_bt_pstart),
-                            "end":      str(_bt_pend),
-                        })
-                        st.rerun()
-                    else:
-                        st.warning("End date must be on or after start date.")
-
-            if st.session_state.live_bt_periods:
-                for _pi, _per in enumerate(st.session_state.live_bt_periods):
-                    _pa, _pb, _pc = st.columns([4, 3, 1])
-                    _pa.markdown(f"**{_per['snapshot']}**")
-                    _pb.markdown(f"{_per['start']} → {_per['end']}")
-                    if _pc.button("Remove", key=f"rm_period_{_pi}"):
-                        st.session_state.live_bt_periods.pop(_pi)
-                        st.rerun()
-
-                if st.button("Clear all periods"):
-                    st.session_state.live_bt_periods = []
-                    st.rerun()
-
-    # ── Compute & show equity curve ───────────────────────────────────────────
-    st.divider()
-    _bt_equity_start = st.number_input(
-        "Starting equity ($)", min_value=1_000.0, max_value=100_000_000.0,
-        value=100_000.0, step=10_000.0, format="%.0f", key="bt_starting_equity",
-    )
-
-    if st.button("Compute Equity Curve", type="primary", key="bt_run"):
-        _combined_pnl: pd.Series = pd.Series(dtype=float)
-
-        if _bt_mode == "Manual Entries":
-            _work_entries = st.session_state.get("live_bt_entries", [])
-        else:
-            # Expand portfolio periods into entries
-            _work_entries = []
-            for _per in st.session_state.get("live_bt_periods", []):
-                _snap_strats = _load_snap_bt(_per["snapshot"])
-                _live_status = st.session_state.get("config", _AC.load()).portfolio.live_status
-                for _ss in _snap_strats:
-                    if _ss.get("status") == _live_status:
-                        _work_entries.append({
-                            "name":      _ss.get("name", ""),
-                            "contracts": int(_ss.get("contracts") or 1),
-                            "start":     _per["start"],
-                            "end":       _per["end"],
-                        })
-
-        _missing: list[str] = []
-        for _ent in _work_entries:
-            _nm = _ent["name"]
-            if _nm not in _bt_m2m.columns:
-                _missing.append(_nm)
-                continue
-            _ts = pd.Timestamp(_ent["start"])
-            _te = pd.Timestamp(_ent["end"])
-            _pnl_slice = _bt_m2m.loc[_ts:_te, _nm] * int(_ent["contracts"])
-            _combined_pnl = _combined_pnl.add(_pnl_slice, fill_value=0)
-
-        if _missing:
-            st.warning(f"No M2M data found for: {', '.join(set(_missing))}")
-
-        if _combined_pnl.empty:
-            st.info("No data to plot — check that your strategies and date ranges match the imported data.")
-        else:
-            _combined_pnl = _combined_pnl.sort_index()
-            _equity_curve = _bt_equity_start + _combined_pnl.cumsum()
-
-            # Key stats
-            _total_pnl    = float(_combined_pnl.sum())
-            _peak         = float(_equity_curve.cummax().max())
-            _drawdown     = float((_equity_curve - _equity_curve.cummax()).min())
-            _max_dd_pct   = abs(_drawdown / _bt_equity_start) * 100 if _bt_equity_start else 0
-
-            _s1, _s2, _s3, _s4 = st.columns(4)
-            _s1.metric("Total P&L",       f"${_total_pnl:,.0f}",  delta=f"{_total_pnl/_bt_equity_start*100:.1f}%")
-            _s2.metric("Peak Equity",     f"${_peak:,.0f}")
-            _s3.metric("Max Drawdown",    f"${_drawdown:,.0f}")
-            _s4.metric("Max DD %",        f"{_max_dd_pct:.1f}%")
-
-            _fig = px.line(
-                _equity_curve,
-                title="Live Portfolio Equity Curve",
-                labels={"value": "Equity ($)", "index": "Date"},
-            )
-            _fig.update_layout(showlegend=False, height=400)
-            _fig.add_hline(y=_bt_equity_start, line_dash="dash", line_color="grey", opacity=0.5)
-            st.plotly_chart(_fig, use_container_width=True)
-
-            # Per-strategy contribution table
-            _contrib_rows = []
-            for _ent in _work_entries:
-                _nm = _ent["name"]
-                if _nm not in _bt_m2m.columns:
-                    continue
-                _ts = pd.Timestamp(_ent["start"])
-                _te = pd.Timestamp(_ent["end"])
-                _slice_pnl = _bt_m2m.loc[_ts:_te, _nm] * int(_ent["contracts"])
-                _contrib_rows.append({
-                    "Strategy":    _nm,
-                    "Contracts":   _ent["contracts"],
-                    "Start":       _ent["start"],
-                    "End":         _ent["end"],
-                    "P&L ($)":     round(float(_slice_pnl.sum()), 0),
-                    "Trading Days": len(_slice_pnl.dropna()),
-                })
-            if _contrib_rows:
-                st.subheader("Strategy Contributions")
-                _contrib_df = pd.DataFrame(_contrib_rows).sort_values("P&L ($)", ascending=False)
-                st.dataframe(_contrib_df, use_container_width=True, hide_index=True)
+        st.divider()
+        st.page_link("ui/pages/03_Portfolio.py", label="→ Build Portfolio with selected strategies")

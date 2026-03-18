@@ -88,14 +88,34 @@ with st.sidebar:
     st.divider()
     period_label = st.radio(
         "Lookback period",
-        ["All Data", "1 Year", "3 Years", "5 Years"],
+        ["All Data", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"],
         help=(
             "Restrict the correlation calculation to the most recent window. "
             "Mirrors VBA Correl_Short_Period / Correl_Long_Period named ranges."
         ),
     )
-    _period_years_map = {"All Data": None, "1 Year": 1, "3 Years": 3, "5 Years": 5}
-    period_years = _period_years_map[period_label]
+    _period_years_map = {
+        "All Data": None, "1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10,
+    }
+
+    # ── Custom date range slider ───────────────────────────────────────────────
+    _data_start = portfolio.daily_pnl.index.min().date() if not portfolio.daily_pnl.empty else None
+    _data_end   = portfolio.daily_pnl.index.max().date() if not portfolio.daily_pnl.empty else None
+
+    if period_label == "Custom Range" and _data_start and _data_end:
+        _custom_range = st.slider(
+            "Date range",
+            min_value=_data_start,
+            max_value=_data_end,
+            value=(_data_start, _data_end),
+            key="corr_custom_range",
+            help="Drag the handles to select the date window for correlation calculation.",
+        )
+        _custom_start, _custom_end = _custom_range
+    else:
+        _custom_start = _custom_end = None
+
+    period_years = _period_years_map.get(period_label)
 
     compute_btn = st.button("Compute Correlations", type="primary", use_container_width=True)
 
@@ -114,7 +134,10 @@ corr_cache_period = st.session_state.get("corr_cache_period")
 
 # Determine start_date from period window
 _end = portfolio.daily_pnl.index.max() if not portfolio.daily_pnl.empty else None
-if period_years is not None and _end is not None:
+if period_label == "Custom Range" and _custom_start and _custom_end:
+    _start_date = pd.Timestamp(_custom_start)
+    _end = pd.Timestamp(_custom_end)
+elif period_years is not None and _end is not None:
     _start_date = _end - pd.DateOffset(years=period_years)
 else:
     _start_date = None
@@ -125,7 +148,12 @@ if corr_cache_period != period_label:
 
 if compute_btn or corr_cache is None:
     with st.spinner("Computing correlation matrices…"):
-        corr_cache = compute_all_modes(portfolio.daily_pnl, start_date=_start_date)
+        _pnl_for_corr = portfolio.daily_pnl
+        if _start_date is not None:
+            _pnl_for_corr = _pnl_for_corr[_pnl_for_corr.index >= _start_date]
+        if _end is not None and period_label == "Custom Range":
+            _pnl_for_corr = _pnl_for_corr[_pnl_for_corr.index <= _end]
+        corr_cache = compute_all_modes(_pnl_for_corr, start_date=None)
     st.session_state.corr_matrices = corr_cache
     st.session_state.corr_cache_period = period_label
 
@@ -155,7 +183,7 @@ fig = go.Figure(go.Heatmap(
     zmax=1.0,
     text=_text,
     texttemplate="%{text}",
-    textfont={"size": 10 if n <= 15 else 8},
+    textfont={"size": 14 if n <= 15 else 11},
     hovertemplate="%{y} × %{x}: %{z:.3f}<extra></extra>",
     colorbar=dict(title="Correlation"),
 ))
