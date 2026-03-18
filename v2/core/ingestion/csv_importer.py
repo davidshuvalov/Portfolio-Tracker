@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from core.data_types import ImportedData, Strategy, StrategyFolder
-from core.ingestion.date_utils import parse_csv_date
+from core.ingestion.date_utils import detect_date_format, parse_csv_date, _sample_date_strings
 
 
 # ── Column indices (0-based, matching VBA 1-based positions) ─────────────────
@@ -236,6 +236,25 @@ def _read_equity_csv(
         warnings.append(f"'{strategy_name}': EquityData.csv has no data rows.")
         return []
 
+    # ── Per-file date format detection ────────────────────────────────────────
+    # Scan both col 0 and col 1 for unambiguous date signals (day > 12 → DMY,
+    # month-position > 12 → MDY).  In a single-strategy file col 0 holds dates;
+    # in a multi-strategy file col 1 does — scanning both is safe because numeric
+    # data columns never produce false date-format evidence.
+    _date_samples = _sample_date_strings(raw, 0) + _sample_date_strings(raw, 1)
+    try:
+        file_fmt, fmt_source = detect_date_format(_date_samples, fallback=date_format)
+    except ValueError as exc:
+        warnings.append(f"'{strategy_name}': {exc} — using global setting '{date_format}'.")
+        file_fmt = date_format
+        fmt_source = "fallback"
+
+    if fmt_source == "detected" and file_fmt != date_format:
+        warnings.append(
+            f"'{strategy_name}': date format auto-detected as {file_fmt} "
+            f"(global setting is {date_format}). Using detected format for this file."
+        )
+
     # ── Detect multi-strategy format ──────────────────────────────────────────
     # Skip a potential header row first, then probe the first data row
     _probe_row_idx = 0
@@ -244,16 +263,16 @@ def _read_equity_csv(
 
     if raw.shape[0] > _probe_row_idx and raw.shape[1] >= 2:
         _probe = raw.iloc[_probe_row_idx]
-        _col0_is_date = parse_csv_date(str(_probe.iloc[0]), date_format) is not None
-        _col1_is_date = parse_csv_date(str(_probe.iloc[1]), date_format) is not None
+        _col0_is_date = parse_csv_date(str(_probe.iloc[0]), file_fmt) is not None
+        _col1_is_date = parse_csv_date(str(_probe.iloc[1]), file_fmt) is not None
         is_multi = not _col0_is_date and _col1_is_date
     else:
         is_multi = False
 
     if is_multi:
-        return _read_multi_strategy_csv(raw, strategy_name, date_format, warnings)
+        return _read_multi_strategy_csv(raw, strategy_name, file_fmt, warnings)
     else:
-        result = _read_single_strategy_csv(raw, strategy_name, date_format, warnings)
+        result = _read_single_strategy_csv(raw, strategy_name, file_fmt, warnings)
         return [result] if result is not None else []
 
 
@@ -271,10 +290,14 @@ def _read_single_strategy_csv(
     closed: list[float] = []
     long_vals: list[float] = []
     short_vals: list[float] = []
+    skipped_date = 0
+    total_rows = 0
 
     for _, row in raw.iloc[start_row:].iterrows():
+        total_rows += 1
         d = parse_csv_date(str(row.iloc[EQUITY_COL_DATE]), date_format)
         if d is None:
+            skipped_date += 1
             continue
 
         n_cols = len(row)
@@ -294,6 +317,14 @@ def _read_single_strategy_csv(
     if not dates:
         warnings.append(f"'{strategy_name}': no valid rows parsed from EquityData.csv.")
         return None
+
+    # Warn if more than 5% of data rows had unparseable dates (possible format mismatch).
+    if total_rows > 0 and skipped_date / total_rows > 0.05:
+        warnings.append(
+            f"'{strategy_name}': {skipped_date}/{total_rows} rows had unparseable dates "
+            f"using format {date_format}. Check the date format setting — "
+            f"it may be set to {'DMY' if date_format == 'MDY' else 'MDY'} instead."
+        )
 
     return _StrategyEquity(
         name=strategy_name,
@@ -424,6 +455,21 @@ def _read_trade_csv(
     if raw.empty:
         return None
 
+    # ── Per-file date format detection ────────────────────────────────────────
+    _trade_date_samples = _sample_date_strings(raw, TRADE_COL_DATE)
+    try:
+        file_fmt, fmt_source = detect_date_format(_trade_date_samples, fallback=date_format)
+    except ValueError as exc:
+        warnings.append(f"'{strategy_name}' TradeData: {exc} — using global setting '{date_format}'.")
+        file_fmt = date_format
+        fmt_source = "fallback"
+
+    if fmt_source == "detected" and file_fmt != date_format:
+        warnings.append(
+            f"'{strategy_name}' TradeData: date format auto-detected as {file_fmt} "
+            f"(global setting is {date_format}). Using detected format for this file."
+        )
+
     min_cols = max(TRADE_COL_MFE, TRADE_COL_MAE, TRADE_COL_PNL,
                    TRADE_COL_POSITION, TRADE_COL_TYPE) + 1
 
@@ -438,7 +484,7 @@ def _read_trade_csv(
         if trade_type.lower() != "exit":
             continue
 
-        d = parse_csv_date(str(row.iloc[TRADE_COL_DATE]), date_format)
+        d = parse_csv_date(str(row.iloc[TRADE_COL_DATE]), file_fmt)
         if d is None:
             continue
 

@@ -3,6 +3,7 @@ Date utilities — mirrors I_MISC.bas date functions exactly.
 
 Key functions:
     parse_csv_date()       — handle DMY / MDY CSV date strings
+    detect_date_format()   — per-file format detection from a sample of date strings
     resolve_oos_dates()    — apply cutoff date to OOS period (mirrors ResolveOOSDates)
     cutoff_index()         — last row index <= cutoff date (mirrors EndRowByCutoffSimple)
     is_non_trading_day()   — CME holiday calendar (mirrors IsNonTradingDay)
@@ -49,6 +50,77 @@ def parse_csv_date(date_str: str, date_format: str) -> date | None:
         return date(y, m, d)
     except (ValueError, TypeError):
         return None
+
+
+# ── Per-File Date Format Detection ───────────────────────────────────────────
+
+def detect_date_format(
+    date_strings: list[str],
+    fallback: str = "DMY",
+) -> tuple[str, str]:
+    """
+    Infer the date format (DMY or MDY) from a sample of raw date strings.
+
+    Strategy — scan each string for unambiguous signals:
+      • If the FIRST field is > 12 it cannot be a month → format must be DMY
+        (day is first).
+      • If the SECOND field is > 12 it cannot be a month → format must be MDY
+        (month is first, day is second).
+      • If neither ever exceeds 12, all dates are ambiguous (e.g. "01/05/2024")
+        — fall back to the caller-supplied default without error.
+
+    Returns:
+        (format, source) where:
+          format — "DMY" or "MDY"
+          source — "detected"  (at least one unambiguous date found)
+                   "fallback"  (all dates ambiguous; using fallback)
+
+    Raises:
+        ValueError — contradictory evidence (some dates indicate DMY, others MDY).
+                     This means the file contains mixed date formats, which is a
+                     data quality problem that must be surfaced to the user.
+    """
+    dmy_evidence: list[str] = []   # date strings that prove DMY
+    mdy_evidence: list[str] = []   # date strings that prove MDY
+
+    for raw in date_strings:
+        if not raw or not isinstance(raw, str):
+            continue
+        s = raw.strip().replace("-", "/")
+        parts = s.split("/")
+        if len(parts) != 3:
+            continue
+        try:
+            p0, p1 = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+
+        if p0 > 12:
+            dmy_evidence.append(raw.strip())   # e.g. "25/01/2024" → day=25 → DMY
+        if p1 > 12:
+            mdy_evidence.append(raw.strip())   # e.g. "01/25/2024" → day=25 → MDY
+
+    if dmy_evidence and mdy_evidence:
+        raise ValueError(
+            f"Contradictory date formats in file: "
+            f"'{dmy_evidence[0]}' indicates DMY but "
+            f"'{mdy_evidence[0]}' indicates MDY. "
+            f"Check that all dates in this file use the same format."
+        )
+
+    if dmy_evidence:
+        return "DMY", "detected"
+    if mdy_evidence:
+        return "MDY", "detected"
+    return fallback, "fallback"
+
+
+def _sample_date_strings(raw: pd.DataFrame, col: int, max_rows: int = 40) -> list[str]:
+    """Extract up to max_rows non-empty string values from a DataFrame column."""
+    if col >= raw.shape[1]:
+        return []
+    col_data = raw.iloc[:max_rows, col].dropna().astype(str)
+    return [v.strip() for v in col_data if v.strip() and v.strip().lower() not in ("nan", "none", "")]
 
 
 # ── OOS Date Resolution ───────────────────────────────────────────────────────

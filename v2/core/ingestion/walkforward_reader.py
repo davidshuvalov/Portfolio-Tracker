@@ -15,7 +15,7 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from core.ingestion.date_utils import parse_csv_date, resolve_oos_dates
+from core.ingestion.date_utils import detect_date_format, parse_csv_date, resolve_oos_dates
 
 
 # ── Column names as they appear in the MultiWalk export ──────────────────────
@@ -208,10 +208,22 @@ def read_walkforward_csv(
 
     g = _RowGetter(row)
 
+    # ── Per-file date format detection ────────────────────────────────────────
+    _date_col_names = [COL_IS_BEGIN, COL_OOS_BEGIN, COL_OOS_END, COL_REOPT_DATE]
+    _wf_date_samples = [
+        str(row[c]).strip()
+        for c in _date_col_names
+        if c in row.index and str(row[c]).strip() not in ("", "nan", "None")
+    ]
+    try:
+        wf_fmt, _ = detect_date_format(_wf_date_samples, fallback=date_format)
+    except ValueError:
+        wf_fmt = date_format   # contradictory evidence: fall back silently for WF row
+
     # ── Dates ────────────────────────────────────────────────────────────────
-    is_begin = g.date(COL_IS_BEGIN, date_format)
-    oos_begin_raw = g.date(COL_OOS_BEGIN, date_format)
-    oos_end_raw = g.date(COL_OOS_END, date_format)
+    is_begin = g.date(COL_IS_BEGIN, wf_fmt)
+    oos_begin_raw = g.date(COL_OOS_BEGIN, wf_fmt)
+    oos_end_raw = g.date(COL_OOS_END, wf_fmt)
 
     oos_begin, oos_end = resolve_oos_dates(
         oos_begin_raw, oos_end_raw, use_cutoff, cutoff_date
@@ -231,7 +243,7 @@ def read_walkforward_csv(
     out_period = f"{out_len} {out_type}".strip()
 
     # ── Next/Last opt dates ───────────────────────────────────────────────────
-    next_opt_date = g.date(COL_REOPT_DATE, date_format)
+    next_opt_date = g.date(COL_REOPT_DATE, wf_fmt)
     last_opt_date = _calc_last_opt_date(next_opt_date, out_len, out_type)
 
     # ── P&L ──────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.ingestion.date_utils import (
+    detect_date_format,
     parse_csv_date,
     resolve_oos_dates,
     cutoff_index,
@@ -63,6 +64,76 @@ class TestParseCsvDate:
         """Confirm DMY correctly swaps day and month."""
         assert parse_csv_date("01/12/2022", "DMY") == date(2022, 12, 1)
         assert parse_csv_date("12/01/2022", "MDY") == date(2022, 12, 1)
+
+
+# ── detect_date_format ────────────────────────────────────────────────────────
+
+class TestDetectDateFormat:
+    """
+    Per-file date format detection based on unambiguous field values.
+
+    Logic:
+      • field[0] > 12  → day is first   → DMY
+      • field[1] > 12  → month is first → MDY
+      • all fields ≤ 12 → ambiguous     → use fallback
+      • conflicting evidence             → ValueError
+    """
+
+    def test_detects_dmy_from_large_day(self):
+        # "25/01/2024" → field[0]=25 > 12 → DMY
+        fmt, src = detect_date_format(["25/01/2024", "20/03/2024"])
+        assert fmt == "DMY"
+        assert src == "detected"
+
+    def test_detects_mdy_from_large_day_in_position_1(self):
+        # "01/25/2024" → field[1]=25 > 12 → MDY
+        fmt, src = detect_date_format(["01/25/2024", "03/20/2024"])
+        assert fmt == "MDY"
+        assert src == "detected"
+
+    def test_fallback_when_all_ambiguous(self):
+        # "01/05/2024" → both fields ≤ 12, can't distinguish
+        fmt, src = detect_date_format(["01/05/2024", "03/06/2024"], fallback="DMY")
+        assert fmt == "DMY"
+        assert src == "fallback"
+
+    def test_fallback_mdy_when_all_ambiguous(self):
+        fmt, src = detect_date_format(["01/05/2024", "03/06/2024"], fallback="MDY")
+        assert fmt == "MDY"
+        assert src == "fallback"
+
+    def test_empty_list_returns_fallback(self):
+        fmt, src = detect_date_format([], fallback="DMY")
+        assert fmt == "DMY"
+        assert src == "fallback"
+
+    def test_raises_on_contradictory_evidence(self):
+        # "25/01/2024" → DMY; "01/25/2024" → MDY — same file can't be both
+        with pytest.raises(ValueError, match="Contradictory"):
+            detect_date_format(["25/01/2024", "01/25/2024"])
+
+    def test_dash_delimiters_accepted(self):
+        fmt, src = detect_date_format(["25-01-2024"])
+        assert fmt == "DMY"
+        assert src == "detected"
+
+    def test_ignores_non_date_strings(self):
+        # Non-date values (headers, names) should be skipped gracefully
+        fmt, src = detect_date_format(["Strategy Name", "", "nan", "25/01/2024"])
+        assert fmt == "DMY"
+        assert src == "detected"
+
+    def test_single_unambiguous_date_sufficient(self):
+        # One date with day=31 is enough to confirm DMY
+        fmt, src = detect_date_format(["31/12/2023"])
+        assert fmt == "DMY"
+        assert src == "detected"
+
+    def test_mixed_ambiguous_and_unambiguous_detects_correctly(self):
+        # Ambiguous dates alongside one unambiguous → detected
+        fmt, src = detect_date_format(["01/06/2024", "05/06/2024", "25/06/2024"])
+        assert fmt == "DMY"
+        assert src == "detected"
 
 
 # ── resolve_oos_dates ─────────────────────────────────────────────────────────
