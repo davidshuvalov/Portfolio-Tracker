@@ -153,7 +153,18 @@ sector    = sector    or "—"
 
 # Metadata strip
 _direction = _sm("direction", "") or "—"
-_elig_status = _sm("eligibility_status", "") or "—"
+
+# Eligibility: use pre-computed value if available, otherwise derive it now
+_raw_elig = _sm("eligibility_status", None)
+if _raw_elig is not None and str(_raw_elig) not in ("", "nan"):
+    _elig_status = str(_raw_elig)
+elif _summary_row is not None:
+    from core.portfolio.summary import apply_eligibility_rules
+    _elig_df = pd.DataFrame([_summary_row], index=[selected_name])
+    _elig_mask = apply_eligibility_rules(_elig_df, config.eligibility)
+    _elig_status = "Eligible" if bool(_elig_mask.iloc[0]) else "Ineligible"
+else:
+    _elig_status = "—"
 _next_opt = _sm("next_opt_date")
 _last_opt = _sm("last_opt_date")
 _next_opt_str = str(_next_opt) if _next_opt else "—"
@@ -200,7 +211,7 @@ def _metrics_for(pnl: pd.Series, label: str) -> dict:
     eq = pnl.cumsum()
     peak = eq.cummax()
     dd = peak - eq
-    n_years = max(len(pnl) / 252.0, 1e-3)
+    n_years = max((pnl.index[-1] - pnl.index[0]).days / 365.25, 1e-3)
     total = float(pnl.sum())
     ann = total / n_years
     max_dd = float(dd.max())
@@ -208,7 +219,7 @@ def _metrics_for(pnl: pd.Series, label: str) -> dict:
     win_rate = float((monthly > 0).mean()) if len(monthly) > 0 else 0.0
     std_m = float(monthly.std()) if len(monthly) > 1 else 0.0
     sharpe = (float(monthly.mean()) / std_m * np.sqrt(12)) if std_m > 1e-9 else 0.0
-    rtd = abs(total / max_dd) if max_dd > 0 else 0.0
+    rtd = (total / max_dd) if max_dd > 0 else 0.0
     return {
         "label":     label,
         "total":     total,
@@ -266,8 +277,10 @@ if _summary_row is not None:
         win_r    = _sm("overall_win_rate",        0)
 
         wc1, wc2, wc3, wc4 = st.columns(4)
-        wc1.metric("Exp. Annual ($)", f"${exp_ann:,.0f}" if exp_ann else "—")
-        wc2.metric("Act. Annual ($)", f"${act_ann:,.0f}" if act_ann else "—")
+        wc1.metric("Exp. Annual ($)", f"${exp_ann:,.0f}" if exp_ann else "—",
+                   help="IS Annualized Net Profit from WF CSV (expected OOS rate)")
+        wc2.metric("WF Act. Annual ($)", f"${act_ann:,.0f}" if act_ann else "—",
+                   help="(IS+OOS Change in Net Profit) ÷ OOS years, from WF CSV")
         wc3.metric("Efficiency",      f"{eff:.1%}"       if eff      else "—")
         wc4.metric("Incubation",      str(incub))
         wc5, wc6, wc7, _ = st.columns(4)
@@ -383,6 +396,23 @@ if not monthly_pnl.empty:
     ]
     pivot = pivot.sort_index(ascending=False)
 
+    # Label each year as IS or OOS based on oos_start
+    _oos_year = oos_start.year if oos_start else None
+    _oos_month = oos_start.month if oos_start else None
+    def _year_label(yr: int) -> str:
+        if _oos_year is None:
+            return str(yr)
+        if yr > _oos_year:
+            return f"{yr} OOS"
+        if yr < _oos_year:
+            return f"{yr} IS"
+        # Same year as OOS start — label based on which half dominates
+        if _oos_month is not None and _oos_month <= 6:
+            return f"{yr} OOS"
+        return f"{yr} IS"
+
+    pivot.index = [_year_label(y) for y in pivot.index]
+
     fig_hm = px.imshow(
         pivot,
         color_continuous_scale="RdYlGn",
@@ -394,6 +424,22 @@ if not monthly_pnl.empty:
         height=max(200, len(pivot) * 40 + 80),
         coloraxis_showscale=False,
     )
+    # Add a horizontal line between the last IS year and first OOS year
+    if _oos_year is not None:
+        _year_labels_ordered = list(pivot.index)  # already sorted descending
+        _oos_rows = [i for i, lbl in enumerate(_year_labels_ordered) if "OOS" in lbl]
+        _is_rows  = [i for i, lbl in enumerate(_year_labels_ordered) if "IS"  in lbl]
+        if _oos_rows and _is_rows:
+            # The boundary is between the last OOS row and first IS row (descending order)
+            _boundary = max(_oos_rows) + 0.5
+            fig_hm.add_hline(
+                y=_boundary,
+                line_dash="dash",
+                line_color="#B71C1C",
+                line_width=2,
+                annotation_text="← OOS start",
+                annotation_position="right",
+            )
     st.plotly_chart(fig_hm, use_container_width=True)
 
     # Annual totals
