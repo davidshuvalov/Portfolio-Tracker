@@ -2526,3 +2526,344 @@ Sub ForceDeleteTempSheets()
     
     MsgBox "Deletion process completed. Please check if any temporary sheets remain.", vbInformation
 End Sub
+
+
+' ============================================================
+' Rolling Correlation Analysis
+' Creates "RollingCorrelations" sheet with:
+'   Section 1 — Time series: avg |corr| across all pairs (sampled ~monthly)
+'   Section 2 — Summary matrix: per pair — current / min / max / avg rolling corr
+'
+' Window: driven by Correl_Short_Period named range (default 1 yr = ~252 rows)
+' ============================================================
+Sub CreateRollingCorrelationSheet()
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    On Error GoTo ErrorHandler
+
+    Call InitializeColumnConstantsManually
+    If Not IsLicenseValid() Then
+        MsgBox "Invalid or missing license.", vbCritical
+        GoTo CleanExit
+    End If
+
+    If Not SheetExists("Portfolio") Or Not SheetExists("PortfolioDailyM2M") Then
+        MsgBox "Required sheets (Portfolio, PortfolioDailyM2M) missing!", vbCritical
+        GoTo CleanExit
+    End If
+
+    Dim wsPortfolio As Worksheet
+    Dim wsM2M As Worksheet
+    Set wsPortfolio = ThisWorkbook.Sheets("Portfolio")
+    Set wsM2M = ThisWorkbook.Sheets("PortfolioDailyM2M")
+
+    If wsPortfolio.Cells(2, COL_PORT_STRATEGY_NAME).Value = "" Then
+        MsgBox "Portfolio sheet has no data.", vbExclamation
+        GoTo CleanExit
+    End If
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsM2M.Cells(wsM2M.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsM2M.Cells(1, wsM2M.Columns.Count).End(xlToLeft).Column
+
+    If lastCol < 3 Then
+        MsgBox "Need at least 2 strategies for rolling correlation.", vbExclamation
+        GoTo CleanExit
+    End If
+
+    Dim allData As Variant
+    allData = wsM2M.Range(wsM2M.Cells(1, 1), wsM2M.Cells(lastRow, lastCol)).Value
+
+    ' Rolling window (~252 trading-day rows per year)
+    Dim Short_Period As Double
+    Short_Period = GetNamedRangeValue("Correl_Short_Period")
+    If Short_Period <= 0 Then Short_Period = 1
+    Dim windowRows As Long: windowRows = CLng(Short_Period * 252)
+    If windowRows < 20 Then windowRows = 20
+    If windowRows > lastRow - 2 Then windowRows = lastRow - 2
+
+    Dim High_Threshold As Double, Low_Threshold As Double
+    High_Threshold = GetNamedRangeValue("Correl_High_Threshold")
+    Low_Threshold = GetNamedRangeValue("Correl_Low_Threshold")
+    If High_Threshold <= Low_Threshold Then High_Threshold = 0.7: Low_Threshold = 0.4
+
+    Dim nStrats As Long: nStrats = lastCol - 1
+    Dim nPairs As Long: nPairs = nStrats * (nStrats - 1) \ 2
+    If nPairs < 1 Then
+        MsgBox "Need at least 2 strategies for correlation.", vbExclamation
+        GoTo CleanExit
+    End If
+
+    ' Sample every ~21 rows (~monthly)
+    Dim sampleStep As Long: sampleStep = 21
+    Dim nSamples As Long: nSamples = 0
+    Dim k As Long
+    For k = windowRows + 1 To lastRow
+        If (k - windowRows - 1) Mod sampleStep = 0 Then nSamples = nSamples + 1
+    Next k
+
+    If nSamples < 2 Then
+        MsgBox "Insufficient data for rolling correlations. Need at least " & (windowRows + sampleStep) & " data rows.", vbExclamation
+        GoTo CleanExit
+    End If
+
+    ' Allocate result arrays
+    Dim sampleDates() As Date
+    Dim rollingAvg() As Double, rollingMax() As Double, rollingMin() As Double
+    ReDim sampleDates(1 To nSamples)
+    ReDim rollingAvg(1 To nSamples)
+    ReDim rollingMax(1 To nSamples)
+    ReDim rollingMin(1 To nSamples)
+
+    ' Per-pair stats
+    Dim pairRI() As Long, pairCI() As Long
+    Dim pairCurrent() As Double
+    Dim pairMin() As Double, pairMax() As Double, pairSum() As Double
+    Dim pairCnt() As Long
+    ReDim pairRI(1 To nPairs): ReDim pairCI(1 To nPairs)
+    ReDim pairCurrent(1 To nPairs)
+    ReDim pairMin(1 To nPairs): ReDim pairMax(1 To nPairs)
+    ReDim pairSum(1 To nPairs): ReDim pairCnt(1 To nPairs)
+
+    Dim pi As Long, pj As Long, p As Long
+    p = 0
+    For pi = 2 To lastCol
+        For pj = pi + 1 To lastCol
+            p = p + 1
+            pairRI(p) = pi: pairCI(p) = pj
+            pairMin(p) = 1.5: pairMax(p) = -1.5
+        Next pj
+    Next pi
+
+    ' Pre-allocate temp arrays for inline Pearson
+    Dim d1() As Double, d2() As Double
+    ReDim d1(1 To windowRows): ReDim d2(1 To windowRows)
+
+    ' Rolling computation
+    Dim sIdx As Long: sIdx = 0
+    Dim v1 As Double, v2 As Double, w As Long, nA As Long
+    Dim s1 As Double, s2 As Double, s1sq As Double, s2sq As Double, s12 As Double
+    Dim denom As Double, corr As Double
+    Dim sumPairs As Double, cntPairs As Long
+    Dim maxC As Double, minC As Double
+
+    For k = windowRows + 1 To lastRow
+        If (k - windowRows - 1) Mod sampleStep <> 0 Then GoTo NextK
+        sIdx = sIdx + 1
+        Application.StatusBar = "Rolling Correlations: " & Format(sIdx / nSamples, "0%") & " complete"
+        If IsDate(allData(k, 1)) Then sampleDates(sIdx) = CDate(allData(k, 1))
+
+        sumPairs = 0: cntPairs = 0
+        maxC = -1.5: minC = 1.5
+
+        For p = 1 To nPairs
+            pi = pairRI(p): pj = pairCI(p)
+            nA = 0
+            For w = k - windowRows + 1 To k
+                If w >= 2 Then
+                    v1 = 0: v2 = 0
+                    If IsNumeric(allData(w, pi)) Then v1 = CDbl(allData(w, pi))
+                    If IsNumeric(allData(w, pj)) Then v2 = CDbl(allData(w, pj))
+                    If v1 <> 0 Or v2 <> 0 Then
+                        nA = nA + 1
+                        d1(nA) = v1: d2(nA) = v2
+                    End If
+                End If
+            Next w
+
+            corr = 0
+            If nA > 5 Then
+                s1 = 0: s2 = 0: s1sq = 0: s2sq = 0: s12 = 0
+                For w = 1 To nA
+                    v1 = d1(w): v2 = d2(w)
+                    s1 = s1 + v1: s2 = s2 + v2
+                    s1sq = s1sq + v1 * v1: s2sq = s2sq + v2 * v2
+                    s12 = s12 + v1 * v2
+                Next w
+                denom = Sqr((s1sq - s1 * s1 / nA) * (s2sq - s2 * s2 / nA))
+                If denom > 0 Then
+                    corr = (s12 - s1 * s2 / nA) / denom
+                    If corr > 1 Then corr = 1
+                    If corr < -1 Then corr = -1
+                End If
+            End If
+
+            pairCurrent(p) = corr
+            If nA > 5 Then
+                sumPairs = sumPairs + Abs(corr): cntPairs = cntPairs + 1
+                If corr > maxC Then maxC = corr
+                If corr < minC Then minC = corr
+                pairSum(p) = pairSum(p) + corr: pairCnt(p) = pairCnt(p) + 1
+                If corr < pairMin(p) Then pairMin(p) = corr
+                If corr > pairMax(p) Then pairMax(p) = corr
+            End If
+        Next p
+
+        If cntPairs > 0 Then
+            rollingAvg(sIdx) = sumPairs / cntPairs
+            rollingMax(sIdx) = maxC
+            rollingMin(sIdx) = minC
+        End If
+NextK:
+    Next k
+
+    ' Per-pair averages
+    For p = 1 To nPairs
+        If pairCnt(p) > 0 Then pairSum(p) = pairSum(p) / pairCnt(p)
+    Next p
+
+    ' Write output sheet
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Sheets("RollingCorrelations").Delete
+    On Error GoTo ErrorHandler
+    Application.DisplayAlerts = True
+
+    Dim wsRoll As Worksheet
+    Set wsRoll = ThisWorkbook.Sheets.Add(After:=wsPortfolio)
+    wsRoll.Name = "RollingCorrelations"
+    wsRoll.Tab.Color = RGB(0, 180, 180)
+
+    Dim c As Long, dataRow As Long, r As Long
+    With wsRoll
+        With .Cells(1, 1)
+            .Value = "Rolling Correlation Analysis"
+            .Font.Size = 16: .Font.Bold = True
+        End With
+        .Cells(2, 1).Value = "Window: " & windowRows & " trading days (~" & Format(Short_Period, "0.0") & " yr)   " & _
+                             "Sampled every " & sampleStep & " trading days (~monthly)   " & nPairs & " strategy pairs"
+        .Cells(2, 1).Font.Italic = True
+        .Cells(3, 1).Value = "Last updated: " & Format(Now(), "dd-mmm-yyyy")
+
+        ' Section 1: Time series
+        Dim tsHdr As Long: tsHdr = 5
+        .Cells(tsHdr, 1).Value = "ROLLING AVERAGE CORRELATION — TIME SERIES"
+        .Cells(tsHdr, 1).Font.Bold = True: .Cells(tsHdr, 1).Font.Size = 12
+
+        Dim tsHdrs As Variant
+        tsHdrs = Array("Date", "Avg |Corr| (all pairs)", "Max Pair Corr", "Min Pair Corr")
+        For c = 0 To UBound(tsHdrs)
+            With .Cells(tsHdr + 1, c + 1)
+                .Value = tsHdrs(c): .Font.Bold = True
+                .Interior.Color = RGB(0, 70, 127): .Font.Color = RGB(255, 255, 255)
+                .WrapText = True
+            End With
+        Next c
+
+        dataRow = tsHdr + 2
+        For r = 1 To nSamples
+            .Cells(dataRow, 1).Value = sampleDates(r)
+            .Cells(dataRow, 2).Value = rollingAvg(r)
+            .Cells(dataRow, 3).Value = rollingMax(r)
+            .Cells(dataRow, 4).Value = rollingMin(r)
+
+            Select Case True
+                Case rollingAvg(r) >= High_Threshold:  .Cells(dataRow, 2).Interior.Color = RGB(255, 100, 100)
+                Case rollingAvg(r) >= Low_Threshold:   .Cells(dataRow, 2).Interior.Color = RGB(255, 255, 150)
+                Case Else:                              .Cells(dataRow, 2).Interior.Color = RGB(150, 230, 150)
+            End Select
+
+            If r Mod 2 = 0 Then
+                .Cells(dataRow, 1).Interior.Color = RGB(242, 242, 242)
+                .Cells(dataRow, 3).Interior.Color = RGB(242, 242, 242)
+                .Cells(dataRow, 4).Interior.Color = RGB(242, 242, 242)
+            End If
+            dataRow = dataRow + 1
+        Next r
+
+        .Range(.Cells(tsHdr + 2, 1), .Cells(dataRow - 1, 1)).NumberFormat = "dd-mmm-yyyy"
+        .Range(.Cells(tsHdr + 2, 2), .Cells(dataRow - 1, 4)).NumberFormat = "0.00"
+        .Columns(1).ColumnWidth = 14
+
+        ' Section 2: Per-pair summary
+        Dim smHdr As Long: smHdr = dataRow + 2
+        .Cells(smHdr, 1).Value = "ROLLING CORRELATION SUMMARY — Per Strategy Pair  (Current = most recent window)"
+        .Cells(smHdr, 1).Font.Bold = True: .Cells(smHdr, 1).Font.Size = 12
+
+        Dim smHdrs As Variant
+        smHdrs = Array("Strategy A", "Strategy B", "Current Corr", "Min (hist.)", "Max (hist.)", "Avg (hist.)")
+        For c = 0 To UBound(smHdrs)
+            With .Cells(smHdr + 1, c + 1)
+                .Value = smHdrs(c): .Font.Bold = True
+                .Interior.Color = RGB(0, 70, 127): .Font.Color = RGB(255, 255, 255)
+                .WrapText = True
+            End With
+        Next c
+
+        dataRow = smHdr + 2
+        Dim cv As Double
+        For p = 1 To nPairs
+            .Cells(dataRow, 1).Value = CStr(allData(1, pairRI(p)))
+            .Cells(dataRow, 2).Value = CStr(allData(1, pairCI(p)))
+            .Cells(dataRow, 3).Value = pairCurrent(p)
+            .Cells(dataRow, 4).Value = pairMin(p)
+            .Cells(dataRow, 5).Value = pairMax(p)
+            .Cells(dataRow, 6).Value = pairSum(p)   ' now holds average
+
+            cv = pairCurrent(p)
+            If cv > High_Threshold Or cv < -High_Threshold Then
+                .Cells(dataRow, 3).Interior.Color = RGB(255, 100, 100)
+            ElseIf cv > Low_Threshold Or cv < -Low_Threshold Then
+                .Cells(dataRow, 3).Interior.Color = RGB(255, 255, 150)
+            Else
+                .Cells(dataRow, 3).Interior.Color = RGB(150, 230, 150)
+            End If
+
+            If p Mod 2 = 0 Then
+                .Cells(dataRow, 1).Interior.Color = RGB(242, 242, 242)
+                .Cells(dataRow, 2).Interior.Color = RGB(242, 242, 242)
+                .Range(.Cells(dataRow, 4), .Cells(dataRow, 6)).Interior.Color = RGB(242, 242, 242)
+            End If
+            dataRow = dataRow + 1
+        Next p
+
+        .Range(.Cells(smHdr + 2, 3), .Cells(dataRow - 1, 6)).NumberFormat = "0.00"
+        .Columns("A:F").AutoFit
+    End With
+
+    Call AddRollingCorrNavButtons(wsRoll)
+
+    With ThisWorkbook.Windows(1)
+        .Zoom = 85
+    End With
+    wsRoll.Activate
+    MsgBox "Rolling correlation complete! " & nSamples & " time points, " & nPairs & " pairs.", vbInformation
+
+CleanExit:
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    Application.StatusBar = False
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Rolling correlation error (line " & Erl & "): " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+
+Private Sub AddRollingCorrNavButtons(ByRef wsSheet As Worksheet)
+    On Error GoTo ErrH
+    Dim btn As Object
+    Set btn = wsSheet.Buttons.Add(Left:=wsSheet.Cells(2, 2).Left, Top:=wsSheet.Cells(2, 2).Top, Width:=120, Height:=25)
+    With btn: .Caption = "Delete Tab": .OnAction = "DeleteRollingCorrelations": End With
+    Set btn = wsSheet.Buttons.Add(Left:=wsSheet.Cells(2, 5).Left, Top:=wsSheet.Cells(2, 2).Top, Width:=100, Height:=25)
+    With btn: .Caption = "Summary Tab": .OnAction = "GoToSummary": End With
+    Set btn = wsSheet.Buttons.Add(Left:=wsSheet.Cells(2, 8).Left, Top:=wsSheet.Cells(2, 2).Top, Width:=100, Height:=25)
+    With btn: .Caption = "Portfolio Tab": .OnAction = "GoToPortfolio": End With
+    Set btn = wsSheet.Buttons.Add(Left:=wsSheet.Cells(2, 11).Left, Top:=wsSheet.Cells(2, 2).Top, Width:=100, Height:=25)
+    With btn: .Caption = "Control Tab": .OnAction = "GoToControl": End With
+    Exit Sub
+ErrH: Debug.Print "AddRollingCorrNavButtons: " & Err.Description
+End Sub
+
+
+Sub DeleteRollingCorrelations()
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Sheets("RollingCorrelations").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    Call GoToSummary
+End Sub
