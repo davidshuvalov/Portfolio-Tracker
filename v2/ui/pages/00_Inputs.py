@@ -345,13 +345,16 @@ with st.form("eligibility_form"):
             help="EfficiencyRatio — used by all efficiency checks.",
         )
         days_thresh = st.number_input(
-            "Days Threshold",
+            "Month-End Days Threshold (0–31)",
             min_value=0, max_value=31, step=1,
             value=int(e.days_threshold_oos),
             help=(
-                "EligibilityDaysThreshold — if > 0, profit windows snap to "
-                "month-end boundaries unless current month has ≥ this many days. "
-                "0 = rolling windows."
+                "EligibilityDaysThreshold — controls how profit windows (1M, 3M, 6M…) are anchored.\n\n"
+                "0 = rolling: windows count exact calendar months back from today.\n\n"
+                "1–31 = calendar snap: if fewer than this many days have elapsed in the current month, "
+                "use the previous month-end as the effective end date and snap all windows to the 1st of each month.\n\n"
+                "Example (threshold=5): on Mar 3 (< 5 days) → effective end = Feb 28, "
+                "1M = Feb 1–28. On Mar 15 (≥ 5 days) → effective end = Mar 15, 1M = Mar 1–15."
             ),
         )
         elig_months_total = st.number_input(

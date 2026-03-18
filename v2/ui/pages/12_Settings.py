@@ -504,10 +504,36 @@ with st.form("preferences_form"):
         ["Live", "Paper", "Pass", "Retired"],
         default=list(config.eligibility.status_include),
     )
+
+    with st.expander("ℹ️ How the Month-End Days Threshold works", expanded=False):
+        st.markdown(
+            """
+**Month-End Days Threshold** controls how profit windows (1M, 3M, 6M…) are anchored:
+
+| Value | Mode | Behaviour |
+|-------|------|-----------|
+| **0** | Rolling | Windows count exact calendar months back from today (e.g. 15 Mar → 15 Feb for 1M). |
+| **1–31** | Calendar snap | If the current month has **fewer days** than this threshold, treat last month-end as the effective end date and snap all windows to the 1st of each month. Otherwise use today. |
+
+**Examples with threshold = 5:**
+- Today = **Mar 3** (3 days into month, < 5) → effective end = **Feb 28**; 1M = Feb 1–28, 3M = Dec 1–Feb 28
+- Today = **Mar 15** (15 days into month, ≥ 5) → effective end = **Mar 15**; 1M = Mar 1–15, 3M = Jan 1–Mar 15
+
+Use a higher threshold (e.g. 10–15) for month-end reporting so results stay stable during the first days of a new month.
+Set to **0** for a rolling window that always ends today.
+            """
+        )
+
     elig_days = st.number_input(
-        "Default min OOS days",
-        min_value=0, max_value=730,
-        value=int(config.eligibility.days_threshold_oos),
+        "Month-End Days Threshold (0 = rolling, 1–31 = calendar snap)",
+        min_value=0, max_value=31, step=1,
+        value=min(int(config.eligibility.days_threshold_oos), 31),
+        help=(
+            "EligibilityDaysThreshold — 0 = rolling windows ending today. "
+            "1–31 = snap profit windows to calendar month boundaries: if fewer than "
+            "this many days have elapsed in the current month, use the previous "
+            "month-end as the effective end date."
+        ),
     )
     elig_eff = st.slider(
         "Default efficiency ratio",

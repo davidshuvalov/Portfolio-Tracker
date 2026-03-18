@@ -478,6 +478,11 @@ def _calc_window_starts(
     Mirrors VBA: if daysThreshold > 0 and current month has < threshold days,
     use previous month's end as effective end date.
     """
+    # Clamp to valid range: 0 = rolling, 1–31 = calendar snap.
+    # Values > 31 would always trigger "snap to previous month" (no month has > 31 days),
+    # which is incorrect — guard against stale configs saved with the old max=730 UI bug.
+    days_threshold = min(days_threshold, 31)
+
     if days_threshold > 0:
         month_start = oos_end_ts.replace(day=1)
         days_in_current = (oos_end_ts - month_start).days + 1

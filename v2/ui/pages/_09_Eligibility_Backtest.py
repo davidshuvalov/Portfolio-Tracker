@@ -91,9 +91,16 @@ with st.sidebar:
         default=list(config.eligibility.status_include),
     )
     days_threshold = st.number_input(
-        "Min OOS days",
-        min_value=0, max_value=730, value=int(config.eligibility.days_threshold_oos),
-        help="Strategy must have ≥ N days of OOS data to be eligible",
+        "Month-End Days Threshold (0–31)",
+        min_value=0, max_value=31, step=1,
+        value=min(int(config.eligibility.days_threshold_oos), 31),
+        help=(
+            "EligibilityDaysThreshold — controls profit window anchoring.\n\n"
+            "0 = rolling: windows end today.\n"
+            "1–31 = calendar snap: if fewer than this many days have elapsed in the current month, "
+            "use the previous month-end as the effective end and snap all windows to the 1st of each month.\n\n"
+            "Example (threshold=5): Mar 3 → effective end = Feb 28; Mar 15 → effective end = Mar 15."
+        ),
     )
     dd_cap = st.number_input(
         "OOS DD / IS DD cap (0 = disabled)",
