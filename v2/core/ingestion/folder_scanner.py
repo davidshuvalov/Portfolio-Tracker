@@ -118,6 +118,8 @@ def scan_folders(base_folders: list[Path]) -> ScanResult:
     - Validates EquityData.csv exists (required)
     - Notes missing TradeData.csv or Walkforward Details.csv (warnings only)
     - Detects duplicate strategy names across base folders
+    - One subfolder can yield multiple strategies (one per *EquityData.csv found),
+      mirroring the VBA Dir() loop in GetFolderData.
     """
     strategies: list[StrategyFolder] = []
     warnings: list[str] = []
@@ -136,82 +138,84 @@ def scan_folders(base_folders: list[Path]) -> ScanResult:
             if not subfolder.is_dir():
                 continue
 
-            result = _scan_strategy_folder(subfolder, warnings, base_folder=base)
-            if result is None:
-                continue
+            for result in _scan_strategy_folder(subfolder, warnings, base_folder=base):
+                # Duplicate detection (mirrors VBA dict.Exists check)
+                if result.name in seen_names:
+                    warnings.append(
+                        f"Duplicate strategy '{result.name}' found in '{base.name}' "
+                        f"(already seen in '{seen_names[result.name].name}'). Skipping duplicate."
+                    )
+                    continue
 
-            # Duplicate detection (mirrors VBA dict.Exists check)
-            if result.name in seen_names:
-                warnings.append(
-                    f"Duplicate strategy '{result.name}' found in '{base.name}' "
-                    f"(already seen in '{seen_names[result.name].name}'). Skipping duplicate."
-                )
-                continue
-
-            seen_names[result.name] = base
-            strategies.append(result)
+                seen_names[result.name] = base
+                strategies.append(result)
 
     return ScanResult(strategies=strategies, warnings=warnings, errors=errors)
 
 
 def _scan_strategy_folder(
     subfolder: Path, warnings: list[str], base_folder: Path | None = None
-) -> StrategyFolder | None:
+) -> list[StrategyFolder]:
     """
     Inspect one strategy subfolder.
-    Returns StrategyFolder if valid, None if EquityData.csv is missing.
+
+    Returns a list of StrategyFolder — one per *EquityData.csv found in the
+    Walkforward Files directory.  A single subfolder can yield multiple strategies,
+    which is the normal layout for Buy & Hold folders where many instruments share
+    one Walkforward Files directory.  Mirrors the VBA Dir() loop in GetFolderData.
     """
     wf_dir = subfolder / WALKFORWARD_DIR
 
     if not wf_dir.exists():
         # No Walkforward Files directory — skip silently (could be an unrelated folder)
-        return None
+        return []
 
-    # Find EquityData.csv — required
-    equity_csv = _find_file(wf_dir, EQUITY_SUFFIX)
-    if equity_csv is None:
+    # Find ALL EquityData.csv files — each becomes a separate strategy (sorted for
+    # deterministic ordering, mirroring VBA's Dir() alphabetical enumeration).
+    equity_csvs = sorted(
+        f for f in wf_dir.iterdir() if f.is_file() and f.name.endswith(EQUITY_SUFFIX)
+    )
+
+    if not equity_csvs:
         warnings.append(
             f"'{subfolder.name}': no *EquityData.csv found in '{WALKFORWARD_DIR}/'. "
             f"Skipping."
         )
-        return None
+        return []
 
-    # Derive strategy name from filename: "{name} EquityData.csv" → "{name}"
-    strategy_name = equity_csv.name.removesuffix(EQUITY_SUFFIX)
-
-    # Find TradeData.csv — optional
-    trade_csv = _find_file(wf_dir, TRADE_SUFFIX)
-    if trade_csv is None:
+    # Find optional Walkforward Details CSV — shared across all strategies in this
+    # subfolder (there is typically one per folder, not one per instrument).
+    wf_details_path = wf_dir / WALKFORWARD_DETAILS
+    wf_details: Path | None = wf_details_path if wf_details_path.exists() else None
+    if wf_details is None:
         warnings.append(
-            f"'{strategy_name}': no *TradeData.csv found. "
-            f"Trade-level analysis will not be available."
-        )
-
-    # Find Walkforward Details CSV — optional
-    wf_details = wf_dir / WALKFORWARD_DETAILS
-    if not wf_details.exists():
-        warnings.append(
-            f"'{strategy_name}': '{WALKFORWARD_DETAILS}' not found. "
+            f"'{subfolder.name}': '{WALKFORWARD_DETAILS}' not found. "
             f"IS/OOS dates will not be available from this folder."
         )
-        wf_details = None
 
-    return StrategyFolder(
-        name=strategy_name,
-        path=subfolder,
-        equity_csv=equity_csv,
-        trade_csv=trade_csv,
-        walkforward_csv=wf_details,
-        base_folder=base_folder,
-    )
+    results: list[StrategyFolder] = []
+    for equity_csv in equity_csvs:
+        strategy_name = equity_csv.name.removesuffix(EQUITY_SUFFIX)
 
+        # Find the matching TradeData.csv for this specific strategy by name.
+        trade_csv_path = wf_dir / (strategy_name + TRADE_SUFFIX)
+        trade_csv: Path | None = trade_csv_path if trade_csv_path.exists() else None
+        if trade_csv is None:
+            warnings.append(
+                f"'{strategy_name}': no *TradeData.csv found. "
+                f"Trade-level analysis will not be available."
+            )
 
-def _find_file(directory: Path, suffix: str) -> Path | None:
-    """Find the first file in directory whose name ends with suffix."""
-    for f in directory.iterdir():
-        if f.is_file() and f.name.endswith(suffix):
-            return f
-    return None
+        results.append(StrategyFolder(
+            name=strategy_name,
+            path=subfolder,
+            equity_csv=equity_csv,
+            trade_csv=trade_csv,
+            walkforward_csv=wf_details,
+            base_folder=base_folder,
+        ))
+
+    return results
 
 
 # ── "Not Loaded" prefix helpers (mirrors VBA logic) ───────────────────────────

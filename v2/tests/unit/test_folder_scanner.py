@@ -163,6 +163,116 @@ class TestScanFoldersOptionalFiles:
         assert len(result.strategies) == 1
 
 
+# ── scan_folders: multiple strategies per subfolder ──────────────────────────
+
+class TestMultipleStrategiesPerSubfolder:
+    """
+    One subfolder can yield multiple strategies when its Walkforward Files/
+    directory contains several *EquityData.csv files (common for Buy & Hold
+    folders where many instruments share one directory).
+    Mirrors VBA GetFolderData Dir() loop behaviour.
+    """
+
+    def _make_multi_strategy_subfolder(
+        self, tmp_path: Path, subfolder_name: str, strategy_names: list[str], *, wf: bool = True
+    ) -> Path:
+        """Create a subfolder with multiple *EquityData.csv files."""
+        subfolder = tmp_path / subfolder_name
+        wf_dir = subfolder / WALKFORWARD_DIR
+        wf_dir.mkdir(parents=True)
+        for name in strategy_names:
+            (wf_dir / f"{name}{EQUITY_SUFFIX}").write_text("date,m2m\n01/01/2024,100\n")
+            (wf_dir / f"{name}{TRADE_SUFFIX}").write_text("date,type\n01/01/2024,Exit\n")
+        if wf:
+            (wf_dir / WALKFORWARD_DETAILS).write_text("IS,OOS\n")
+        return subfolder
+
+    def test_multiple_equity_files_yield_multiple_strategies(self, tmp_path):
+        names = ["BnH NQ", "BnH ES", "BnH CL"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        found = {s.name for s in result.strategies}
+        assert found == set(names)
+        assert result.errors == []
+
+    def test_44_strategies_in_one_subfolder(self, tmp_path):
+        names = [f"BnH {i:02d}" for i in range(44)]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        assert len(result.strategies) == 44
+        assert result.errors == []
+
+    def test_each_strategy_gets_correct_equity_csv(self, tmp_path):
+        names = ["BnH NQ", "BnH ES"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        by_name = {s.name: s for s in result.strategies}
+        assert by_name["BnH NQ"].equity_csv.name == f"BnH NQ{EQUITY_SUFFIX}"
+        assert by_name["BnH ES"].equity_csv.name == f"BnH ES{EQUITY_SUFFIX}"
+
+    def test_each_strategy_gets_correct_trade_csv(self, tmp_path):
+        names = ["BnH NQ", "BnH ES"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        by_name = {s.name: s for s in result.strategies}
+        assert by_name["BnH NQ"].trade_csv is not None
+        assert by_name["BnH NQ"].trade_csv.name == f"BnH NQ{TRADE_SUFFIX}"
+        assert by_name["BnH ES"].trade_csv.name == f"BnH ES{TRADE_SUFFIX}"
+
+    def test_walkforward_details_shared_across_strategies(self, tmp_path):
+        names = ["BnH NQ", "BnH ES", "BnH CL"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        # All strategies share the same walkforward CSV from the same folder
+        wf_csvs = {s.walkforward_csv for s in result.strategies}
+        assert len(wf_csvs) == 1
+        assert next(iter(wf_csvs)).name == WALKFORWARD_DETAILS
+
+    def test_missing_wf_details_warns_once_per_subfolder(self, tmp_path):
+        names = ["BnH NQ", "BnH ES", "BnH CL"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names, wf=False)
+        result = scan_folders([tmp_path])
+        assert len(result.strategies) == 3
+        wf_warnings = [w for w in result.warnings if WALKFORWARD_DETAILS in w]
+        # One warning per subfolder, not per strategy
+        assert len(wf_warnings) == 1
+
+    def test_missing_trade_csv_warns_per_strategy(self, tmp_path):
+        subfolder = tmp_path / "BuyAndHold"
+        wf_dir = subfolder / WALKFORWARD_DIR
+        wf_dir.mkdir(parents=True)
+        for name in ["BnH NQ", "BnH ES"]:
+            (wf_dir / f"{name}{EQUITY_SUFFIX}").write_text("date,m2m\n01/01/2024,100\n")
+            # No TradeData.csv
+        result = scan_folders([tmp_path])
+        assert len(result.strategies) == 2
+        trade_warnings = [w for w in result.warnings if "TradeData" in w]
+        assert len(trade_warnings) == 2
+
+    def test_multi_strategy_combined_with_single_strategy_folders(self, tmp_path):
+        # Standard single-strategy folders alongside a multi-strategy BnH folder
+        _make_strategy(tmp_path, "StratA")
+        _make_strategy(tmp_path, "StratB")
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", ["BnH NQ", "BnH ES"])
+        result = scan_folders([tmp_path])
+        names = {s.name for s in result.strategies}
+        assert names == {"StratA", "StratB", "BnH NQ", "BnH ES"}
+
+    def test_results_sorted_alphabetically_across_strategies(self, tmp_path):
+        names = ["BnH ZZ", "BnH AA", "BnH MM"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        returned_names = [s.name for s in result.strategies]
+        assert returned_names == sorted(returned_names)
+
+    def test_all_strategies_share_same_subfolder_path(self, tmp_path):
+        names = ["BnH NQ", "BnH ES"]
+        self._make_multi_strategy_subfolder(tmp_path, "BuyAndHold", names)
+        result = scan_folders([tmp_path])
+        paths = {s.path for s in result.strategies}
+        assert len(paths) == 1  # all point to the same subfolder
+
+
 # ── scan_folders: duplicate detection ────────────────────────────────────────
 
 class TestScanFoldersDuplicates:
