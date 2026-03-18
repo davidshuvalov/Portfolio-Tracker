@@ -637,9 +637,22 @@ with tab_summary:
                 lambda n: _strats_map.get(n, {}).get("status", "")
             ))
 
+            # ── Exclude Buy & Hold strategies (they appear in Market Analysis) ──
+            _bh_mask = _sm2["status"].str.lower().str.contains("buy", na=False) & \
+                       _sm2["status"].str.lower().str.contains("hold", na=False)
+            _bh_count = _bh_mask.sum()
+            if _bh_count > 0:
+                _sm2 = _sm2[~_bh_mask]
+                st.info(
+                    f"ℹ {_bh_count} Buy & Hold strategy{'s are' if _bh_count != 1 else ' is'} "
+                    "excluded from this table — see **Market Analysis** for ATR and volatility data.",
+                    icon=None,
+                )
+                st.page_link("ui/pages/_16_Market_Analysis.py", label="Open Market Analysis →")
+
             # ── Eligibility computation ────────────────────────────────────────
             from core.portfolio.summary import apply_eligibility_rules as _apply_elig
-            _elig_mask = _apply_elig(_sm, config.eligibility)
+            _elig_mask = _apply_elig(_sm[~_bh_mask] if _bh_count > 0 else _sm, config.eligibility)
             _sm2["eligibility_status"] = _elig_mask.map({True: "Eligible", False: "Ineligible"})
 
             # All available summary columns with friendly labels

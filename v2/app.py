@@ -279,6 +279,7 @@ def _home_page() -> None:
             ("Diversificator",       "ui/pages/_13_Diversificator.py",       "Find the optimal strategy build order for maximum diversification benefit"),
             ("Portfolio Compare",    "ui/pages/_14_Portfolio_Compare.py",    "Track changes to your Live portfolio using saved snapshots"),
             ("Portfolio Optimizer",  "ui/pages/_15_Portfolio_Optimizer.py",  "Auto-suggest an optimal, diversified portfolio from eligible strategies"),
+            ("Market Analysis",      "ui/pages/_16_Market_Analysis.py",      "ATR, volatility regimes, market correlations and news for Buy & Hold markets"),
         ]
 
         a_cols = st.columns(4, gap="medium")

@@ -946,6 +946,7 @@ _analytics = [
     ("Eligibility Backtest", "ui/pages/_09_Eligibility_Backtest.py"),
     ("Margin Tracking", "ui/pages/_10_Margin_Tracking.py"),
     ("Position Check", "ui/pages/_11_Position_Check.py"),
+    ("Market Analysis", "ui/pages/_16_Market_Analysis.py"),
 ]
 for _i, (_label, _page) in enumerate(_analytics):
     with _a_cols[_i % 4]:
