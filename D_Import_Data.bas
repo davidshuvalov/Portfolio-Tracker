@@ -469,6 +469,8 @@ Sub ProcessTradeData(dataArray As Variant, tradeDataDict As Object, FileNameOnly
             ' Store both ATR and PNL as an array
             If Not tradeDataDict(FileNameOnly).Exists(dateStr) Then
                 tradeDataDict(FileNameOnly).Add dateStr, Array(ATR, PNL)
+            Else
+                Debug.Print "WARNING: Duplicate trade date " & dateStr & " for contract " & FileNameOnly & " — second entry dropped"
             End If
         End If
     Next i
