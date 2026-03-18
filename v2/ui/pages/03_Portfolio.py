@@ -116,6 +116,7 @@ if _needs_rebuild:
             quitting_max_dollars=config.quitting.max_dollars,
             quitting_max_percent=config.quitting.max_percent_drawdown,
             quitting_sd_multiple=config.quitting.sd_multiple,
+            strategy_mc_config=config.strategy_mc,
         )
 
         # Apply eligibility rules and add as a column
@@ -233,9 +234,41 @@ if portfolio is None or not portfolio.strategies:
     st.stop()
 
 
-# ── 1. Header metrics ──────────────────────────────────────────────────────────
+# ── Cutoff & lookback date helpers ─────────────────────────────────────────────
+_cutoff_ts: pd.Timestamp | None = None
+if config.portfolio.use_cutoff and config.portfolio.cutoff_date:
+    try:
+        _cutoff_ts = pd.Timestamp(config.portfolio.cutoff_date)
+    except Exception:
+        pass
 
-stats = portfolio_summary_stats(portfolio)
+_lookback_ts: pd.Timestamp | None = None
+if config.portfolio.period_years and config.portfolio.period_years > 0:
+    _lookback_ts = pd.Timestamp.today() - pd.DateOffset(years=int(config.portfolio.period_years))
+
+def _apply_cutoff(s: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
+    if _cutoff_ts is not None:
+        s = s[s.index <= _cutoff_ts]
+    return s
+
+def _apply_lookback(s: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
+    if _lookback_ts is not None:
+        s = s[s.index >= _lookback_ts]
+    return s
+
+# Daily PnL filtered to cutoff for stats; further filtered for display
+_cutoff_daily_pnl = _apply_cutoff(portfolio.daily_pnl)
+_display_daily_pnl = _apply_lookback(_cutoff_daily_pnl)
+
+# ── 1. Header metrics (use cutoff-filtered data) ───────────────────────────────
+from core.data_types import PortfolioData as _PD
+_stats_portfolio = _PD(
+    strategies=portfolio.strategies,
+    daily_pnl=_cutoff_daily_pnl,
+    closed_trades=_apply_cutoff(portfolio.closed_trades),
+    summary_metrics=portfolio.summary_metrics,
+)
+stats = portfolio_summary_stats(_stats_portfolio)
 
 st.subheader("Portfolio Summary")
 
@@ -253,15 +286,23 @@ c6.metric(
 st.divider()
 
 
-# ── 2. Equity curve ────────────────────────────────────────────────────────────
+# ── 2. Equity curve (cutoff + lookback applied) ───────────────────────────────
 
 st.subheader("Portfolio Equity Curve")
 
-equity = portfolio_equity_curve(portfolio)
-total_pnl = portfolio_total_pnl(portfolio)
+total_pnl = _display_daily_pnl.sum(axis=1)
+equity = total_pnl.cumsum().rename("Equity")
 
-# Per-strategy equity curves
-strat_equity = portfolio.daily_pnl.cumsum()
+# Per-strategy equity curves (display window)
+strat_equity = _display_daily_pnl.cumsum()
+
+if _cutoff_ts is not None or _lookback_ts is not None:
+    _filter_note = []
+    if _cutoff_ts is not None:
+        _filter_note.append(f"cutoff {_cutoff_ts.date()}")
+    if _lookback_ts is not None:
+        _filter_note.append(f"last {config.portfolio.period_years:.0f}y")
+    st.caption(f"Chart filtered: {', '.join(_filter_note)}")
 
 fig = go.Figure()
 
@@ -344,6 +385,8 @@ if not portfolio.summary_metrics.empty:
         "mw_mc_isoos": "MW MC IS+OOS (%)",
         "mc_closed_is": "Closed MC IS (10%)",
         "mc_closed_isoos": "Closed MC IS+OOS (10%)",
+        "strategy_mc_equity": "Strategy MC Equity ($)",
+        "strategy_mc_max_dd": "Strategy MC Max DD %",
         "trades_per_year": "Trades/Yr",
         "overall_win_rate": "Win Rate",
         "sharpe_isoos": "Sharpe IS+OOS",
@@ -832,7 +875,14 @@ st.divider()
 
 st.subheader("Monthly P&L — Total Portfolio")
 
-monthly = monthly_portfolio_pnl(portfolio)
+# Apply cutoff + lookback to portfolio object used for monthly heatmap
+_display_portfolio = _PD(
+    strategies=portfolio.strategies,
+    daily_pnl=_display_daily_pnl,
+    closed_trades=_apply_lookback(_apply_cutoff(portfolio.closed_trades)),
+    summary_metrics=portfolio.summary_metrics,
+)
+monthly = monthly_portfolio_pnl(_display_portfolio)
 if not monthly.empty and "Total" in monthly.columns:
     total_monthly = monthly["Total"].to_frame()
     total_monthly["Year"] = total_monthly.index.year

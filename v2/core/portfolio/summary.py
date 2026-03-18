@@ -46,6 +46,7 @@ def compute_summary(
     quitting_max_percent: float = 1.5,
     quitting_sd_multiple: float = 1.28,
     data_scope: str = "OOS",
+    strategy_mc_config=None,   # StrategyMCConfig | None
 ) -> pd.DataFrame:
     """
     Compute per-strategy summary metrics for all strategies in imported.
@@ -150,6 +151,38 @@ def compute_summary(
         else:
             row["mc_closed_is"] = float("nan")
             row["mc_closed_isoos"] = float("nan")
+
+        # ── Strategy MC: solve for equity at target RoR (1 contract) ─────────
+        if strategy_mc_config is not None and strategy_mc_config.enabled:
+            try:
+                from core.analytics.monte_carlo import run_strategy_mc
+                # Select period-appropriate trade P&L array for Trade mode
+                _smc_trades = _all_trades
+                if oos_begin is not None and not imported.trades.empty:
+                    _strat_t2 = imported.trades[imported.trades["strategy"] == name]
+                    if strategy_mc_config.period == "IS":
+                        _smc_trades = _strat_t2.loc[
+                            _strat_t2["date"] < pd.Timestamp(oos_begin), "pnl"
+                        ].dropna().values.astype(np.float64)
+                    elif strategy_mc_config.period == "OOS":
+                        _smc_trades = _strat_t2.loc[
+                            _strat_t2["date"] >= pd.Timestamp(oos_begin), "pnl"
+                        ].dropna().values.astype(np.float64)
+                _margin = float(wf.maint_overnight_margin) if wf and wf.maint_overnight_margin else 5_000.0
+                _smc_result = run_strategy_mc(
+                    daily_pnl=pnl,
+                    trade_pnls=_smc_trades,
+                    oos_begin=oos_begin,
+                    margin=_margin,
+                    config=strategy_mc_config,
+                )
+                row["strategy_mc_equity"] = _smc_result.starting_equity
+                row["strategy_mc_max_dd"] = _smc_result.max_drawdown_pct
+                row["strategy_mc_ror"]    = _smc_result.risk_of_ruin
+            except Exception:
+                row["strategy_mc_equity"] = float("nan")
+                row["strategy_mc_max_dd"] = float("nan")
+                row["strategy_mc_ror"]    = float("nan")
 
         rows.append(row)
 

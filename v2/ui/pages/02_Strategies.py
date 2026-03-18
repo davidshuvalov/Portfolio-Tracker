@@ -488,6 +488,7 @@ with tab_summary:
                     use_cutoff=_cfg.portfolio.use_cutoff,
                     cutoff_date=_cutoff,
                     days_threshold=_cfg.eligibility.days_threshold_oos,
+                    strategy_mc_config=_cfg.strategy_mc,
                 )
             st.success(f"Summary computed for {len(st.session_state[_SUMMARY_KEY])} strategies.")
 
@@ -660,6 +661,8 @@ with tab_summary:
                 "mw_mc_isoos": "MW MC IS+OOS (%)",
                 "mc_closed_is": "Closed MC IS (10%)",
                 "mc_closed_isoos": "Closed MC IS+OOS (10%)",
+                "strategy_mc_equity": "Strategy MC Equity ($)",
+                "strategy_mc_max_dd": "Strategy MC Max DD %",
                 "trades_per_year": "Trades/Yr",
                 "overall_win_rate": "Win Rate",
                 "sharpe_isoos": "Sharpe IS+OOS",

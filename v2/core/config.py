@@ -147,6 +147,17 @@ class PortfolioOptimizerConfig(BaseModel):
     mc_tolerance: float = 0.02                  # convergence band for drawdown mode
 
 
+class StrategyMCConfig(BaseModel):
+    """Per-strategy Monte Carlo settings (separate from portfolio MC)."""
+    enabled: bool = True
+    simulations: int = 2_000
+    period: Literal["IS", "OOS", "IS+OOS"] = "OOS"
+    mode: Literal["Daily", "Weekly", "Trade"] = "Trade"
+    # Trade retention: 1.0 = 100% (no adjustment); stored as (1-retention) internally
+    trade_adjustment: float = 0.0   # 0.0 = full retention; mirrors MCConfig convention
+    risk_ruin_target: float = 0.10
+
+
 class IncubationConfig(BaseModel):
     months: int = 6             # Minimum OOS months before incubation check
     min_profit_ratio: float = 1.0  # Profit target as multiple of expected rate
@@ -232,6 +243,7 @@ class AppConfig(BaseModel):
     folders: list[Path] = Field(default_factory=list)
     date_format: Literal["DMY", "MDY"] = "DMY"
     portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
+    strategy_mc: StrategyMCConfig = Field(default_factory=StrategyMCConfig)
     incubation: IncubationConfig = Field(default_factory=IncubationConfig)
     quitting: QuittingConfig = Field(default_factory=QuittingConfig)
     monte_carlo: MCConfig = Field(default_factory=MCConfig)

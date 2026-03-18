@@ -455,6 +455,46 @@ with st.form("preferences_form"):
         help="Trim top-N% best trading days to stress-test the distribution",
     )
 
+    st.subheader("Strategy Monte Carlo defaults")
+    st.caption(
+        "Computes MC per strategy, solving for the equity required to achieve the "
+        "target risk-of-ruin on 1 contract. Shown as a column in strategy and portfolio tables."
+    )
+    smc = config.strategy_mc
+    smc_enabled = st.checkbox("Enable strategy MC", value=smc.enabled,
+                              help="When off, MC columns show NaN and no computation runs.")
+    col_smc1, col_smc2 = st.columns(2)
+    with col_smc1:
+        smc_sims = st.number_input(
+            "Simulations",
+            min_value=500, max_value=20_000, step=500,
+            value=int(smc.simulations),
+            help="Lower than portfolio MC for speed; 2,000 is sufficient.",
+        )
+        smc_period = st.selectbox(
+            "Period",
+            ["OOS", "IS", "IS+OOS"],
+            index=["OOS", "IS", "IS+OOS"].index(smc.period),
+        )
+    with col_smc2:
+        smc_mode = st.selectbox(
+            "Mode",
+            ["Trade", "Daily", "Weekly"],
+            index=["Trade", "Daily", "Weekly"].index(smc.mode),
+            help="Trade: use closed-trade P&L  |  Daily: 252 M2M samples/yr  |  Weekly: 52 weekly samples/yr",
+        )
+        smc_ror_pct = st.slider(
+            "Risk-of-ruin target %",
+            min_value=1, max_value=30, value=int(smc.risk_ruin_target * 100),
+            help="Solver finds equity per contract that achieves this ruin probability.",
+        )
+    _smc_saved_retention = int(round((1.0 - smc.trade_adjustment) * 100))
+    smc_retention_pct = st.slider(
+        "Trade retention % (strategy MC)",
+        min_value=0, max_value=100, value=_smc_saved_retention, step=5,
+        help="100% = no adjustment; lower = stress test by reducing each trade's contribution.",
+    )
+
     st.subheader("Strategy Ranking defaults")
     _RANK_METRICS = {
         "rtd_oos":                "Return-to-Drawdown (OOS)",
@@ -596,8 +636,17 @@ Set to **0** for a rolling window that always ends today.
         config.monte_carlo.risk_ruin_target = mc_ror / 100.0
         config.monte_carlo.trade_option     = mc_trade_opt
         config.monte_carlo.solve_for_ror    = solve_for_ror
+        config.monte_carlo.solve_mode       = "ror" if solve_for_ror else "none"
         config.monte_carlo.output_samples   = int(mc_output_samples)
         config.monte_carlo.remove_best_pct  = float(mc_remove_best)
+
+        # Strategy MC
+        config.strategy_mc.enabled          = smc_enabled
+        config.strategy_mc.simulations      = int(smc_sims)
+        config.strategy_mc.period           = smc_period
+        config.strategy_mc.mode             = smc_mode
+        config.strategy_mc.risk_ruin_target = smc_ror_pct / 100.0
+        config.strategy_mc.trade_adjustment = 1.0 - (smc_retention_pct / 100.0)
 
         # Strategy Ranking
         config.ranking.metric            = rank_metric

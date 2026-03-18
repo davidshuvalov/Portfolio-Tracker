@@ -53,15 +53,27 @@ with st.sidebar:
         help="Data period to sample trade PnL from",
     )
 
-    _trade_opts = ["M2M", "Closed"]
-    _safe_trade = config.monte_carlo.trade_option if config.monte_carlo.trade_option in _trade_opts else "Closed"
-    trade_option = st.radio(
-        "Trade data",
-        _trade_opts,
-        index=_trade_opts.index(_safe_trade),
-        horizontal=True,
-        help="M2M: daily mark-to-market  |  Closed: closed-trade PnL",
-    )
+    # Portfolio MC can only use daily or weekly (trade dates don't align across strategies)
+    _is_portfolio = (mc_target == "Portfolio")
+    if _is_portfolio:
+        _mc_mode_opts = ["Daily", "Weekly"]
+        mc_mode = st.radio(
+            "MC mode",
+            _mc_mode_opts,
+            horizontal=True,
+            help="Portfolio MC uses daily or weekly M2M only — trade dates don't align across strategies.",
+        )
+        trade_option = "M2M"
+        st.caption("ℹ️ Trade-level data not available for portfolio MC.")
+    else:
+        _mc_mode_opts = ["Daily", "Weekly", "Trade"]
+        mc_mode = st.radio(
+            "MC mode",
+            _mc_mode_opts,
+            horizontal=True,
+            help="Daily: 252 M2M samples/yr  |  Weekly: 52 weekly samples/yr  |  Trade: closed-trade P&L",
+        )
+        trade_option = "Closed" if mc_mode == "Trade" else "M2M"
 
     simulations = st.number_input(
         "Simulations",
@@ -71,15 +83,17 @@ with st.sidebar:
         step=1_000,
     )
 
-    trade_adj_pct = st.slider(
-        "Trade adjustment %",
-        min_value=-50,
-        max_value=50,
-        value=int(config.monte_carlo.trade_adjustment * 100),
-        step=1,
-        help="Reduce each trade by this % (stress test slippage / commission)",
+    # Trade retention: 100% = no adjustment (full P&L), 0% = zero out all trades
+    _saved_retention = int(round((1.0 - config.monte_carlo.trade_adjustment) * 100))
+    trade_retention_pct = st.slider(
+        "Trade retention %",
+        min_value=0,
+        max_value=100,
+        value=_saved_retention,
+        step=5,
+        help="100% = no adjustment (full P&L). Lower values stress-test by reducing each trade's contribution.",
     )
-    trade_adjustment = trade_adj_pct / 100.0
+    trade_adjustment = 1.0 - (trade_retention_pct / 100.0)
 
     risk_ruin_pct = st.slider(
         "Risk-of-ruin target %",
@@ -174,7 +188,7 @@ with st.sidebar:
         config.monte_carlo.simulations           = int(simulations)
         config.monte_carlo.period                = period
         config.monte_carlo.risk_ruin_target      = risk_ruin_target
-        config.monte_carlo.trade_adjustment      = trade_adjustment
+        config.monte_carlo.trade_adjustment      = trade_adjustment  # 0=100% retention
         config.monte_carlo.trade_option          = trade_option
         config.monte_carlo.solve_mode            = solve_mode
         config.monte_carlo.max_dd_target         = max_dd_target
@@ -260,15 +274,23 @@ if run_btn:
         max_dd_percentile=max_dd_percentile,
     )
 
+    # Weekly mode: resample daily data to weekly sums before MC
+    _mc_daily_m2m = daily_m2m
+    _mc_closed_daily = closed_daily
+    if mc_mode == "Weekly":
+        _mc_daily_m2m = daily_m2m.resample("W").sum()
+        if closed_daily is not None:
+            _mc_closed_daily = closed_daily.resample("W").sum()
+
     with st.status(f"Running Monte Carlo — {mc_target}", expanded=True) as _mc_status:
         st.write("Building trade sequence…")
         _mc_status.update(label="Running simulations…")
         result = run_monte_carlo(
-            daily_m2m=daily_m2m,
+            daily_m2m=_mc_daily_m2m,
             config=mc_config,
             margin_threshold=float(margin_threshold),
             starting_equity=float(starting_equity),
-            closed_daily=closed_daily,
+            closed_daily=_mc_closed_daily,
             strategy=strategy_obj,
             return_scenarios=True,
         )

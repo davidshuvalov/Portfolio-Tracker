@@ -66,6 +66,16 @@ with st.sidebar:
     st.page_link("ui/pages/02_Strategies.py", label="← Strategies")
     st.page_link("ui/pages/03_Portfolio.py",  label="← Portfolio")
 
+    # ── Section visibility ───────────────────────────────────────────────────
+    st.divider()
+    with st.expander("⚙ Sections to show", expanded=False):
+        st.checkbox("Walkforward Detail",  value=st.session_state.get("sd_show_wf",      True),  key="sd_show_wf")
+        st.checkbox("Equity Curve",        value=st.session_state.get("sd_show_equity",   True),  key="sd_show_equity")
+        st.checkbox("Drawdown",            value=st.session_state.get("sd_show_dd",       True),  key="sd_show_dd")
+        st.checkbox("Monthly P&L",         value=st.session_state.get("sd_show_monthly",  True),  key="sd_show_monthly")
+        st.checkbox("Files & Folder",      value=st.session_state.get("sd_show_files",    False), key="sd_show_files")
+        st.checkbox("Trade List",          value=st.session_state.get("sd_show_trades",   True),  key="sd_show_trades")
+
 # ── Resolve strategy metadata ──────────────────────────────────────────────────
 # Try portfolio first (has full Strategy objects), fall back to imported
 _strat_obj = None
@@ -309,81 +319,83 @@ with _sd_exp_col:
 st.divider()
 
 # ── Equity curve ───────────────────────────────────────────────────────────────
-st.subheader("Equity Curve")
+if st.session_state.get("sd_show_equity", True):
+    st.subheader("Equity Curve")
 
-fig_eq = go.Figure()
+    fig_eq = go.Figure()
 
-if not is_pnl.empty:
-    is_eq = is_pnl.cumsum()
-    fig_eq.add_trace(go.Scatter(
-        x=is_eq.index, y=is_eq.values,
-        name="IS", line=dict(color="#1565C0", width=2),
-    ))
+    if not is_pnl.empty:
+        is_eq = is_pnl.cumsum()
+        fig_eq.add_trace(go.Scatter(
+            x=is_eq.index, y=is_eq.values,
+            name="IS", line=dict(color="#1565C0", width=2),
+        ))
 
-if not oos_pnl.empty:
-    # Carry IS end value as OOS base so the curve is continuous
-    is_base = float(is_pnl.sum()) if not is_pnl.empty else 0.0
-    oos_eq  = oos_pnl.cumsum() + is_base
-    fig_eq.add_trace(go.Scatter(
-        x=oos_eq.index, y=oos_eq.values,
-        name="OOS", line=dict(color="#2E7D32", width=2.5),
-    ))
+    if not oos_pnl.empty:
+        is_base = float(is_pnl.sum()) if not is_pnl.empty else 0.0
+        oos_eq  = oos_pnl.cumsum() + is_base
+        fig_eq.add_trace(go.Scatter(
+            x=oos_eq.index, y=oos_eq.values,
+            name="OOS", line=dict(color="#2E7D32", width=2.5),
+        ))
 
-# OOS start vertical line
-if oos_ts is not None:
-    fig_eq.add_vline(
-        x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C",
-        annotation_text="OOS Start", annotation_position="top right",
-    )
-
-fig_eq.update_layout(
-    height=380, xaxis_title="Date", yaxis_title="Cumulative P&L ($)",
-    hovermode="x unified",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02),
-)
-st.plotly_chart(fig_eq, use_container_width=True)
-
-# ── Drawdown ───────────────────────────────────────────────────────────────────
-with st.expander("Drawdown", expanded=False):
-    full_eq = scaled_pnl.cumsum()
-    peak    = full_eq.cummax()
-    dd_ser  = -(peak - full_eq)
-
-    fig_dd = go.Figure()
     if oos_ts is not None:
-        fig_dd.add_trace(go.Scatter(
-            x=dd_ser[dd_ser.index < oos_ts].index,
-            y=dd_ser[dd_ser.index < oos_ts].values,
-            fill="tozeroy", name="IS DD",
-            line=dict(color="#90CAF9"),
-        ))
-        fig_dd.add_trace(go.Scatter(
-            x=dd_ser[dd_ser.index >= oos_ts].index,
-            y=dd_ser[dd_ser.index >= oos_ts].values,
-            fill="tozeroy", name="OOS DD",
-            line=dict(color="#F44336"),
-        ))
-        fig_dd.add_vline(x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C")
-    else:
-        fig_dd.add_trace(go.Scatter(
-            x=dd_ser.index, y=dd_ser.values,
-            fill="tozeroy", name="Drawdown",
-            line=dict(color="#F44336"),
-        ))
+        fig_eq.add_vline(
+            x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C",
+            annotation_text="OOS Start", annotation_position="top right",
+        )
 
-    fig_dd.update_layout(
-        height=240, yaxis_title="Drawdown ($)", hovermode="x unified",
+    fig_eq.update_layout(
+        height=380, xaxis_title="Date", yaxis_title="Cumulative P&L ($)",
+        hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
-    st.plotly_chart(fig_dd, use_container_width=True)
+    st.plotly_chart(fig_eq, use_container_width=True)
+
+# ── Drawdown ───────────────────────────────────────────────────────────────────
+if st.session_state.get("sd_show_dd", True):
+    with st.expander("Drawdown", expanded=False):
+        full_eq = scaled_pnl.cumsum()
+        peak    = full_eq.cummax()
+        dd_ser  = -(peak - full_eq)
+
+        fig_dd = go.Figure()
+        if oos_ts is not None:
+            fig_dd.add_trace(go.Scatter(
+                x=dd_ser[dd_ser.index < oos_ts].index,
+                y=dd_ser[dd_ser.index < oos_ts].values,
+                fill="tozeroy", name="IS DD",
+                line=dict(color="#90CAF9"),
+            ))
+            fig_dd.add_trace(go.Scatter(
+                x=dd_ser[dd_ser.index >= oos_ts].index,
+                y=dd_ser[dd_ser.index >= oos_ts].values,
+                fill="tozeroy", name="OOS DD",
+                line=dict(color="#F44336"),
+            ))
+            fig_dd.add_vline(x=int(oos_ts.timestamp() * 1000), line_dash="dash", line_color="#B71C1C")
+        else:
+            fig_dd.add_trace(go.Scatter(
+                x=dd_ser.index, y=dd_ser.values,
+                fill="tozeroy", name="Drawdown",
+                line=dict(color="#F44336"),
+            ))
+
+        fig_dd.update_layout(
+            height=240, yaxis_title="Drawdown ($)", hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        st.plotly_chart(fig_dd, use_container_width=True)
 
 st.divider()
 
 # ── Monthly PnL heatmap ────────────────────────────────────────────────────────
-st.subheader("Monthly P&L")
-
-monthly_pnl = scaled_pnl.resample("ME").sum()
-if not monthly_pnl.empty:
+if st.session_state.get("sd_show_monthly", True):
+    st.subheader("Monthly P&L")
+    monthly_pnl = scaled_pnl.resample("ME").sum()
+else:
+    monthly_pnl = pd.Series(dtype=float)
+if st.session_state.get("sd_show_monthly", True) and not monthly_pnl.empty:
     mdf = pd.DataFrame({
         "year":  monthly_pnl.index.year,
         "month": monthly_pnl.index.month,
@@ -493,7 +505,8 @@ if _folder_path and _folder_path.exists():
         elif _f.suffix.lower() == ".csv":
             _data_files[_f.name] = _f
 
-with st.expander("Files & Folder", expanded=False):
+_sd_show_files = st.session_state.get("sd_show_files", False)
+with st.expander("Files & Folder", expanded=_sd_show_files):
     if _folder_path is None:
         st.info("Folder path not available. Import data first.")
     else:

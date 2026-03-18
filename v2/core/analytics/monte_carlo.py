@@ -18,7 +18,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from core.config import MCConfig
+from core.config import MCConfig, StrategyMCConfig
 from core.data_types import MCResult, Strategy
 
 # ── Numba JIT (graceful fallback if not installed) ────────────────────────────
@@ -358,4 +358,103 @@ def run_monte_carlo(
         sharpe_ratio=sharpe,
         return_to_drawdown=rtd,
         scenarios_df=scenarios_df,
+    )
+
+
+# ── Per-strategy MC (separate settings from portfolio MC) ─────────────────────
+
+def run_strategy_mc(
+    daily_pnl: pd.Series,
+    trade_pnls: np.ndarray,
+    oos_begin: "date | None",
+    margin: float,
+    config: StrategyMCConfig,
+) -> MCResult:
+    """
+    Run Monte Carlo for a single strategy, solving for the starting equity
+    that achieves config.risk_ruin_target (default 10% RoR) on 1 contract.
+
+    Supports Daily (252/yr), Weekly (52/yr), or Trade (actual trades/yr) modes.
+
+    Args:
+        daily_pnl:   Daily M2M PnL series (full history).
+        trade_pnls:  Closed-trade P&L array (period-filtered by caller).
+        oos_begin:   OOS start date for period filtering.
+        margin:      Strategy margin requirement — used as ruin threshold.
+        config:      StrategyMCConfig parameters.
+
+    Returns:
+        MCResult with starting_equity = required capital for target RoR.
+    """
+    _empty = MCResult(
+        starting_equity=float("nan"),
+        expected_profit=float("nan"),
+        risk_of_ruin=float("nan"),
+        max_drawdown_pct=float("nan"),
+        sharpe_ratio=float("nan"),
+        return_to_drawdown=float("nan"),
+    )
+
+    pnl = daily_pnl.dropna()
+    if pnl.empty:
+        return _empty
+
+    # ── Period filter ─────────────────────────────────────────────────────────
+    oos_ts = pd.Timestamp(oos_begin) if oos_begin else None
+    if config.period == "OOS" and oos_ts is not None:
+        pnl = pnl[pnl.index >= oos_ts]
+    elif config.period == "IS" and oos_ts is not None:
+        pnl = pnl[pnl.index < oos_ts]
+    # IS+OOS: use full series
+
+    if pnl.empty:
+        return _empty
+
+    # ── Mode: select samples & trades-per-year ────────────────────────────────
+    if config.mode == "Weekly":
+        samples = pnl.resample("W").sum().values.astype(np.float64)
+        tpy = 52
+    elif config.mode == "Trade":
+        # Filter trade_pnls to period if OOS/IS split is requested
+        _tp = trade_pnls
+        if oos_ts is not None and config.period != "IS+OOS":
+            # trade_pnls already period-filtered by caller (summary.py)
+            pass
+        if len(_tp) < 2:
+            return _empty
+        samples = _tp
+        n_years = max(len(pnl) / 252.0, 1.0)
+        tpy = max(1, int(round(len(_tp) / n_years)))
+    else:  # Daily
+        samples = pnl.values.astype(np.float64)
+        tpy = 252
+
+    if len(samples) < 2:
+        return _empty
+
+    margin_threshold = max(float(margin), 1_000.0)
+
+    _mc_cfg = MCConfig(
+        simulations=config.simulations,
+        period=config.period,
+        risk_ruin_target=config.risk_ruin_target,
+        risk_ruin_tolerance=0.01,
+        trade_adjustment=config.trade_adjustment,
+        solve_mode="ror",
+    )
+
+    equity, ror, fe, dd = solve_starting_equity(samples, _mc_cfg, margin_threshold, tpy)
+
+    expected_profit = float(np.mean(fe) - equity)
+    max_dd_pct = float(np.median(dd))
+    sharpe = _calc_sharpe(fe, equity)
+    rtd = _calc_rtd(expected_profit, max_dd_pct, equity)
+
+    return MCResult(
+        starting_equity=float(equity),
+        expected_profit=expected_profit,
+        risk_of_ruin=ror,
+        max_drawdown_pct=max_dd_pct,
+        sharpe_ratio=sharpe,
+        return_to_drawdown=rtd,
     )
