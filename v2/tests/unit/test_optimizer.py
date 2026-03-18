@@ -352,8 +352,9 @@ class TestContractRegistry:
         assert effective_min_fraction("NQ", 0.1) == pytest.approx(0.01)
 
     def test_effective_min_fraction_with_mini(self):
-        # ZC with XC (0.2×): base 0.1 × 0.2 = 0.02
-        assert effective_min_fraction("ZC", 0.1) == pytest.approx(0.02)
+        # ZC has MZC micro (0.1×) and XC mini (0.2×); smallest_unit = 0.1 (MZC)
+        # base 0.1 × 0.1 = 0.01
+        assert effective_min_fraction("ZC", 0.1) == pytest.approx(0.01)
 
     def test_effective_min_fraction_no_micro(self):
         # ZN: no smaller contract → unchanged

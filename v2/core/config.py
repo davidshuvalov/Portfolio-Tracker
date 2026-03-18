@@ -27,6 +27,7 @@ class MCConfig(BaseModel):
     # Portfolio MC settings (mirrors VBA Portfolio Monte Carlo Settings)
     output_samples: int = 50            # Number of scenario samples to emit
     remove_best_pct: float = 0.02       # Remove top 2% best days/weeks before MC
+    solve_for_ror: bool = False         # Simple toggle: solve for ROR target (used by settings sidebar)
     # Solve mode: "none" = fixed equity, "ror" = solve for ROR target, "max_dd" = solve for max drawdown target
     solve_mode: Literal["none", "ror", "max_dd"] = "ror"
     max_dd_target: float = 0.20         # Target max drawdown fraction (solve_mode="max_dd")
