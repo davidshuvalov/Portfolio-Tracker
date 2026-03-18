@@ -745,9 +745,10 @@ def apply_eligibility_rules(
         eligible &= summary_df["quitting_date"].isna()
 
     def _get(col: str) -> pd.Series:
+        """Return column values preserving NaN — missing = insufficient OOS history."""
         if col in summary_df.columns:
-            return summary_df[col].fillna(0.0)
-        return pd.Series(0.0, index=summary_df.index)
+            return summary_df[col]
+        return pd.Series(np.nan, index=summary_df.index)
 
     def _val(row_series: pd.Series, threshold: float, op: str) -> pd.Series:
         if op == ">":
@@ -755,6 +756,8 @@ def apply_eligibility_rules(
         return row_series >= threshold
 
     # ── Qualifiers (must all pass if enabled) ────────────────────────────────
+    # NaN means insufficient OOS history: mirrors VBA IsNumeric() guard which
+    # SKIPS the check (treats as passing) when the cell is blank.
     qualifier_map = {
         "profit_1m":  ("profit_last_1_month",  ">", 0.0),
         "profit_3m":  ("profit_last_3_months", ">", 0.0),
@@ -771,15 +774,23 @@ def apply_eligibility_rules(
     }
     for attr, (col, op, threshold) in qualifier_map.items():
         if getattr(eligibility, attr, False):
-            eligible &= _val(_get(col), threshold, op)
+            col_data = _get(col)
+            # NaN → skip check (don't penalise for missing history).
+            # pandas NaN comparisons return False (not NaN), so we must use isna().
+            eligible &= _val(col_data, threshold, op) | col_data.isna()
 
-    # ── Special: 3M OR 6M profit > 0 ─────────────────────────────────────────
+    # ── Special: 3M OR 6M profit ──────────────────────────────────────────────
+    # Mirrors VBA: disqualify only when BOTH v3M <= 0 AND v6M < 0 (and both numeric).
+    # Note VBA uses strict < for 6M (v6M = 0 passes). NaN on either → skip check.
     if eligibility.profit_3or6m:
         p3 = _get("profit_last_3_months")
         p6 = _get("profit_last_6_months")
-        eligible &= (p3 > 0) | (p6 > 0)
+        both_present = p3.notna() & p6.notna()
+        disqualify_3or6 = both_present & (p3 <= 0) & (p6 < 0)
+        eligible &= ~disqualify_3or6
 
     # ── Disqualifiers (any triggered → ineligible) ────────────────────────────
+    # NaN = insufficient history = don't disqualify (pandas NaN < 0 → False already).
     disqualifier_map = {
         "loss_1m":  "profit_last_1_month",
         "loss_3m":  "profit_last_3_months",
@@ -787,7 +798,7 @@ def apply_eligibility_rules(
     }
     for attr, col in disqualifier_map.items():
         if getattr(eligibility, attr, False):
-            eligible &= ~(_get(col) < 0)
+            eligible &= ~(_get(col) < 0).fillna(False)
 
     eff_loss_map = {
         "efficiency_loss_1m": "efficiency_last_1_month",
@@ -796,24 +807,28 @@ def apply_eligibility_rules(
     }
     for attr, col in eff_loss_map.items():
         if getattr(eligibility, attr, False):
-            eligible &= ~(_get(col) < -ratio)
+            eligible &= ~(_get(col) < -ratio).fillna(False)
 
     # ── Incubation gate ───────────────────────────────────────────────────────
+    # Mirrors VBA: only "Passed" is accepted. "" (no expected profit / no OOS data)
+    # is treated the same as "Incubating" — ineligible until explicitly passed.
     if eligibility.use_incubation:
         inc_status = summary_df["incubation_status"] if "incubation_status" in summary_df.columns else pd.Series("", index=summary_df.index)
-        eligible &= inc_status.isin(["Passed", ""])
+        eligible &= inc_status == "Passed"
 
     # ── Quitting gate ─────────────────────────────────────────────────────────
+    # VBA blocks "Quit" only. Python also blocks "Coming Back" (strategy hit the
+    # quit threshold but is tentatively recovering — intentionally more conservative).
     if eligibility.use_quitting:
         quit_status = summary_df["quitting_status"] if "quitting_status" in summary_df.columns else pd.Series("", index=summary_df.index)
         eligible &= ~quit_status.isin(["Quit", "Coming Back"])
 
     # ── Count profitable months ───────────────────────────────────────────────
+    # Mirrors VBA: disqualify when count < min (i.e. eligible when count >= min).
+    # monthly_profit_operator controls how count_profit_months was tallied (>0 vs >=0),
+    # not the comparison direction here — always use >=.
     if eligibility.use_count_monthly_profits:
-        count_months = _get("count_profit_months")
-        if eligibility.monthly_profit_operator == ">0":
-            eligible &= count_months > eligibility.min_positive_months
-        else:  # ">=0"
-            eligible &= count_months >= eligibility.min_positive_months
+        count_months = _get("count_profit_months").fillna(0)
+        eligible &= count_months >= eligibility.min_positive_months
 
     return eligible

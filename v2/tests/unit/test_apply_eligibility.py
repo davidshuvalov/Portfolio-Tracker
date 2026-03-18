@@ -8,6 +8,13 @@ Verifies each toggle category independently:
   - Incubation gate
   - Quitting gate
   - Count monthly profits
+
+VBA parity notes (F_Summary_Tab_Setup.bas EligibilityTracking):
+  - NaN/missing metrics: VBA uses IsNumeric() guard → skips the check (treats as passing).
+    Python must also skip rather than treating missing as 0.
+  - profit_3or6m: VBA disqualifies when v3M <= 0 AND v6M < 0 (strict < for 6M, so 6M=0 passes).
+  - Incubation: VBA allows only "Passed"; "" (no expected profit) is NOT a free pass.
+  - count_profit_months: VBA eligible when count >= min (not count > min).
 """
 
 from __future__ import annotations
@@ -114,6 +121,32 @@ class TestProfitQualifiers:
         result = apply_eligibility_rules(df, _bare_config(profit_3or6m=True))
         assert result["strat_a"] == False
 
+    def test_profit_3or6m_6m_zero_passes(self):
+        # VBA uses v6M < 0 (strict), so 6M = exactly 0 passes the check.
+        df = _make_df(profit_last_3_months=-1.0, profit_last_6_months=0.0)
+        result = apply_eligibility_rules(df, _bare_config(profit_3or6m=True))
+        assert result["strat_a"] == True
+
+    def test_profit_3or6m_missing_6m_skips_check(self):
+        # NaN on either side → skip check (mirrors VBA IsNumeric guard).
+        import numpy as np
+        df = _make_df(profit_last_3_months=-1.0, profit_last_6_months=np.nan)
+        result = apply_eligibility_rules(df, _bare_config(profit_3or6m=True))
+        assert result["strat_a"] == True
+
+    def test_profit_12m_missing_skips_check(self):
+        # NaN (insufficient OOS history) → VBA skips via IsNumeric → should pass.
+        import numpy as np
+        df = _make_df(profit_last_12_months=np.nan)
+        result = apply_eligibility_rules(df, _bare_config(profit_12m=True))
+        assert result["strat_a"] == True
+
+    def test_profit_12m_zero_fails(self):
+        # 0 is real data but not > 0 → should fail.
+        df = _make_df(profit_last_12_months=0.0)
+        result = apply_eligibility_rules(df, _bare_config(profit_12m=True))
+        assert result["strat_a"] == False
+
 
 class TestEfficiencyQualifiers:
     def test_efficiency_oos_pass(self):
@@ -176,11 +209,12 @@ class TestIncubationGate:
         result = apply_eligibility_rules(df, _bare_config(use_incubation=True))
         assert result["strat_a"] == True
 
-    def test_empty_incubation_eligible(self):
-        # "" means no expected profit / no OOS data → don't block
+    def test_empty_incubation_ineligible(self):
+        # "" means no expected profit / no OOS data.
+        # VBA: only "Passed" is accepted; "" fails (incubation_status != "Passed" → "No").
         df = _make_df(incubation_status="")
         result = apply_eligibility_rules(df, _bare_config(use_incubation=True))
-        assert result["strat_a"] == True
+        assert result["strat_a"] == False
 
     def test_not_passed_incubation_ineligible(self):
         df = _make_df(incubation_status="Not Passed")
@@ -261,6 +295,32 @@ class TestCountMonthlyProfits:
             ),
         )
         assert result["strat_a"] == True
+
+    def test_gt_operator_exact_boundary_eligible(self):
+        # VBA uses count < min → ineligible, i.e. eligible when count >= min.
+        # With ">0" operator and count == min, should be eligible (matches VBA).
+        df = _make_df(count_profit_months=8)
+        result = apply_eligibility_rules(
+            df,
+            _bare_config(
+                use_count_monthly_profits=True,
+                min_positive_months=8,
+                monthly_profit_operator=">0",
+            ),
+        )
+        assert result["strat_a"] == True
+
+    def test_count_one_below_min_ineligible(self):
+        df = _make_df(count_profit_months=7)
+        result = apply_eligibility_rules(
+            df,
+            _bare_config(
+                use_count_monthly_profits=True,
+                min_positive_months=8,
+                monthly_profit_operator=">0",
+            ),
+        )
+        assert result["strat_a"] == False
 
 
 class TestMultipleRules:

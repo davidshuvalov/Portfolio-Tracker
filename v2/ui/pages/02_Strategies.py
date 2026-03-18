@@ -695,6 +695,7 @@ with tab_summary:
                 "expected_annual_profit", "actual_annual_profit", "return_efficiency",
                 "profit_last_3_months", "profit_last_12_months",
                 "max_oos_drawdown", "rtd_oos", "incubation_status",
+                "eligibility_status",
             ]
 
             _avail_summ_cols = [c for c in _SUMM_ALL_COLS if c in _sm2.columns]
