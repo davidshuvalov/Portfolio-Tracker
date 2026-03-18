@@ -344,6 +344,55 @@ _row2[2].metric("Return / Max Drawdown", f"{result.return_to_drawdown:.2f}")
 
 st.divider()
 
+# ── Percentile summary table ───────────────────────────────────────────────────
+if result.scenarios_df is not None and not result.scenarios_df.empty:
+    df = result.scenarios_df
+
+    _pctiles = [5, 10, 25, 50, 75, 90, 95]
+    _pct_rows = []
+    for p in _pctiles:
+        _q = p / 100.0
+        _profit_val = float(df["profit"].quantile(_q))
+        _dd_val     = float(df["max_drawdown_pct"].quantile(_q))
+        _dd_dollar  = float(df["max_drawdown"].quantile(_q)) if "max_drawdown" in df.columns else float("nan")
+        _pct_rows.append({
+            "Percentile":       f"{p}th",
+            "Annual Profit ($)": f"${_profit_val:,.0f}",
+            "Max Drawdown %":   f"{_dd_val:.1%}",
+            "Max Drawdown ($)": f"${_dd_dollar:,.0f}" if not np.isnan(_dd_dollar) else "—",
+        })
+
+    st.subheader("Percentile Summary")
+    st.caption(
+        "Profit is annual profit per scenario. "
+        "Max Drawdown is peak-to-trough within each scenario. "
+        "Low percentiles = worst outcomes; high percentiles = best outcomes."
+    )
+
+    _pct_df = pd.DataFrame(_pct_rows)
+
+    def _style_pct_row(row):
+        p = int(row["Percentile"].replace("th", "").replace("st", "").replace("nd", "").replace("rd", ""))
+        if p <= 10:
+            bg = "background-color:#4a1010;color:#ffcccc"
+        elif p <= 25:
+            bg = "background-color:#3a2a10;color:#ffe0a0"
+        elif p == 50:
+            bg = "background-color:#1a2a3a;color:#b0d4f0"
+        elif p >= 90:
+            bg = "background-color:#0a2a1a;color:#a0f0c0"
+        else:
+            bg = ""
+        return [bg] * len(row)
+
+    st.dataframe(
+        _pct_df.style.apply(_style_pct_row, axis=1),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    st.divider()
+
 # Distribution charts
 if result.scenarios_df is not None and not result.scenarios_df.empty:
     df = result.scenarios_df
@@ -362,9 +411,20 @@ if result.scenarios_df is not None and not result.scenarios_df.empty:
         )
         fig.add_vline(
             x=median_profit,
-            line_dash="dash",
-            line_color="orange",
+            line_dash="dash", line_color="orange",
             annotation_text=f"Median ${median_profit:,.0f}",
+            annotation_position="top right",
+        )
+        fig.add_vline(
+            x=float(df["profit"].quantile(0.05)),
+            line_dash="dot", line_color="#FF7043", line_width=1,
+            annotation_text=f"5th ${df['profit'].quantile(0.05):,.0f}",
+            annotation_position="top left",
+        )
+        fig.add_vline(
+            x=float(df["profit"].quantile(0.95)),
+            line_dash="dot", line_color="#4CAF50", line_width=1,
+            annotation_text=f"95th ${df['profit'].quantile(0.95):,.0f}",
             annotation_position="top right",
         )
         fig.add_vline(x=0, line_color="red", opacity=0.5, line_width=1)
@@ -384,9 +444,14 @@ if result.scenarios_df is not None and not result.scenarios_df.empty:
         fig2.update_xaxes(tickformat=".0%")
         fig2.add_vline(
             x=median_dd,
-            line_dash="dash",
-            line_color="orange",
+            line_dash="dash", line_color="orange",
             annotation_text=f"Median {median_dd:.1%}",
+            annotation_position="top right",
+        )
+        fig2.add_vline(
+            x=float(df["max_drawdown_pct"].quantile(0.95)),
+            line_dash="dot", line_color="#FF7043", line_width=1,
+            annotation_text=f"95th {df['max_drawdown_pct'].quantile(0.95):.1%}",
             annotation_position="top right",
         )
         fig2.update_layout(height=360, showlegend=False)

@@ -14,9 +14,9 @@ import pandas as pd
 from core.portfolio.strategies import load_strategies, save_strategies
 from ui.strategy_labels import render_strategy_picker
 
-st.set_page_config(page_title="Strategies", layout="wide")
+st.set_page_config(page_title="Strategy Tracker", layout="wide")
 
-st.title("Strategies")
+st.title("Strategy Tracker")
 
 # ── Top navigation ─────────────────────────────────────────────────────────────
 _nav_l, _nav_r, _ = st.columns([1, 1, 6])
@@ -34,8 +34,8 @@ if not strategies:
     st.stop()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_config, tab_summary, tab_screener = st.tabs([
-    "⚙ Configure", "📊 Performance Summary", "🔍 Strategy Screener"
+tab_summary, tab_screener, tab_config = st.tabs([
+    "📊 Performance Summary", "🔍 Strategy Screener", "⚙ Configure"
 ])
 
 
@@ -104,6 +104,7 @@ def _to_df(strats: list[dict]) -> pd.DataFrame:
 
 # ── Strategy row-action helpers ────────────────────────────────────────────────
 _CODE_EXTENSIONS = {".mex", ".eld", ".els", ".pla", ".c", ".cpp", ".py"}
+_CODE_SUFFIXES   = ("elcode.txt",)  # MultiWalk EasyLanguage code files
 
 
 def _open_path(path: Path) -> None:
@@ -151,7 +152,11 @@ def _render_strategy_actions(names: list[str], key: str) -> None:
 
     folder = _strategy_folder(chosen)
     code_files = (
-        sorted([f for f in folder.iterdir() if f.suffix.lower() in _CODE_EXTENSIONS])
+        sorted([
+            f for f in folder.iterdir()
+            if f.suffix.lower() in _CODE_EXTENSIONS
+            or f.name.lower().endswith(_CODE_SUFFIXES)
+        ])
         if folder and folder.exists()
         else []
     )

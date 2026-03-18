@@ -235,9 +235,9 @@ def _home_page() -> None:
             "Go to Import →", "ui/pages/01_Import.py",
         ),
         (
-            "strategies", 3, "Review Strategies",
-            "Set each strategy's status (Live / Paper / Retired), contracts, symbol, and sector.",
-            "Open Strategies →", "ui/pages/02_Strategies.py",
+            "strategies", 3, "Strategy Tracker",
+            "Review performance metrics, screen strategies, and set status and contracts.",
+            "Open Strategy Tracker →", "ui/pages/02_Strategies.py",
         ),
         (
             "portfolio", 4, "Build Portfolio",
@@ -391,7 +391,7 @@ def main():
         [
             st.Page(_home_page, title="Home", default=True),
             st.Page("ui/pages/01_Import.py", title="Import"),
-            st.Page("ui/pages/02_Strategies.py", title="Strategies"),
+            st.Page("ui/pages/02_Strategies.py", title="Strategy Tracker"),
             st.Page("ui/pages/03_Portfolio.py", title="Portfolio"),
             st.Page("ui/pages/_04_Monte_Carlo.py", title="Monte Carlo"),
             st.Page("ui/pages/_05_Correlations.py", title="Correlations"),

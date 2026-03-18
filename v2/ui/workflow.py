@@ -69,7 +69,7 @@ def render_workflow_sidebar() -> None:
     steps = [
         ("folders",    "Add Folders",        "ui/pages/01_Import.py"),
         ("data",       "Import Data",        "ui/pages/01_Import.py"),
-        ("strategies", "Review Strategies",  "ui/pages/02_Strategies.py"),
+        ("strategies", "Strategy Tracker",    "ui/pages/02_Strategies.py"),
         ("portfolio",  "Build Portfolio",    "ui/pages/03_Portfolio.py"),
     ]
 
