@@ -15,3 +15,6 @@ PyJWT>=2.8.0
 cryptography>=42.0.0
 openpyxl>=3.1.0
 reportlab>=4.0.0
+
+# ── Auth + billing ────────────────────────────────────────────────────────────
+supabase>=2.4.0

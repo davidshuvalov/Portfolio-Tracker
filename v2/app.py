@@ -3,9 +3,10 @@ Portfolio Tracker v2 — Streamlit entrypoint.
 
 Handles:
 - Session state initialisation
-- License gate (checks MultiWalk DLL; shows customer-ID entry if not configured)
+- Supabase auth gate (login / signup / logout)
+- Subscription gate (requires active Lite or Full plan)
 - Home page with order-of-operations workflow guide
-- Sidebar with workflow progress status
+- Sidebar with workflow progress status and plan badge
 """
 
 import streamlit as st
@@ -34,112 +35,71 @@ if "portfolio_data" not in st.session_state:
     st.session_state.portfolio_data = None
 
 
-# ── License check ─────────────────────────────────────────────────────────────
-def _check_license() -> bool:
-    config: AppConfig = st.session_state.config
+# ── Auth gate ─────────────────────────────────────────────────────────────────
+def _auth_gate() -> bool:
+    """
+    Returns True if the user is authenticated and has an active subscription.
+    Otherwise renders the appropriate UI (landing page or pricing page) and
+    returns False — the caller should return immediately.
+    """
+    from auth.session import (
+        fetch_and_cache_profile,
+        get_profile,
+        is_logged_in,
+        is_subscribed,
+    )
 
-    # ── Path 1: Lemon Squeezy license key (new customers) ────────────────────
-    ls_key = getattr(config, "ls_license_key", "") or ""
-    if ls_key:
-        try:
-            from core.licensing.lemon_squeezy import is_ls_key, validate as _ls_validate
-            if is_ls_key(ls_key):
-                valid, message = _ls_validate(ls_key)
-                if valid:
-                    return True
-                _show_license_entry(f"License check failed: {message}")
-                return False
-        except Exception as e:
-            _show_license_entry(f"License error: {e}")
-            return False
-
-    # ── Path 2: TradeStation Customer ID + MultiWalk DLL (existing customers) ─
-    customer_id = config.customer_id
-    if customer_id:
-        try:
-            from core.licensing.license_manager import validate_full
-            valid, message = validate_full(customer_id, config.multiwalk_folder)
-        except Exception as e:
-            valid, message = False, str(e)
-
-        if valid:
-            return True
-        _show_license_entry(f"License check failed: {message}")
+    # ── Not logged in → show landing page ────────────────────────────────────
+    if not is_logged_in():
+        from ui.landing import render_landing
+        render_landing()
         return False
 
-    # ── No license configured ─────────────────────────────────────────────────
-    _show_license_entry(
-        "Enter your **Portfolio Tracker license key** to activate the app."
-    )
-    return False
+    # ── Logged in but profile not yet cached ─────────────────────────────────
+    if get_profile() is None:
+        fetch_and_cache_profile()
+
+    # ── Logged in but no active subscription → show pricing ──────────────────
+    if not is_subscribed():
+        _show_subscribe_page()
+        return False
+
+    return True
 
 
-def _show_license_entry(prompt: str) -> None:
+def _show_subscribe_page() -> None:
+    """Pricing page shown to authenticated but unsubscribed users."""
+    from auth.session import get_user, logout
+    from ui.pricing import render_pricing_cards
+
     render_logo()
     st.divider()
-    st.warning(prompt)
 
-    config: AppConfig = st.session_state.config
+    user = get_user()
+    email_str = f" ({user.email})" if user and user.email else ""
+    st.markdown(
+        f"### Subscribe to get started{email_str}\n\n"
+        "Choose a plan below to unlock Portfolio Tracker."
+    )
 
-    tab_new, tab_legacy = st.tabs(["🔑 License Key", "🏦 TradeStation ID (existing customers)"])
-
-    with tab_new:
-        st.markdown("**License Key**")
-        st.caption(
-            "Enter the license key you received after purchasing Portfolio Tracker. "
-            "Format: `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`"
+    # Handle checkout result query params
+    params = st.query_params
+    if params.get("checkout") == "success":
+        from auth.session import fetch_and_cache_profile
+        st.success(
+            "Payment received! Your subscription is being activated — "
+            "this may take a few seconds. Refresh if the app doesn't unlock."
         )
-        with st.form("ls_license_form"):
-            ls_key = st.text_input(
-                "License Key",
-                value=getattr(config, "ls_license_key", "") or "",
-                placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
-                label_visibility="collapsed",
-            )
-            submitted = st.form_submit_button("Activate", type="primary")
-            if submitted and ls_key.strip():
-                from core.licensing.lemon_squeezy import is_ls_key
-                if not is_ls_key(ls_key.strip()):
-                    st.error("That doesn't look like a valid license key. Check for typos.")
-                else:
-                    config.ls_license_key = ls_key.strip().upper()
-                    config.save()
-                    st.rerun()
+        fetch_and_cache_profile()
+        st.query_params.clear()
+    elif params.get("checkout") == "cancel":
+        st.info("Checkout cancelled. You can subscribe any time.")
+        st.query_params.clear()
 
-        st.markdown(
-            "Don't have a license key? "
-            "[Purchase Portfolio Tracker →](https://portfoliotracker.lemonsqueezy.com)"
-        )
-
-    with tab_legacy:
-        st.markdown("**TradeStation Customer ID**")
-        st.caption("The number you use to log in to TradeStation — verified against the MultiWalk license DLL.")
-        with st.form("ts_license_form"):
-            cid = st.number_input(
-                "Customer ID",
-                min_value=1,
-                max_value=9_999_999,
-                value=int(config.customer_id) if config.customer_id else 1,
-                step=1,
-                label_visibility="collapsed",
-            )
-            st.markdown("**MultiWalk Program Folder**")
-            st.caption("Folder containing `MultiWalkLicense64.dll`. Leave blank to auto-detect from registry.")
-            folder = st.text_input(
-                "MultiWalk Program Folder",
-                value=config.multiwalk_folder or "",
-                placeholder=r"e.g. C:\Users\you\Documents\MultiWalk\Program",
-                label_visibility="collapsed",
-            )
-            submitted_ts = st.form_submit_button("Activate", type="primary")
-            if submitted_ts and cid:
-                config.customer_id = int(cid)
-                config.multiwalk_folder = folder.strip()
-                config.save()
-                st.rerun()
-
-    st.info("Need help? Contact david@portfoliotracker.com")
-    st.stop()
+    render_pricing_cards(show_actions=True)
+    st.divider()
+    if st.button("Log out", type="secondary"):
+        logout()
 
 
 # ── Step card renderer ────────────────────────────────────────────────────────
@@ -414,10 +374,12 @@ def main():
         position="hidden",
     )
 
-    if not _check_license():
+    if not _auth_gate():
         return
 
     from ui.workflow import render_workflow_sidebar
+    from auth.session import get_user, logout
+    from ui.plan_gate import render_plan_badge
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     with st.sidebar:
@@ -431,6 +393,15 @@ def main():
             start, end = data.date_range
             st.metric("Strategies loaded", n_strats)
             st.caption(f"{start} → {end}")
+
+        st.divider()
+        render_plan_badge()
+
+        user = get_user()
+        if user:
+            st.caption(f"Signed in as {user.email}")
+        if st.button("Log out", use_container_width=True, type="secondary"):
+            logout()
 
     pg.run()
 
