@@ -162,6 +162,92 @@ class WalkforwardMetrics(NamedTuple):
     init_overnight_margin: float = 0.0    # Initial Overnight Margin
 
 
+def read_all_walkforward_periods(
+    csv_path: Path,
+    strategy_name: str,
+    date_format: str = "DMY",
+) -> list[dict]:
+    """
+    Read ALL walkforward periods for a strategy from the Walkforward Details CSV.
+
+    Returns a list of dicts (one per WF period/row), ordered as they appear in
+    the CSV.  Each dict contains the key IS/OOS dates and performance metrics
+    needed by the Walk-Forward Dashboard.
+
+    Returns an empty list if the CSV can't be read or the strategy isn't found.
+    """
+    try:
+        df = pd.read_csv(csv_path, dtype=str, encoding_errors="replace")
+    except Exception:
+        return []
+
+    if df.empty:
+        return []
+
+    df.columns = [c.strip() for c in df.columns]
+
+    name_col = _find_col(df, COL_STRATEGY_NAME)
+    if name_col is None:
+        rows_df = df  # single-strategy export — take all rows
+    else:
+        mask = df[name_col].str.strip() == strategy_name
+        rows_df = df[mask]
+        if rows_df.empty:
+            if len(df) == 1:
+                rows_df = df  # single-row file, assume it's the right strategy
+            else:
+                return []
+
+    results = []
+    for _, row in rows_df.iterrows():
+        g = _RowGetter(row)
+
+        # Per-row date format detection
+        _date_col_names = [COL_IS_BEGIN, COL_OOS_BEGIN, COL_OOS_END, COL_REOPT_DATE]
+        _samples = [
+            str(row[c]).strip()
+            for c in _date_col_names
+            if c in row.index and str(row[c]).strip() not in ("", "nan", "None")
+        ]
+        try:
+            fmt, _ = detect_date_format(_samples, fallback=date_format)
+        except ValueError:
+            fmt = date_format
+
+        is_begin = g.date(COL_IS_BEGIN, fmt)
+        oos_begin = g.date(COL_OOS_BEGIN, fmt)
+        oos_end_raw = g.date(COL_OOS_END, fmt)
+        next_opt = g.date(COL_REOPT_DATE, fmt)
+
+        results.append({
+            "is_begin": is_begin,
+            "oos_begin": oos_begin,
+            "oos_end": oos_end_raw,
+            "next_opt": next_opt,
+            # P&L
+            "is_ann_profit": g.flt(COL_IS_ANN_NET_PROFIT),
+            "isoos_ann_profit": g.flt(COL_ISOOS_ANN_NET_PROFIT),
+            "isoos_change": g.flt(COL_ISOOS_CHANGE_NET_PROFIT),
+            "is_net_profit": g.flt(COL_IS_NET_PROFIT),
+            "isoos_net_profit": g.flt(COL_ISOOS_NET_PROFIT),
+            # Win rates
+            "is_win_rate": g.flt(COL_IS_WIN_RATE),
+            "isoos_win_rate": g.flt(COL_ISOOS_WIN_RATE),
+            # Sharpe
+            "is_sharpe": abs(g.flt(COL_IS_SHARPE)),
+            "isoos_sharpe": abs(g.flt(COL_ISOOS_SHARPE)),
+            # Drawdown
+            "is_max_dd": abs(g.flt(COL_IS_MAX_DD)),
+            "isoos_max_dd": abs(g.flt(COL_ISOOS_MAX_DD)),
+            # WF structure
+            "in_period": f"{g.str(COL_IN_LENGTH)} {g.str(COL_IN_TYPE)}".strip(),
+            "out_period": f"{g.str(COL_OUT_LENGTH)} {g.str(COL_OUT_TYPE)}".strip(),
+            "fitness": g.str(COL_FITNESS),
+        })
+
+    return results
+
+
 def read_walkforward_csv(
     csv_path: Path,
     strategy_name: str,
