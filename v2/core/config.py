@@ -1,0 +1,326 @@
+"""
+Application configuration — replaces all Excel named ranges.
+Loaded from config/default_settings.yaml and saved to
+~/.portfolio_tracker/settings.yaml (per-user overrides).
+"""
+
+from __future__ import annotations
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, Field, field_validator
+
+
+CONFIG_DIR = Path.home() / ".portfolio_tracker"
+USER_CONFIG_FILE = CONFIG_DIR / "settings.yaml"
+DEFAULT_CONFIG_FILE = Path(__file__).parent.parent / "config" / "default_settings.yaml"
+
+
+class MCConfig(BaseModel):
+    simulations: int = 10_000
+    period: Literal["IS", "OOS", "IS+OOS"] = "OOS"
+    risk_ruin_target: float = 0.10
+    risk_ruin_tolerance: float = 0.01
+    trade_adjustment: float = 0.0
+    trade_option: Literal["Closed", "M2M"] = "Closed"
+    # Portfolio MC settings (mirrors VBA Portfolio Monte Carlo Settings)
+    output_samples: int = 50            # Number of scenario samples to emit
+    remove_best_pct: float = 0.02       # Remove top 2% best days/weeks before MC
+    solve_for_ror: bool = False         # Simple toggle: solve for ROR target (used by settings sidebar)
+    # Solve mode: "none" = fixed equity, "ror" = solve for ROR target, "max_dd" = solve for max drawdown target
+    solve_mode: Literal["none", "ror", "max_dd"] = "ror"
+    max_dd_target: float = 0.20         # Target max drawdown fraction (solve_mode="max_dd")
+    max_dd_percentile: float = 0.50     # 0.5=median, 0.95=95th pct (solve_mode="max_dd")
+
+
+class PortfolioContractConfig(BaseModel):
+    """
+    Portfolio contract sizing and backtest settings.
+    Mirrors VBA Portfolio Settings + Portfolio Contract Settings sheets.
+    """
+    starting_equity: float = 705_000.0
+    use_percentage: bool = True             # True = cease threshold is % of equity
+    cease_type: Literal["Percentage", "Dollar"] = "Percentage"
+    cease_trading_threshold: float = 0.25   # 25% drawdown → stop adding positions
+    # Contract sizing (Estimated Vol Contract Sizing)
+    contract_margin_multiple: float = 0.50  # Margin multiple (50% of margin requirement)
+    contract_ratio_margin_atr: float = 0.50 # Blend: 50% ATR, 50% margin
+    contract_size_pct_equity: float = 0.01  # 1% of starting equity per contract
+    atr_window: Literal[
+        "ATR Last 3 Months",
+        "ATR Last 6 Months",
+        "ATR Last 12 Months",
+    ] = "ATR Last 3 Months"
+    # Portfolio Backtest Historical Sizing
+    reweight_scope: Literal["None", "All", "Index Only"] = "All"
+    reweight_gain: float = 1.0          # Scale factor applied after ATR reweighting (1.0 = no gain)
+
+
+class StrategyRankingConfig(BaseModel):
+    """
+    Controls how strategies are ranked and displayed in the screener.
+    Mirrors VBA Strategy Selection / Ranking tab behaviour.
+    """
+    metric: Literal[
+        "rtd_oos",
+        "rtd_12_months",
+        "sharpe_isoos",
+        "profit_since_oos_start",
+        "profit_last_12_months",
+        "k_factor",
+        "ulcer_index",
+        "contracts",
+    ] = "rtd_oos"
+    ascending: bool = False             # True for metrics where lower = better (ulcer_index)
+    eligible_only: bool = True          # Show only base-eligible strategies in ranking view
+    group_by_sector: bool = True        # Group ranked list by sector
+    group_by_contracts: bool = False    # Sub-sort by contracts within each rank group
+
+
+class PortfolioOptimizerConfig(BaseModel):
+    """
+    Configures the Portfolio Optimizer workflow — which steps run and in what
+    order, plus all constraint thresholds.
+
+    ``workflow_steps`` is an ordered list of step-type keys.  Toggle a step
+    off by removing it from the list (or using ``enabled_steps``).
+    """
+    # Ordered workflow (step type keys; order matters)
+    workflow_steps: list[str] = Field(
+        default_factory=lambda: [
+            "filter_eligibility",
+            "filter_excluded_symbols",
+            "size_contracts",
+            "filter_contract_size",
+            "rank",
+            "select_strategies",
+            "adjust_correlations",
+            "adjust_gross_margins",
+            "adjust_drawdowns",
+            "adjust_mc",
+        ]
+    )
+    # Set of currently-enabled step keys (subset of workflow_steps)
+    enabled_steps: list[str] = Field(
+        default_factory=lambda: [
+            "filter_eligibility",
+            "filter_excluded_symbols",
+            "size_contracts",
+            "filter_contract_size",
+            "rank",
+            "select_strategies",
+            "adjust_correlations",
+            "adjust_gross_margins",
+            "adjust_drawdowns",
+            "adjust_mc",
+        ]
+    )
+    # ── Filter step params ─────────────────────────────────────────────────
+    excluded_symbols: list[str] = Field(default_factory=list)
+    min_contract_size_threshold: float = 0.65   # below this → too large, exclude
+    # ── Rank step ──────────────────────────────────────────────────────────
+    rank_metric: str = "rtd_oos"
+    rank_ascending: bool = False
+    # ── Contract sizing ────────────────────────────────────────────────────
+    min_contract_fraction: float = 0.1          # smallest fractional contract allowed
+    # ── Select step ────────────────────────────────────────────────────────
+    max_strategies: int = 60
+    max_margin_pct: float = 0.75                # max total margin as fraction of equity
+    per_symbol_first: bool = True               # add best-per-symbol before fill
+    # ── Correlation adjustment ─────────────────────────────────────────────
+    max_correlation: float = 0.70
+    max_negative_correlation: float = 0.50
+    # ── Gross margin limits ────────────────────────────────────────────────
+    max_single_contract_margin_pct: float = 0.125   # 12.5% of portfolio margin
+    max_sector_margin_pct: float = 0.25             # 25% of portfolio margin
+    # ── Drawdown controls ──────────────────────────────────────────────────
+    max_avg_drawdown_pct: float = 0.05          # 5% of equity
+    max_single_drawdown_pct: float = 0.125      # 12.5% of equity
+    max_single_trade_loss_pct: float = 0.05     # 5% of equity
+    # ── Monte Carlo targeting ──────────────────────────────────────────────
+    mc_target_mode: Literal["drawdown", "margin", "off"] = "drawdown"
+    mc_target_drawdown_pct: float = 0.20        # 20% of equity — target MC median max dd
+    mc_target_margin_pct: float = 0.60          # 60% of equity — target margin utilisation
+    mc_simulations: int = 2_000                 # scenarios per iteration (speed vs precision)
+    mc_max_scale: float = 3.0                   # cap on upward contract scaling
+    mc_tolerance: float = 0.02                  # convergence band for drawdown mode
+
+
+class StrategyMCConfig(BaseModel):
+    """Per-strategy Monte Carlo settings (separate from portfolio MC)."""
+    enabled: bool = True
+    simulations: int = 2_000
+    period: Literal["IS", "OOS", "IS+OOS"] = "OOS"
+    mode: Literal["Daily", "Weekly", "Trade"] = "Trade"
+    # Trade retention: 1.0 = 100% (no adjustment); stored as (1-retention) internally
+    trade_adjustment: float = 0.0   # 0.0 = full retention; mirrors MCConfig convention
+    risk_ruin_target: float = 0.10
+
+
+class IncubationConfig(BaseModel):
+    months: int = 6             # Minimum OOS months before incubation check
+    min_profit_ratio: float = 1.0  # Profit target as multiple of expected rate
+
+
+class QuittingConfig(BaseModel):
+    """Mirrors VBA Quitting_Method / Quit_Dollar / Quit_percent / Quitting_SD_Multiple."""
+    method: Literal["Drawdown", "Standard Deviation", "None"] = "Drawdown"
+    max_dollars: float = 50_000.0       # Quit_Dollar named range
+    max_percent_drawdown: float = 1.5   # Quit_percent (1.5 = 150% of IS max DD)
+    sd_multiple: float = 1.28           # Quitting_SD_Multiple named range
+
+
+class EligibilityConfig(BaseModel):
+    # Window / threshold settings
+    days_threshold_oos: int = 0
+    eligibility_months: int = 12        # EligibilityTotalMonths — lookback for profit count
+    oos_dd_vs_is_cap: float = 1.5       # 0 = disabled
+    efficiency_ratio: float = 0.15      # EfficiencyRatio (15%)
+    date_type: Literal["OOS Start Date", "Incubation Pass Date"] = "OOS Start Date"
+    enable_sector_analysis: bool = True
+    enable_symbol_analysis: bool = True
+    max_horizon: int = 12
+    status_include: list[str] = Field(default_factory=lambda: ["Live"])
+
+    # ── Profit > $0 checks (Yes/No toggles) ──────────────────────────────────
+    profit_1m: bool = False             # Eligibility1MonthProfit
+    profit_3m: bool = False             # Eligibility3MonthProfit
+    profit_6m: bool = False             # Eligibility6MonthProfit
+    profit_3or6m: bool = True           # Eligibility3or6MonthProfit (3M OR 6M > 0)
+    profit_9m: bool = False             # Eligibility9MonthProfit
+    profit_12m: bool = True             # Eligibility12MonthProfit
+    profit_oos: bool = False            # EligibilityOOSMonthProfit
+
+    # ── Efficiency > ratio checks ─────────────────────────────────────────────
+    efficiency_1m: bool = False         # Eligibility1MonthEff
+    efficiency_3m: bool = False         # Eligibility3MonthEff
+    efficiency_6m: bool = False         # Eligibility6MonthEff
+    efficiency_9m: bool = False         # Eligibility9MonthEff
+    efficiency_12m: bool = False        # Eligibility12MonthEff
+    efficiency_oos: bool = True         # EligibilityOOSMonthEff
+
+    # ── Profit < $0 disqualifiers ─────────────────────────────────────────────
+    loss_1m: bool = False               # Eligibility1MonthLosses
+    loss_3m: bool = False               # Eligibility3MonthLosses
+    loss_6m: bool = False               # Eligibility6MonthLosses
+
+    # ── Efficiency < ratio disqualifiers ─────────────────────────────────────
+    efficiency_loss_1m: bool = False    # Eligibility1MonthEffLosses
+    efficiency_loss_3m: bool = False    # Eligibility3MonthEffLosses
+    efficiency_loss_6m: bool = False    # Eligibility6MonthEffLosses
+
+    # ── Incubation / quitting status gates ───────────────────────────────────
+    use_incubation: bool = True         # EligibilityIncubation
+    use_quitting: bool = True           # EligibilityQuitting
+
+    # ── Count-profitable-months check ────────────────────────────────────────
+    use_count_monthly_profits: bool = False   # EligibilityCountMonthlyProfits
+    min_positive_months: int = 8              # EligibilityMinimumMonths
+    monthly_profit_operator: Literal[">0", ">=0"] = ">0"  # EligibilityGreaterThan
+
+    # ── Backtest scope / exclusion gates ─────────────────────────────────────
+    backtest_data_scope: Literal["OOS", "IS+OOS"] = "OOS"
+    exclude_buy_and_hold: bool = True       # Auto-exclude B&H strategies from scoring
+    exclude_previously_quit: bool = False   # Exclude strategies that ever hit Quit
+
+    # ── Additional user filter ────────────────────────────────────────────────
+    additional_user_filter: bool = False          # AdditionalUserFilter
+    additional_user_filter_column: str = "MW Monte Carlo (IS + OOS)"
+    additional_user_filter_min_value: float = 1.5
+
+
+class PortfolioConfig(BaseModel):
+    period_years: float = 3.0
+    cutoff_date: str | None = None
+    use_cutoff: bool = False
+    buy_and_hold_status: str = "Buy&Hold"
+    live_status: str = "Live"
+    pass_status: str = "Pass"
+
+
+class AppConfig(BaseModel):
+    folders: list[Path] = Field(default_factory=list)
+    date_format: Literal["DMY", "MDY"] = "DMY"
+    portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
+    strategy_mc: StrategyMCConfig = Field(default_factory=StrategyMCConfig)
+    incubation: IncubationConfig = Field(default_factory=IncubationConfig)
+    quitting: QuittingConfig = Field(default_factory=QuittingConfig)
+    monte_carlo: MCConfig = Field(default_factory=MCConfig)
+    eligibility: EligibilityConfig = Field(default_factory=EligibilityConfig)
+    contract_sizing: PortfolioContractConfig = Field(default_factory=PortfolioContractConfig)
+    ranking: StrategyRankingConfig = Field(default_factory=StrategyRankingConfig)
+    optimizer: PortfolioOptimizerConfig = Field(default_factory=PortfolioOptimizerConfig)
+    corr_normal_threshold: float = 0.70
+    corr_negative_threshold: float = 0.30
+    corr_drawdown_threshold: float = 0.70
+    symbol_margins: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-symbol margin requirement in $ (e.g. {'ES': 12000, 'NQ': 18000})",
+    )
+    default_margin: float = 5000.0
+    margin_source: Literal["MultiWalk", "TradeStation", "InteractiveBrokers", "Manual"] = "MultiWalk"
+    margin_type: Literal["Maintenance", "Initial", "Average"] = "Maintenance"
+    customer_id: int = 0
+    multiwalk_folder: str = ""
+    ls_license_key: str = ""   # Lemon Squeezy license key (new customers)
+    # Per-folder default status: maps folder path string → status applied to new strategies
+    folder_default_status: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("folders", mode="before")
+    @classmethod
+    def coerce_paths(cls, v: list) -> list[Path]:
+        return [Path(p) for p in v]
+
+    # ── Persistence ────────────────────────────────────────────
+
+    @classmethod
+    def load(cls) -> "AppConfig":
+        """Load config: defaults first, then merge user overrides."""
+        data: dict = {}
+
+        if DEFAULT_CONFIG_FILE.exists():
+            with open(DEFAULT_CONFIG_FILE) as f:
+                data = yaml.safe_load(f) or {}
+
+        if USER_CONFIG_FILE.exists():
+            with open(USER_CONFIG_FILE) as f:
+                overrides = yaml.safe_load(f) or {}
+            data = _deep_merge(data, overrides)
+
+        return cls.model_validate(data)
+
+    def save(self) -> None:
+        """Persist current config to the user config file."""
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        data = self.model_dump(mode="json")
+        # Convert Path objects to strings for YAML serialisation
+        data["folders"] = [str(p) for p in self.folders]
+        with open(USER_CONFIG_FILE, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    def add_folder(self, folder: Path, default_status: str = "New") -> None:
+        if folder not in self.folders:
+            self.folders.append(folder)
+        self.folder_default_status[str(folder)] = default_status
+        self.save()
+
+    def remove_folder(self, folder: Path) -> None:
+        self.folders = [f for f in self.folders if f != folder]
+        self.folder_default_status.pop(str(folder), None)
+        self.save()
+
+    def set_folder_default_status(self, folder: Path, status: str) -> None:
+        self.folder_default_status[str(folder)] = status
+        self.save()
+
+
+def _deep_merge(base: dict, overrides: dict) -> dict:
+    """Recursively merge overrides into base dict."""
+    result = base.copy()
+    for key, val in overrides.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result

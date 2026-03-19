@@ -142,7 +142,10 @@ Sub RetrieveAllFolderData(Optional ByVal resetfoldertab As String = "No")
             If folder = "FolderBH" And GetNamedRangeValue("BuyandHoldStatus") <> "" Then
                 Dim tempStartRow As Long
                 tempStartRow = startRow
-                
+
+                ' Pass forcedStatus = BuyandHoldStatus so every strategy found in FolderBH
+                ' is automatically classified as Buy & Hold — even when the folder contains
+                ' multiple period files whose names differ from the Strategies tab entry.
                 startRow = GetFolderData(folderPath, _
                                         wsFolderLocations, _
                                         startRow, _
@@ -156,7 +159,8 @@ Sub RetrieveAllFolderData(Optional ByVal resetfoldertab As String = "No")
                                         newfolderflag, _
                                         newfolderlist, _
                                         strategydupflag, _
-                                        strategyduplist)
+                                        strategyduplist, _
+                                        GetNamedRangeValue("BuyandHoldStatus"))
                 
                 ' Check if any Buy and Hold strategies were actually found
                 If startRow > tempStartRow Then
@@ -332,7 +336,13 @@ Function GetFolderData(baseFolderPath As String, ByRef wsFolderLocations As Work
                       ByRef equityDataMissing As Boolean, ByRef missingEquityDataList As String, _
                       ByRef detailsDataMissing As Boolean, ByRef missingDetailsDataList As String, _
                       ByRef newfolderflag As Boolean, ByRef newfolderlist As String, _
-                      ByRef strategydupflag As Boolean, ByRef strategyduplist As String) As Integer
+                      ByRef strategydupflag As Boolean, ByRef strategyduplist As String, _
+                      Optional forcedStatus As String = "") As Integer
+' forcedStatus: when non-empty every strategy discovered in this folder is assigned
+' that status in both folderLocations and the Strategies tab, overriding whatever
+' the Strategies tab currently contains.  Pass GetNamedRangeValue("BuyandHoldStatus")
+' when scanning FolderBH so that all BnH files are auto-classified regardless of
+' how many period/sub-files exist for a single strategy.
     On Error GoTo ErrorHandler
     
     Dim foldername As String
@@ -439,6 +449,26 @@ Function GetFolderData(baseFolderPath As String, ByRef wsFolderLocations As Work
                     Debug.Print "Error getting strategy status: " & Err.Description
                 End If
                 On Error GoTo ErrorHandler
+
+                ' If a forced status is supplied (e.g. BuyandHold for FolderBH), override
+                ' whatever status the Strategies tab currently stores and write it back.
+                ' This ensures that all files discovered in the BnH folder — including
+                ' multi-period files whose names don't exactly match the Strategies tab —
+                ' are correctly classified without manual intervention.
+                If Len(forcedStatus) > 0 And status <> forcedStatus Then
+                    status = forcedStatus
+                    Dim wsStratForce As Worksheet
+                    Set wsStratForce = ThisWorkbook.Sheets("Strategies")
+                    Dim forceRow As Long
+                    For forceRow = 2 To wsStratForce.Cells(wsStratForce.rows.count, COL_STRAT_STRATEGY_NAME).End(xlUp).row
+                        If StrComp(Trim(wsStratForce.Cells(forceRow, COL_STRAT_STRATEGY_NAME).value), _
+                                   Trim(FileNameOnly), vbTextCompare) = 0 Then
+                            wsStratForce.Cells(forceRow, COL_STRAT_STATUS).value = forcedStatus
+                            Exit For
+                        End If
+                    Next forceRow
+                    Set wsStratForce = Nothing
+                End If
                 
                 ' Check for duplicates with proper string handling
                 If dict.Exists(Trim(FileNameOnly)) Then

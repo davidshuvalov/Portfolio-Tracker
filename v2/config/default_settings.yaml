@@ -1,0 +1,81 @@
+folders: []
+date_format: "DMY"   # DMY | MDY  (EU/UK/AU = DMY, US = MDY)
+
+portfolio:
+  period_years: 3.0
+  cutoff_date: null
+  use_cutoff: false
+  buy_and_hold_status: "Buy&Hold"
+  live_status: "Live"
+  pass_status: "Pass"
+
+monte_carlo:
+  simulations: 10000
+  period: "OOS"         # IS | OOS | IS+OOS
+  risk_ruin_target: 0.10
+  risk_ruin_tolerance: 0.01
+  trade_adjustment: 0.0
+  trade_option: "Closed" # Closed | M2M
+
+incubation:
+  months: 6                # Incubation_Period — min OOS months before check
+  min_profit_ratio: 1.0    # Min_Incubation_Profit — cumulative profit target (1.0 = 100% of expected)
+
+quitting:
+  method: "Drawdown"       # Quitting_Method: Drawdown | Standard Deviation | None
+  max_dollars: 50000.0     # Quit_Dollar
+  max_percent_drawdown: 1.5  # Quit_percent (1.5 = 150% of IS max drawdown)
+  sd_multiple: 1.28        # Quitting_SD_Multiple
+
+eligibility:
+  days_threshold_oos: 0            # EligibilityDaysThreshold
+  eligibility_months: 12           # EligibilityTotalMonths
+  oos_dd_vs_is_cap: 1.5
+  efficiency_ratio: 0.15           # EfficiencyRatio (15%)
+  date_type: "OOS Start Date"      # OOS Start Date | Incubation Pass Date
+  enable_sector_analysis: true
+  enable_symbol_analysis: true
+  max_horizon: 12
+  status_include:
+    - "Live"
+  # Profit > $0 checks
+  profit_1m: false
+  profit_3m: false
+  profit_6m: false
+  profit_3or6m: true               # 3M OR 6M > 0
+  profit_9m: false
+  profit_12m: true
+  profit_oos: false
+  # Efficiency > ratio checks
+  efficiency_1m: false
+  efficiency_3m: false
+  efficiency_6m: false
+  efficiency_9m: false
+  efficiency_12m: false
+  efficiency_oos: true
+  # Profit < $0 disqualifiers
+  loss_1m: false
+  loss_3m: false
+  loss_6m: false
+  # Efficiency < ratio disqualifiers
+  efficiency_loss_1m: false
+  efficiency_loss_3m: false
+  efficiency_loss_6m: false
+  # Status gates
+  use_incubation: true             # EligibilityIncubation
+  use_quitting: true               # EligibilityQuitting
+  # Count profitable months
+  use_count_monthly_profits: false
+  min_positive_months: 8
+  monthly_profit_operator: ">0"
+  # Additional user filter
+  additional_user_filter: false
+  additional_user_filter_column: "MW Monte Carlo (IS + OOS)"
+  additional_user_filter_min_value: 1.5
+
+corr_normal_threshold: 0.70
+corr_negative_threshold: 0.30
+corr_drawdown_threshold: 0.70
+
+margin_source: "MultiWalk"    # MultiWalk | TradeStation | InteractiveBrokers | Manual
+margin_type: "Maintenance"    # Maintenance | Initial | Average

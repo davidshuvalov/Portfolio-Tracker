@@ -2246,68 +2246,26 @@ Sub CreateSizingGraphs()
     ' Get the sizing option (Dollar or Percentage)
     sizingOption = GetNamedRangeValue("DisplayAsPercentage")
     
-    For i = LBound(chartColumns) To UBound(chartColumns)
-        ' Create the chart for each specified column
-        Set chart = wsSizingGraphs.ChartObjects.Add(left:=chartLeft, top:=chartTop, Width:=500, Height:=300)
-        With chart.chart
-            .ChartType = xlColumnClustered
-            .HasTitle = True
-    
-            ' Adjust title based on sizing option
-            If sizingOption Then
-                .chartTitle.text = chartTitles(i) & " (as % of " & Format(startEquity, "#,##0") & ")"
-            Else
-                .chartTitle.text = chartTitles(i)
-            End If
-            
-            .HasLegend = False
-    
-            ' Set the X and Y values explicitly
-            .SeriesCollection.NewSeries
-            .SeriesCollection(1).XValues = labelarray
-            
-            ' Define range for values
-            Dim valuesRange As Range
-            Set valuesRange = wsPortfolio.Range(wsPortfolio.Cells(2, chartColumns(i)), wsPortfolio.Cells(lastRow, chartColumns(i)))
-    
-            ' Create array for transformed values
-            Dim transformedValues() As Double
-            ReDim transformedValues(1 To valuesRange.rows.count)
-    
-            Dim j As Integer
-            For j = 1 To valuesRange.rows.count
-                If sizingOption Then
-                    transformedValues(j) = (valuesRange.Cells(j, 1).value / startEquity) ' Convert to percentage
-                Else
-                    transformedValues(j) = valuesRange.Cells(j, 1).value ' Keep dollar values
-                End If
-            Next j
-    
-            ' Assign transformed values
-            .SeriesCollection(1).values = transformedValues
-    
-            ' Customize axis titles and formats
-            .Axes(xlCategory).HasTitle = True
-            .Axes(xlCategory).AxisTitle.text = "Strategy / Symbol"
-            .Axes(xlValue).HasTitle = True
-            
-            If sizingOption Then
-                .Axes(xlValue).AxisTitle.text = chartTitles(i) & " (% of " & Format(startEquity, "#,##0") & ")"
-                .Axes(xlValue).TickLabels.NumberFormat = "0.0%" ' Format as percentage
-            Else
-                .Axes(xlValue).AxisTitle.text = chartTitles(i)
-                .Axes(xlValue).TickLabels.NumberFormat = "$#,##0" ' Format as currency
-            End If
-        End With
-        
-        ' Update chart position for next chart
-        If i Mod 2 = 0 Then
-            chartLeft = 675
-        Else
-            chartTop = chartTop + 320
-            chartLeft = 150
-        End If
-    Next i
+    ' Add label button for the metric dropdown
+    Dim labelBtnSizing As Object
+    Set labelBtnSizing = wsSizingGraphs.Buttons.Add(Left:=150, Top:=5, Width:=115, Height:=22)
+    With labelBtnSizing
+        .Caption = "Select Metric:"
+        .OnAction = ""
+    End With
+
+    ' Add dropdown for strategy metric selection
+    Dim ddSizing As DropDown
+    Set ddSizing = wsSizingGraphs.DropDowns.Add(Left:=272, Top:=5, Width:=350, Height:=22)
+    With ddSizing
+        .name = "SizingMetricDropDown"
+        For i = LBound(chartTitles) To UBound(chartTitles)
+            .AddItem chartTitles(i)
+        Next i
+        .AddItem "Count of Strategies per Contract"
+        .ListIndex = 1
+        .OnAction = "RefreshSizingGraph"
+    End With
 
 
     Dim contract As String
@@ -2342,21 +2300,8 @@ Sub CreateSizingGraphs()
 
 
 
-    ' Create Count Graph
-       Set chart = wsSizingGraphs.ChartObjects.Add(left:=chartLeft, top:=chartTop, Width:=500, Height:=300)
-       With chart.chart
-           .ChartType = xlColumnClustered
-           .HasTitle = True
-           .chartTitle.text = "Count of Strategies per each contract"
-           .HasLegend = False
-           .SeriesCollection.NewSeries
-           .SeriesCollection(1).XValues = wsSizingGraphs.Range(wsSizingGraphs.Cells(2, 40), wsSizingGraphs.Cells(j - 1, 40))
-           .SeriesCollection(1).values = wsSizingGraphs.Range(wsSizingGraphs.Cells(2, 41), wsSizingGraphs.Cells(j - 1, 41))
-           .Axes(xlCategory).HasTitle = True
-           .Axes(xlCategory).AxisTitle.text = "Symbol"
-           .Axes(xlValue).HasTitle = True
-           .Axes(xlValue).AxisTitle.text = "Count"
-       End With
+    ' Create initial chart for the default dropdown selection
+    Call RefreshSizingGraph
 
 
 
@@ -2566,91 +2511,29 @@ Sub CreateSectorTypeGraphs()
     ' Get the sizing option (Dollar or Percentage)
     sizingOption = GetNamedRangeValue("DisplayAsPercentage")
     
-    ' Create the other metric graphs
-    chartLeft = 150
-    chartTop = 20
-    
-    For column = LBound(chartColumns) To UBound(chartColumns)
-        Set chart = wsSectorTypeGraphs.ChartObjects.Add(left:=chartLeft, top:=chartTop, Width:=500, Height:=300)
-        With chart.chart
-            .ChartType = xlColumnClustered
-            .HasTitle = True
-    
-            ' Adjust title based on sizing option
-            If sizingOption Then
-                .chartTitle.text = chartTitles(column) & " (as % of " & Format(startEquity, "#,##0") & ")"
-            Else
-                .chartTitle.text = chartTitles(column)
-            End If
-    
-            .HasLegend = False
-            .SeriesCollection.NewSeries
-    
-            ' Set X-values (categories)
-            .SeriesCollection(1).XValues = wsSectorTypeGraphs.Range(wsSectorTypeGraphs.Cells(dataStartRow + 1, dataStartCol), _
-                                                                    wsSectorTypeGraphs.Cells(dataStartRow + UBound(uniqueLabels), dataStartCol))
-    
-            ' Define range for Y-values
-            Dim valuesRange As Range
-            Set valuesRange = wsSectorTypeGraphs.Range(wsSectorTypeGraphs.Cells(dataStartRow + 1, dataStartCol + column + 2), _
-                                                       wsSectorTypeGraphs.Cells(dataStartRow + UBound(uniqueLabels), dataStartCol + column + 2))
-    
-            ' Create array for transformed values
-            Dim transformedValues() As Double
-            ReDim transformedValues(1 To valuesRange.rows.count)
-    
-            Dim j As Integer
-            For j = 1 To valuesRange.rows.count
-                If sizingOption Then
-                    transformedValues(j) = (valuesRange.Cells(j, 1).value / startEquity) ' Convert to percentage
-                Else
-                    transformedValues(j) = valuesRange.Cells(j, 1).value ' Keep dollar values
-                End If
-            Next j
-    
-            ' Assign transformed values to the chart
-            .SeriesCollection(1).values = transformedValues
-    
-            ' Customize axis titles and formats
-            .Axes(xlCategory).HasTitle = True
-            .Axes(xlCategory).AxisTitle.text = "Sector Type"
-    
-            .Axes(xlValue).HasTitle = True
-            If sizingOption Then
-                .Axes(xlValue).AxisTitle.text = chartTitles(column) & " (% of " & Format(startEquity, "#,##0") & ")"
-                .Axes(xlValue).TickLabels.NumberFormat = "0.0%" ' Format as percentage
-            Else
-                .Axes(xlValue).AxisTitle.text = chartTitles(column)
-                .Axes(xlValue).TickLabels.NumberFormat = "$#,##0" ' Format as currency
-            End If
-        End With
-    
-        ' Update chart position for the next chart
-        If column Mod 2 = 0 Then
-            chartLeft = 675
-        Else
-            chartTop = chartTop + 320
-            chartLeft = 150
-        End If
-    Next column
-
-    ' Create Count Graph
-    Set chart = wsSectorTypeGraphs.ChartObjects.Add(left:=chartLeft, top:=chartTop, Width:=500, Height:=300)
-    With chart.chart
-        .ChartType = xlColumnClustered
-        .HasTitle = True
-        .chartTitle.text = "Count of Categories"
-        .HasLegend = False
-        .SeriesCollection.NewSeries
-        .SeriesCollection(1).XValues = wsSectorTypeGraphs.Range(wsSectorTypeGraphs.Cells(dataStartRow + 1, dataStartCol), _
-                                                                wsSectorTypeGraphs.Cells(dataStartRow + UBound(uniqueLabels), dataStartCol))
-        .SeriesCollection(1).values = wsSectorTypeGraphs.Range(wsSectorTypeGraphs.Cells(dataStartRow + 1, dataStartCol + 1), _
-                                                               wsSectorTypeGraphs.Cells(dataStartRow + UBound(uniqueLabels), dataStartCol + 1))
-        .Axes(xlCategory).HasTitle = True
-        .Axes(xlCategory).AxisTitle.text = "Category"
-        .Axes(xlValue).HasTitle = True
-        .Axes(xlValue).AxisTitle.text = "Count"
+    ' Add label button for the metric dropdown
+    Dim labelBtnSector As Object
+    Set labelBtnSector = wsSectorTypeGraphs.Buttons.Add(Left:=150, Top:=5, Width:=115, Height:=22)
+    With labelBtnSector
+        .Caption = "Select Metric:"
+        .OnAction = ""
     End With
+
+    ' Add dropdown for sector metric selection
+    Dim ddSector As DropDown
+    Set ddSector = wsSectorTypeGraphs.DropDowns.Add(Left:=272, Top:=5, Width:=350, Height:=22)
+    With ddSector
+        .name = "SectorMetricDropDown"
+        For column = LBound(chartTitles) To UBound(chartTitles)
+            .AddItem chartTitles(column)
+        Next column
+        .AddItem "Count of Categories"
+        .ListIndex = 1
+        .OnAction = "RefreshSectorTypeGraph"
+    End With
+
+    ' Create initial chart for the default dropdown selection
+    Call RefreshSectorTypeGraph
 
     ' Autofit columns for readability
     wsSectorTypeGraphs.Columns("A:Z").AutoFit
@@ -2695,6 +2578,212 @@ Sub CreateSectorTypeGraphs()
     With ThisWorkbook.Windows(1)
         .Zoom = 70
     End With
+End Sub
+
+
+Sub RefreshSizingGraph()
+    Dim ws As Worksheet
+    Dim wsPortfolio As Worksheet
+    Dim dd As DropDown
+    Dim selectedIdx As Integer
+    Dim chartColumns As Variant, chartTitles As Variant
+    Dim co As ChartObject
+    Dim startEquity As Double
+    Dim sizingOption As Boolean
+    Dim lastRow As Long
+    Dim lastContractRow As Long
+    Dim i As Long, j As Integer
+    Dim labelarray() As String
+    Dim valuesRange As Range
+    Dim transformedValues() As Double
+    Dim newChart As ChartObject
+
+    Call InitializeColumnConstantsManually
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("SizingGraphs")
+    Set wsPortfolio = ThisWorkbook.Sheets("Portfolio")
+    On Error GoTo 0
+
+    If ws Is Nothing Or wsPortfolio Is Nothing Then Exit Sub
+
+    chartColumns = Array(COL_PORT_MAX_IS_OOS_DRAWDOWN, COL_PORT_AVG_IS_OOS_DRAWDOWN, COL_PORT_MAX_DRAWDOWN_LAST_12_MONTHS, COL_PORT_NOTIONAL_CAPITAL, _
+                         COL_PORT_AVG_IS_OOS_TRADE, COL_PORT_LARGEST_LOSS_IS_OOS_TRADE, COL_PORT_AVG_LOSS_IS_OOS_TRADE, COL_PORT_EXPECTED_ANNUAL_PROFIT, COL_PORT_MARGIN, COL_PORT_IS_ANNUAL_SD_ISOOS, COL_PORT_ATR_LAST_1_MONTH, COL_PORT_ATR_LAST_3_MONTHS, _
+                         COL_PORT_ATR_LAST_6_MONTHS, COL_PORT_ATR_LAST_12_MONTHS, COL_PORT_ATR_LAST_24_MONTHS, COL_PORT_ATR_LAST_60_MONTHS, COL_PORT_ATR_ALL_DATA)
+    chartTitles = Array("Max Drawdown", "Average Drawdown", "Max Drawdown (Last 12 Months)", "Notional Capital", "Average Trade Size", _
+                        "Largest Unprofitable Trade (IS+OOS)", "Avg Unprofitable Trade (IS+OOS)", "Expected Annual Profit", "Margin", "Annual Standard Deviation", "ATR (Last Month)", "ATR (Last 3 Months)", "ATR (Last 6 Months)", "ATR (Last 12 Months)", "ATR (Last 24 Months)", "ATR (Last 60 Months)", "ATR (All Time)")
+
+    ' Get dropdown selection (ListIndex is 1-based; convert to 0-based)
+    Set dd = ws.DropDowns("SizingMetricDropDown")
+    selectedIdx = dd.ListIndex - 1
+
+    startEquity = GetNamedRangeValue("PortfolioStartingEquity")
+    sizingOption = GetNamedRangeValue("DisplayAsPercentage")
+    lastRow = wsPortfolio.Cells(wsPortfolio.rows.count, 1).End(xlUp).row
+
+    ' Delete existing charts
+    For Each co In ws.ChartObjects
+        co.Delete
+    Next co
+
+    If selectedIdx = UBound(chartTitles) + 1 Then
+        ' Count of Strategies per Contract chart
+        lastContractRow = ws.Cells(ws.rows.count, 40).End(xlUp).row
+        Set newChart = ws.ChartObjects.Add(Left:=150, Top:=35, Width:=1050, Height:=550)
+        With newChart.chart
+            .ChartType = xlColumnClustered
+            .HasTitle = True
+            .chartTitle.text = "Count of Strategies per each contract"
+            .HasLegend = False
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = ws.Range(ws.Cells(2, 40), ws.Cells(lastContractRow, 40))
+            .SeriesCollection(1).values = ws.Range(ws.Cells(2, 41), ws.Cells(lastContractRow, 41))
+            .Axes(xlCategory).HasTitle = True
+            .Axes(xlCategory).AxisTitle.text = "Symbol"
+            .Axes(xlValue).HasTitle = True
+            .Axes(xlValue).AxisTitle.text = "Count"
+        End With
+    Else
+        ' Metric chart: read values directly from Portfolio sheet
+        ReDim labelarray(1 To lastRow - 1)
+        For i = 2 To lastRow
+            labelarray(i - 1) = wsPortfolio.Cells(i, COL_PORT_STRATEGYCOUNT).value & " - " & wsPortfolio.Cells(i, COL_PORT_SYMBOL).value
+        Next i
+
+        Set valuesRange = wsPortfolio.Range(wsPortfolio.Cells(2, chartColumns(selectedIdx)), wsPortfolio.Cells(lastRow, chartColumns(selectedIdx)))
+        ReDim transformedValues(1 To valuesRange.rows.count)
+        For j = 1 To valuesRange.rows.count
+            If sizingOption Then
+                transformedValues(j) = valuesRange.Cells(j, 1).value / startEquity
+            Else
+                transformedValues(j) = valuesRange.Cells(j, 1).value
+            End If
+        Next j
+
+        Set newChart = ws.ChartObjects.Add(Left:=150, Top:=35, Width:=1050, Height:=550)
+        With newChart.chart
+            .ChartType = xlColumnClustered
+            .HasTitle = True
+            If sizingOption Then
+                .chartTitle.text = chartTitles(selectedIdx) & " (as % of " & Format(startEquity, "#,##0") & ")"
+            Else
+                .chartTitle.text = chartTitles(selectedIdx)
+            End If
+            .HasLegend = False
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = labelarray
+            .SeriesCollection(1).values = transformedValues
+            .Axes(xlCategory).HasTitle = True
+            .Axes(xlCategory).AxisTitle.text = "Strategy / Symbol"
+            .Axes(xlValue).HasTitle = True
+            If sizingOption Then
+                .Axes(xlValue).AxisTitle.text = chartTitles(selectedIdx) & " (% of " & Format(startEquity, "#,##0") & ")"
+                .Axes(xlValue).TickLabels.NumberFormat = "0.0%"
+            Else
+                .Axes(xlValue).AxisTitle.text = chartTitles(selectedIdx)
+                .Axes(xlValue).TickLabels.NumberFormat = "$#,##0"
+            End If
+        End With
+    End If
+End Sub
+
+
+Sub RefreshSectorTypeGraph()
+    Dim ws As Worksheet
+    Dim dd As DropDown
+    Dim selectedIdx As Integer
+    Dim chartTitles As Variant
+    Dim co As ChartObject
+    Dim startEquity As Double
+    Dim sizingOption As Boolean
+    Dim lastDataRow As Long
+    Dim dataCol As Long
+    Dim j As Integer
+    Dim valuesRange As Range
+    Dim transformedValues() As Double
+    Dim newChart As ChartObject
+
+    Call InitializeColumnConstantsManually
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("SectorTypeGraphs")
+    On Error GoTo 0
+
+    If ws Is Nothing Then Exit Sub
+
+    chartTitles = Array("Max Drawdown", "Average Drawdown", "Max Drawdown (Last 12 Months)", "Notional Capital", "Average Trade Size", _
+                        "Expected Annual Profit", "Margin", "Annual Standard Deviation", "ATR (Last Month)", "ATR (Last 3 Months)", "ATR (Last 6 Months)", "ATR (Last 12 Months)", "ATR (Last 24 Months)", "ATR (Last 60 Months)", "ATR (All Time)")
+
+    ' Get dropdown selection (ListIndex is 1-based; convert to 0-based)
+    Set dd = ws.DropDowns("SectorMetricDropDown")
+    selectedIdx = dd.ListIndex - 1
+
+    startEquity = GetNamedRangeValue("PortfolioStartingEquity")
+    sizingOption = GetNamedRangeValue("DisplayAsPercentage")
+
+    ' Find last data row in col 40 (Category Key)
+    lastDataRow = ws.Cells(ws.rows.count, 40).End(xlUp).row
+
+    ' Delete existing charts
+    For Each co In ws.ChartObjects
+        co.Delete
+    Next co
+
+    Set newChart = ws.ChartObjects.Add(Left:=150, Top:=35, Width:=1050, Height:=550)
+
+    If selectedIdx = UBound(chartTitles) + 1 Then
+        ' Count of Categories chart (col 41 = counts)
+        With newChart.chart
+            .ChartType = xlColumnClustered
+            .HasTitle = True
+            .chartTitle.text = "Count of Categories"
+            .HasLegend = False
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = ws.Range(ws.Cells(2, 40), ws.Cells(lastDataRow, 40))
+            .SeriesCollection(1).values = ws.Range(ws.Cells(2, 41), ws.Cells(lastDataRow, 41))
+            .Axes(xlCategory).HasTitle = True
+            .Axes(xlCategory).AxisTitle.text = "Category"
+            .Axes(xlValue).HasTitle = True
+            .Axes(xlValue).AxisTitle.text = "Count"
+        End With
+    Else
+        ' Metric chart: col 42 = metric 0, col 43 = metric 1, etc.
+        dataCol = 42 + selectedIdx
+
+        Set valuesRange = ws.Range(ws.Cells(2, dataCol), ws.Cells(lastDataRow, dataCol))
+        ReDim transformedValues(1 To valuesRange.rows.count)
+        For j = 1 To valuesRange.rows.count
+            If sizingOption Then
+                transformedValues(j) = valuesRange.Cells(j, 1).value / startEquity
+            Else
+                transformedValues(j) = valuesRange.Cells(j, 1).value
+            End If
+        Next j
+
+        With newChart.chart
+            .ChartType = xlColumnClustered
+            .HasTitle = True
+            If sizingOption Then
+                .chartTitle.text = chartTitles(selectedIdx) & " (as % of " & Format(startEquity, "#,##0") & ")"
+            Else
+                .chartTitle.text = chartTitles(selectedIdx)
+            End If
+            .HasLegend = False
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = ws.Range(ws.Cells(2, 40), ws.Cells(lastDataRow, 40))
+            .SeriesCollection(1).values = transformedValues
+            .Axes(xlCategory).HasTitle = True
+            .Axes(xlCategory).AxisTitle.text = "Sector Type"
+            .Axes(xlValue).HasTitle = True
+            If sizingOption Then
+                .Axes(xlValue).AxisTitle.text = chartTitles(selectedIdx) & " (% of " & Format(startEquity, "#,##0") & ")"
+                .Axes(xlValue).TickLabels.NumberFormat = "0.0%"
+            Else
+                .Axes(xlValue).AxisTitle.text = chartTitles(selectedIdx)
+                .Axes(xlValue).TickLabels.NumberFormat = "$#,##0"
+            End If
+        End With
+    End If
 End Sub
 
 

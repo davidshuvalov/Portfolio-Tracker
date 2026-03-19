@@ -1,0 +1,17 @@
+[global]
+developmentMode = false
+
+[server]
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base            = "dark"
+primaryColor    = "#3b82f6"
+backgroundColor = "#070c18"
+secondaryBackgroundColor = "#0d1626"
+textColor       = "#dde3ee"
+font            = "sans serif"

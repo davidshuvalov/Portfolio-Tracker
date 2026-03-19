@@ -1,0 +1,460 @@
+"""
+Monte Carlo simulation — mirrors K_MonteCarlo.bas.
+
+Core loop:  _mc_core()               (Numba JIT, ~600x faster than VBA)
+Solver:     solve_starting_equity()  (iterative ROR targeting, 100-iter cap)
+Public API: run_monte_carlo()
+
+VBA equivalents:
+  K_RunMonteCarlo         → run_monte_carlo()
+  K_SolveStartingEquity   → solve_starting_equity()
+  K_MCInnerLoop           → _mc_core()
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import numpy as np
+import pandas as pd
+
+from core.config import MCConfig, StrategyMCConfig
+from core.data_types import MCResult, Strategy
+
+# ── Numba JIT (graceful fallback if not installed) ────────────────────────────
+try:
+    from numba import njit
+    _NUMBA_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMBA_AVAILABLE = False
+
+    def njit(*args, **kwargs):  # type: ignore[misc]
+        def decorator(func):
+            return func
+        return decorator
+
+
+# ── Inner loop ────────────────────────────────────────────────────────────────
+
+@njit(cache=True)
+def _mc_core(
+    pnl_samples: np.ndarray,
+    starting_equity: float,
+    margin_threshold: float,
+    n_scenarios: int,
+    trades_per_year: int,
+    trade_adjustment: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compiled MC inner loop. ~50ms for 10k scenarios vs VBA's ~30s.
+
+    Returns:
+        final_equity      shape (n_scenarios,)  — equity after one year
+        max_drawdown_pct  shape (n_scenarios,)  — peak-to-trough fraction (0–1)
+        ruined            shape (n_scenarios,)  — bool, equity fell below threshold
+    """
+    final_equity = np.empty(n_scenarios)
+    max_drawdown = np.empty(n_scenarios)
+    ruined = np.zeros(n_scenarios, dtype=np.bool_)
+
+    for i in range(n_scenarios):
+        equity = starting_equity
+        peak = starting_equity
+        dd = 0.0
+
+        for j in range(trades_per_year):
+            idx = np.random.randint(0, len(pnl_samples))
+            equity += pnl_samples[idx] * (1.0 - trade_adjustment)
+
+            if equity > peak:
+                peak = equity
+            raw_dd = (peak - equity) / peak if peak > 1e-9 else 0.0
+            drawdown = raw_dd if raw_dd < 1.0 else 1.0
+            if drawdown > dd:
+                dd = drawdown
+            if equity < margin_threshold:
+                ruined[i] = True
+                break
+
+        final_equity[i] = equity
+        max_drawdown[i] = dd
+
+    return final_equity, max_drawdown, ruined
+
+
+# ── Closed-trade MC (per-strategy, IS and IS+OOS) ─────────────────────────────
+
+def closed_trade_mc(
+    trade_pnls: np.ndarray,
+    trades_per_year: int,
+    n_simulations: int = 2_000,
+    risk_pct: float = 0.10,
+    starting_equity: float = 100_000.0,
+) -> float:
+    """
+    Run MC on closed-trade samples and return the max drawdown (as fraction 0–1)
+    at the ``risk_pct`` confidence level — i.e. ``risk_pct * 100``% of scenarios
+    will have a **higher** max drawdown.
+
+    With ``risk_pct=0.10``: returns the 90th-percentile MC max drawdown.
+    This mirrors how MW Monte Carlo values are interpreted:
+    "10% of scenarios are worse than this drawdown."
+
+    Returns NaN if fewer than 2 trade samples are provided.
+    """
+    if len(trade_pnls) < 2:
+        return float("nan")
+    samples = trade_pnls.astype(np.float64)
+    tpy = max(1, int(trades_per_year))
+    _, max_dd, _ = _mc_core(samples, starting_equity, 0.0, n_simulations, tpy, 0.0)
+    # Percentile: (1 - risk_pct)*100 = 90th for 10% risk
+    return float(np.percentile(max_dd, (1.0 - risk_pct) * 100.0))
+
+def _calc_sharpe(final_equity: np.ndarray, starting_equity: float) -> float:
+    """
+    Sharpe ratio from MC scenario outcomes (1-year horizon = already annualised).
+    R_i = (final_equity_i - starting_equity) / starting_equity
+    Sharpe = mean(R) / std(R)
+    """
+    if starting_equity < 1e-9 or len(final_equity) < 2:
+        return 0.0
+    returns = (final_equity - starting_equity) / starting_equity
+    std_r = float(np.std(returns))
+    if std_r < 1e-9:
+        return 0.0
+    return float(np.mean(returns)) / std_r
+
+
+def _calc_rtd(
+    expected_profit: float,
+    max_drawdown_pct: float,
+    starting_equity: float,
+) -> float:
+    """
+    Return-to-drawdown: expected_annual_profit / median_max_drawdown_$.
+    Capped at 4.0 when drawdown is negligible (mirrors VBA: IIf(maxDrawdown=0, 4, ...)).
+    """
+    dd_dollar = max_drawdown_pct * starting_equity
+    if dd_dollar < 1e-4:
+        return 4.0
+    return expected_profit / dd_dollar
+
+
+# ── Period & sample helpers ───────────────────────────────────────────────────
+
+def _filter_by_period(
+    series: pd.Series,
+    period: str,
+    strategy: Strategy | None,
+) -> pd.Series:
+    """
+    Filter daily PnL series to the requested period (IS / OOS / IS+OOS).
+    Falls back to full series when strategy dates are unavailable.
+    """
+    if strategy is None or period == "IS+OOS":
+        return series
+
+    if period == "OOS" and strategy.oos_start is not None:
+        return series.loc[series.index >= pd.Timestamp(strategy.oos_start)]
+
+    if period == "IS" and strategy.is_end is not None:
+        return series.loc[series.index <= pd.Timestamp(strategy.is_end)]
+
+    return series
+
+
+def _get_pnl_samples(
+    daily_m2m: pd.Series,
+    closed_daily: pd.Series | None,
+    trade_option: str,
+) -> np.ndarray:
+    """
+    Return the sample array based on trade option.
+
+    M2M:    all daily M2M values (252 days/year, includes zeros)
+    Closed: daily closed-trade PnL (non-zero days = trade days)
+    """
+    if trade_option == "Closed" and closed_daily is not None and not closed_daily.empty:
+        return closed_daily.values.astype(np.float64)
+    return daily_m2m.values.astype(np.float64)
+
+
+def _estimate_trades_per_year(pnl_series: pd.Series, trade_option: str) -> int:
+    """
+    Estimate the number of samples to draw per simulated year.
+
+    M2M:    fixed 252 (trading days)
+    Closed: count non-zero trade days per year from historical data
+    """
+    if trade_option == "M2M" or len(pnl_series) == 0:
+        return 252
+    n_years = max(len(pnl_series) / 252.0, 1.0)
+    trades_per_year = int(round((pnl_series != 0).sum() / n_years))
+    return max(trades_per_year, 1)
+
+
+# ── Iterative solvers ─────────────────────────────────────────────────────────
+
+def solve_starting_equity(
+    pnl_samples: np.ndarray,
+    config: MCConfig,
+    margin_threshold: float,
+    trades_per_year: int = 252,
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """
+    Iterative solver — mirrors VBA's +5% / -0.9% adjustment loop.
+    Hard cap at 100 iterations (identical to VBA behaviour).
+
+    Returns:
+        (starting_equity, final_ror, final_equity_array, max_drawdown_array)
+    """
+    equity = margin_threshold * 2.0
+    fe = np.array([equity], dtype=np.float64)
+    dd = np.array([0.0], dtype=np.float64)
+    ror = 1.0
+
+    for _ in range(100):
+        fe, dd, ruined = _mc_core(
+            pnl_samples,
+            equity,
+            margin_threshold,
+            config.simulations,
+            trades_per_year,
+            config.trade_adjustment,
+        )
+        ror = float(ruined.mean())
+        if abs(ror - config.risk_ruin_target) < config.risk_ruin_tolerance:
+            break
+        equity *= 1.05 if ror > config.risk_ruin_target else 0.991
+
+    return float(equity), ror, fe, dd
+
+
+def solve_starting_equity_for_max_dd(
+    pnl_samples: np.ndarray,
+    config: MCConfig,
+    margin_threshold: float,
+    trades_per_year: int = 252,
+) -> tuple[float, float, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Solve starting equity so that the max drawdown at the chosen percentile
+    equals config.max_dd_target.
+
+    Higher equity → smaller % drawdown (same absolute dollar loss spread over
+    larger base).  Adjustment mirrors the ROR solver: +5% when too large, -0.9%
+    when too small.  Hard cap at 100 iterations.
+
+    Returns:
+        (starting_equity, actual_dd_at_percentile, final_equity_array, max_drawdown_array, ruined_array)
+    """
+    tolerance = 0.005   # within 0.5 pp
+    equity = max(margin_threshold * 2.0, 50_000.0)
+    fe = np.array([equity], dtype=np.float64)
+    dd = np.array([0.0], dtype=np.float64)
+    ruined = np.zeros(1, dtype=np.bool_)
+    actual_dd = 1.0
+    pct = config.max_dd_percentile * 100.0  # e.g. 50.0 for median
+
+    for _ in range(100):
+        fe, dd, ruined = _mc_core(
+            pnl_samples,
+            equity,
+            margin_threshold,
+            config.simulations,
+            trades_per_year,
+            config.trade_adjustment,
+        )
+        actual_dd = float(np.percentile(dd, pct))
+        if abs(actual_dd - config.max_dd_target) < tolerance:
+            break
+        # actual_dd > target → need more equity (smaller % dd)
+        equity *= 1.05 if actual_dd > config.max_dd_target else 0.991
+
+    return float(equity), actual_dd, fe, dd, ruined
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def run_monte_carlo(
+    daily_m2m: pd.Series,
+    config: MCConfig,
+    margin_threshold: float,
+    starting_equity: float = 100_000.0,
+    closed_daily: pd.Series | None = None,
+    strategy: Strategy | None = None,
+    return_scenarios: bool = False,
+) -> MCResult:
+    """
+    Run Monte Carlo simulation on a daily PnL series.
+
+    Args:
+        daily_m2m:        Daily mark-to-market PnL (DatetimeIndex).
+        config:           MCConfig with simulation parameters.
+        margin_threshold: Dollar amount below which account = "ruined".
+        starting_equity:  Used when config.solve_mode == "none".
+        closed_daily:     Daily closed-trade PnL series (for trade_option="Closed").
+        strategy:         Strategy object for IS/OOS period filtering.
+        return_scenarios: If True, attach full scenario DataFrame to result.
+
+    Returns:
+        MCResult with all summary metrics (+ scenarios_df if requested).
+    """
+    # Apply period filter
+    m2m_filtered = _filter_by_period(daily_m2m, config.period, strategy)
+    closed_filtered = (
+        _filter_by_period(closed_daily, config.period, strategy)
+        if closed_daily is not None
+        else None
+    )
+
+    if len(m2m_filtered) == 0:
+        return MCResult(
+            starting_equity=float(margin_threshold * 2),
+            expected_profit=0.0,
+            risk_of_ruin=float("nan"),
+            max_drawdown_pct=0.0,
+            sharpe_ratio=0.0,
+            return_to_drawdown=0.0,
+        )
+
+    pnl_samples = _get_pnl_samples(m2m_filtered, closed_filtered, config.trade_option)
+    trades_per_year = _estimate_trades_per_year(m2m_filtered, config.trade_option)
+
+    if config.solve_mode == "ror":
+        equity, ror, fe, dd = solve_starting_equity(
+            pnl_samples, config, margin_threshold, trades_per_year
+        )
+    elif config.solve_mode == "max_dd":
+        equity, _actual_dd, fe, dd, ruined_arr = solve_starting_equity_for_max_dd(
+            pnl_samples, config, margin_threshold, trades_per_year
+        )
+        ror = float(ruined_arr.mean())
+    else:  # solve_mode == "none"
+        equity = float(starting_equity)
+        fe, dd, ruined_arr = _mc_core(
+            pnl_samples, equity, margin_threshold,
+            config.simulations, trades_per_year, config.trade_adjustment,
+        )
+        ror = float(ruined_arr.mean())
+
+    expected_profit = float(np.mean(fe) - equity)
+    max_dd_pct = float(np.median(dd))
+    sharpe = _calc_sharpe(fe, equity)
+    rtd = _calc_rtd(expected_profit, max_dd_pct, equity)
+
+    scenarios_df = None
+    if return_scenarios:
+        scenarios_df = pd.DataFrame({
+            "final_equity": fe,
+            "max_drawdown_pct": dd,
+            "profit": fe - equity,
+        })
+
+    return MCResult(
+        starting_equity=float(equity),
+        expected_profit=expected_profit,
+        risk_of_ruin=ror,
+        max_drawdown_pct=max_dd_pct,
+        sharpe_ratio=sharpe,
+        return_to_drawdown=rtd,
+        scenarios_df=scenarios_df,
+    )
+
+
+# ── Per-strategy MC (separate settings from portfolio MC) ─────────────────────
+
+def run_strategy_mc(
+    daily_pnl: pd.Series,
+    trade_pnls: np.ndarray,
+    oos_begin: "date | None",
+    margin: float,
+    config: StrategyMCConfig,
+) -> MCResult:
+    """
+    Run Monte Carlo for a single strategy, solving for the starting equity
+    that achieves config.risk_ruin_target (default 10% RoR) on 1 contract.
+
+    Supports Daily (252/yr), Weekly (52/yr), or Trade (actual trades/yr) modes.
+
+    Args:
+        daily_pnl:   Daily M2M PnL series (full history).
+        trade_pnls:  Closed-trade P&L array (period-filtered by caller).
+        oos_begin:   OOS start date for period filtering.
+        margin:      Strategy margin requirement — used as ruin threshold.
+        config:      StrategyMCConfig parameters.
+
+    Returns:
+        MCResult with starting_equity = required capital for target RoR.
+    """
+    _empty = MCResult(
+        starting_equity=float("nan"),
+        expected_profit=float("nan"),
+        risk_of_ruin=float("nan"),
+        max_drawdown_pct=float("nan"),
+        sharpe_ratio=float("nan"),
+        return_to_drawdown=float("nan"),
+    )
+
+    pnl = daily_pnl.dropna()
+    if pnl.empty:
+        return _empty
+
+    # ── Period filter ─────────────────────────────────────────────────────────
+    oos_ts = pd.Timestamp(oos_begin) if oos_begin else None
+    if config.period == "OOS" and oos_ts is not None:
+        pnl = pnl[pnl.index >= oos_ts]
+    elif config.period == "IS" and oos_ts is not None:
+        pnl = pnl[pnl.index < oos_ts]
+    # IS+OOS: use full series
+
+    if pnl.empty:
+        return _empty
+
+    # ── Mode: select samples & trades-per-year ────────────────────────────────
+    if config.mode == "Weekly":
+        samples = pnl.resample("W").sum().values.astype(np.float64)
+        tpy = 52
+    elif config.mode == "Trade":
+        # Filter trade_pnls to period if OOS/IS split is requested
+        _tp = trade_pnls
+        if oos_ts is not None and config.period != "IS+OOS":
+            # trade_pnls already period-filtered by caller (summary.py)
+            pass
+        if len(_tp) < 2:
+            return _empty
+        samples = _tp
+        n_years = max(len(pnl) / 252.0, 1.0)
+        tpy = max(1, int(round(len(_tp) / n_years)))
+    else:  # Daily
+        samples = pnl.values.astype(np.float64)
+        tpy = 252
+
+    if len(samples) < 2:
+        return _empty
+
+    margin_threshold = max(float(margin), 1_000.0)
+
+    _mc_cfg = MCConfig(
+        simulations=config.simulations,
+        period=config.period,
+        risk_ruin_target=config.risk_ruin_target,
+        risk_ruin_tolerance=0.01,
+        trade_adjustment=config.trade_adjustment,
+        solve_mode="ror",
+    )
+
+    equity, ror, fe, dd = solve_starting_equity(samples, _mc_cfg, margin_threshold, tpy)
+
+    expected_profit = float(np.mean(fe) - equity)
+    max_dd_pct = float(np.median(dd))
+    sharpe = _calc_sharpe(fe, equity)
+    rtd = _calc_rtd(expected_profit, max_dd_pct, equity)
+
+    return MCResult(
+        starting_equity=float(equity),
+        expected_profit=expected_profit,
+        risk_of_ruin=ror,
+        max_drawdown_pct=max_dd_pct,
+        sharpe_ratio=sharpe,
+        return_to_drawdown=rtd,
+    )

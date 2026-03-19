@@ -1,0 +1,400 @@
+"""
+Margin Tracking page — daily margin utilisation by symbol and sector.
+Mirrors M_Margin_Tracking.bas (CreateContractMarginTracking) and the
+VBA LookupMarginRequirements() logic from F_Summary_Tab_Setup.bas.
+
+Sections:
+  1. Sidebar: margin source (TradeStation / IB / Manual) + auto-populate
+  2. Summary header cards
+  3. Total daily margin time series
+  4. Margin by symbol (stacked area chart)
+  5. Margin by sector
+  6. Symbol activity (days in-market)
+  7. Monthly peak margin heatmap
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from core.analytics.margin import (
+    compute_daily_margin,
+    margin_by_sector,
+    margin_by_symbol,
+    margin_summary_stats,
+)
+from core.config import AppConfig
+from core.data_types import PortfolioData
+from core.ingestion.xlsb_importer import (
+    IB_MARGINS_URL,
+    TS_MARGINS_URL,
+    MarginTables,
+    load_margin_tables,
+)
+
+st.set_page_config(page_title="Margin Tracking", layout="wide")
+st.title("Margin Tracking")
+
+config: AppConfig = st.session_state.get("config", AppConfig.load())
+portfolio: PortfolioData | None = st.session_state.get("portfolio_data")
+imported = st.session_state.get("imported_data")
+
+if imported is None:
+    st.info("No data loaded yet.")
+    st.page_link("ui/pages/01_Import.py", label="Go to Import →")
+    st.stop()
+
+if portfolio is None:
+    st.info("Portfolio not built yet.")
+    st.page_link("ui/pages/03_Portfolio.py", label="Go to Portfolio →")
+    st.stop()
+
+if not portfolio.strategies:
+    st.warning("No live strategies in portfolio.")
+    st.stop()
+
+# ── Load margin tables (from session state or disk) ───────────────────────────
+if "margin_tables" not in st.session_state:
+    st.session_state["margin_tables"] = load_margin_tables()
+margin_tables: MarginTables | None = st.session_state["margin_tables"]
+tables_available = margin_tables is not None and (
+    bool(margin_tables.ts) or bool(margin_tables.ib)
+)
+
+# ── Discover symbols from active strategies ───────────────────────────────────
+all_symbols = sorted({s.symbol for s in portfolio.strategies if s.symbol})
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.header("Margin Settings")
+
+    # ── Source selector ───────────────────────────────────────────────────────
+    _all_sources = ["MultiWalk", "TradeStation", "InteractiveBrokers", "Manual"]
+    _safe_source = config.margin_source if config.margin_source in _all_sources else "MultiWalk"
+    source = st.selectbox(
+        "Margin source",
+        _all_sources,
+        index=_all_sources.index(_safe_source),
+        help=(
+            "**MultiWalk** — uses the Overnight Maintenance margin exported in "
+            "the Walkforward Details CSV (falls back to default below).\n\n"
+            "**TradeStation / InteractiveBrokers** — auto-populates from the "
+            "reference tables imported during migration.\n\n"
+            "**Manual** — enter margins manually in the table below."
+        ),
+    )
+
+    _all_types = ["Maintenance", "Initial", "Average"]
+    _safe_type = config.margin_type if config.margin_type in _all_types else "Maintenance"
+    margin_type = st.selectbox(
+        "Margin type",
+        _all_types,
+        index=_all_types.index(_safe_type),
+        help=(
+            "**Maintenance** — minimum ongoing margin (lower).  "
+            "**Initial** — margin to open a position (higher).  "
+            "**Average** — average of Initial and Maintenance."
+        ),
+    )
+
+    if not tables_available and source in ("TradeStation", "InteractiveBrokers"):
+        st.caption(
+            "No TS/IB reference tables found. "
+            "Run the **Migrate** page with your v1.24 `.xlsb` file to import them."
+        )
+
+    st.divider()
+
+    # ── Auto-populate button (TS / IB only) ──────────────────────────────────
+    if tables_available and source in ("TradeStation", "InteractiveBrokers"):
+        auto_margins = margin_tables.resolve_for_symbols(all_symbols, source, margin_type)
+        n_found = len(auto_margins)
+        n_missing = len(all_symbols) - n_found
+        st.caption(
+            f"Reference tables cover **{n_found}/{len(all_symbols)}** of your symbols"
+            + (f" ({n_missing} not found — will use default below)" if n_missing else ".")
+        )
+        if st.button("Apply from reference tables", use_container_width=True):
+            config.symbol_margins = auto_margins
+            config.margin_source = source
+            config.margin_type = margin_type
+            config.save()
+            st.session_state.config = config
+            st.rerun()
+        st.divider()
+
+    # ── MultiWalk auto-populate ───────────────────────────────────────────────
+    if source == "MultiWalk" and portfolio.summary_metrics is not None and not portfolio.summary_metrics.empty:
+        sm = portfolio.summary_metrics
+        mw_col = "mw_maint_margin" if margin_type in ("Maintenance", "Average") else "mw_init_margin"
+        alt_col = "mw_init_margin" if mw_col == "mw_maint_margin" else "mw_maint_margin"
+        mw_margins: dict[str, float] = {}
+        for strat in portfolio.strategies:
+            if not strat.symbol:
+                continue
+            if strat.name in sm.index:
+                row_m = float(sm.loc[strat.name, mw_col] or 0)
+                if row_m <= 0:
+                    row_m = float(sm.loc[strat.name, alt_col] or 0)
+                if margin_type == "Average" and row_m > 0:
+                    init_v = float(sm.loc[strat.name, "mw_init_margin"] or 0)
+                    maint_v = float(sm.loc[strat.name, "mw_maint_margin"] or 0)
+                    row_m = (init_v + maint_v) / 2.0 if (init_v + maint_v) > 0 else row_m
+                if row_m > 0:
+                    mw_margins[strat.symbol] = row_m
+        n_found_mw = len(mw_margins)
+        if n_found_mw > 0:
+            st.caption(
+                f"MultiWalk WF CSV margin data found for **{n_found_mw}/{len(all_symbols)}** symbols."
+            )
+            if st.button("Apply MultiWalk margins", use_container_width=True):
+                config.symbol_margins = mw_margins
+                config.margin_source = source
+                config.margin_type = margin_type
+                config.save()
+                st.session_state.config = config
+                st.rerun()
+        else:
+            st.caption(
+                "No MultiWalk margin data found in WF CSV — enter values manually below "
+                "or switch to TradeStation / InteractiveBrokers source."
+            )
+        st.divider()
+
+    # ── Default fallback ──────────────────────────────────────────────────────
+    default_margin = st.number_input(
+        "Default margin / contract ($)",
+        min_value=0, max_value=1_000_000,
+        value=int(config.default_margin),
+        step=500,
+        help="Used for any symbol not listed in the table below",
+    )
+
+    # ── Editable per-symbol table ─────────────────────────────────────────────
+    st.caption("Per-symbol margin requirements ($ per contract):")
+    init_rows = [
+        {"Symbol": sym, "Margin ($)": int(config.symbol_margins.get(sym, default_margin))}
+        for sym in all_symbols
+    ]
+    if not init_rows:
+        init_rows = [{"Symbol": "", "Margin ($)": int(default_margin)}]
+
+    margin_table = st.data_editor(
+        pd.DataFrame(init_rows),
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Symbol":     st.column_config.TextColumn("Symbol"),
+            "Margin ($)": st.column_config.NumberColumn("Margin ($)", min_value=0, step=500),
+        },
+        key="margin_table_editor",
+    )
+
+    if st.button("Save Margins", use_container_width=True):
+        new_margins = {
+            row["Symbol"]: float(row["Margin ($)"])
+            for _, row in margin_table.iterrows()
+            if row["Symbol"] and not pd.isna(row["Symbol"])
+        }
+        config.symbol_margins = new_margins
+        config.default_margin = float(default_margin)
+        config.margin_source = source
+        config.margin_type = margin_type
+        config.save()
+        st.session_state.config = config
+        st.success("Saved.")
+
+    st.divider()
+
+    if tables_available:
+        st.caption(
+            "Margin data imported from your v1.24 workbook. "
+            "To refresh with current exchange rates, download updated tables from:"
+        )
+        st.markdown(
+            f"- [TradeStation margin requirements]({TS_MARGINS_URL})\n"
+            f"- [Interactive Brokers margin requirements]({IB_MARGINS_URL})\n\n"
+            "Then paste the updated data into the corresponding sheets in your "
+            "`.xlsb` file and re-run **Migrate**."
+        )
+        st.divider()
+
+    period_label = st.selectbox(
+        "Period",
+        ["All Data", "Last 1 Year", "Last 2 Years", "Last 3 Years"],
+    )
+    period_map = {"All Data": None, "Last 1 Year": 1, "Last 2 Years": 2, "Last 3 Years": 3}
+    period_years = period_map[period_label]
+
+# ── Build active symbol_margins dict ─────────────────────────────────────────
+symbol_margins: dict[str, float] = {
+    row["Symbol"]: float(row["Margin ($)"])
+    for _, row in margin_table.iterrows()
+    if row["Symbol"] and not pd.isna(row["Symbol"])
+}
+dflt = float(default_margin)
+
+# Show source badge
+if tables_available and source != "Manual":
+    st.caption(f"Margin source: **{source}** · Type: **{margin_type}**")
+
+# ── Compute margin series ─────────────────────────────────────────────────────
+with st.spinner("Computing margin utilisation…"):
+    daily_margin = compute_daily_margin(
+        imported.in_market_long,
+        imported.in_market_short,
+        portfolio.strategies,
+        symbol_margins,
+        dflt,
+    )
+    sym_margin = margin_by_symbol(
+        imported.in_market_long,
+        imported.in_market_short,
+        portfolio.strategies,
+        symbol_margins,
+        dflt,
+    )
+    sec_margin = margin_by_sector(sym_margin, portfolio.strategies, symbol_margins)
+
+# ── Apply period filter ───────────────────────────────────────────────────────
+if not daily_margin.empty and period_years is not None:
+    cutoff = daily_margin.index[-1] - pd.DateOffset(years=period_years)
+    daily_margin = daily_margin[daily_margin.index >= cutoff]
+    if not sym_margin.empty:
+        sym_margin = sym_margin[sym_margin.index >= cutoff]
+    if not sec_margin.empty:
+        sec_margin = sec_margin[sec_margin.index >= cutoff]
+
+if daily_margin.empty:
+    st.warning("No in-market data found. Check that in_market_long/short data was imported.")
+    st.stop()
+
+# ── Summary cards ─────────────────────────────────────────────────────────────
+stats = margin_summary_stats(daily_margin, sym_margin)
+
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Current Margin",   f"${stats.get('current_margin', 0):,.0f}")
+c2.metric("Peak Margin",      f"${stats.get('peak_margin', 0):,.0f}")
+c3.metric("Average Margin",   f"${stats.get('average_margin', 0):,.0f}")
+c4.metric("Days at Peak",     str(stats.get("days_at_peak", 0)))
+c5.metric(
+    f"Top Symbol ({stats.get('top_symbol', 'N/A')})",
+    f"${stats.get('top_symbol_avg', 0):,.0f} avg",
+)
+
+st.divider()
+
+# ── Total margin time series ──────────────────────────────────────────────────
+st.subheader("Total Portfolio Margin Over Time")
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=daily_margin.index,
+    y=daily_margin.values,
+    fill="tozeroy",
+    line=dict(color="#1565C0", width=1.5),
+    fillcolor="rgba(21, 101, 192, 0.15)",
+    name="Total Margin",
+    hovertemplate="%{x|%Y-%m-%d}: $%{y:,.0f}<extra></extra>",
+))
+fig.update_layout(
+    height=350,
+    xaxis_title="Date",
+    yaxis_title="Margin ($)",
+    hovermode="x unified",
+    showlegend=False,
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# ── Margin by symbol ──────────────────────────────────────────────────────────
+if not sym_margin.empty:
+    st.subheader("Margin by Symbol")
+    avg_sym = sym_margin.mean().sort_values(ascending=False)
+    avg_sym = avg_sym[avg_sym > 0]
+    fig_sym = go.Figure(go.Pie(
+        labels=avg_sym.index,
+        values=avg_sym.values,
+        hole=0.35,
+        textinfo="label+percent",
+        hovertemplate="%{label}: $%{value:,.0f} avg<extra></extra>",
+        marker=dict(colors=px.colors.qualitative.Plotly),
+    ))
+    fig_sym.update_layout(
+        height=420,
+        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(t=20, b=20),
+    )
+    st.plotly_chart(fig_sym, use_container_width=True)
+
+# ── Margin by sector ──────────────────────────────────────────────────────────
+if not sec_margin.empty and len(sec_margin.columns) > 1:
+    st.subheader("Margin by Sector")
+    avg_sec = sec_margin.mean().sort_values(ascending=False)
+    avg_sec = avg_sec[avg_sec > 0]
+    fig_sec = go.Figure(go.Pie(
+        labels=avg_sec.index,
+        values=avg_sec.values,
+        hole=0.35,
+        textinfo="label+percent",
+        hovertemplate="%{label}: $%{value:,.0f} avg<extra></extra>",
+        marker=dict(colors=px.colors.qualitative.Set2),
+    ))
+    fig_sec.update_layout(
+        height=380,
+        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(t=20, b=20),
+    )
+    st.plotly_chart(fig_sec, use_container_width=True)
+
+# ── Symbol activity: days in-market ──────────────────────────────────────────
+with st.expander("Symbol Activity (Days In-Market)", expanded=False):
+    if not sym_margin.empty:
+        in_market_days = (sym_margin > 0).sum().sort_values(ascending=False)
+        total_days = len(sym_margin)
+        pct_days = (in_market_days / total_days * 100).round(1)
+
+        activity_df = pd.DataFrame({
+            "Symbol":         in_market_days.index,
+            "Days In-Market": in_market_days.values,
+            "% of Period":    pct_days.values,
+        })
+        st.dataframe(activity_df, hide_index=True, use_container_width=True)
+
+        fig_act = px.bar(
+            activity_df,
+            x="Days In-Market",
+            y="Symbol",
+            orientation="h",
+            title="Days In-Market per Symbol",
+            color="% of Period",
+            color_continuous_scale="Blues",
+        )
+        fig_act.update_layout(height=max(280, len(activity_df) * 30 + 80))
+        st.plotly_chart(fig_act, use_container_width=True)
+
+# ── Monthly peak margin heatmap ───────────────────────────────────────────────
+with st.expander("Monthly Peak Margin Heatmap", expanded=False):
+    monthly_peak = daily_margin.resample("ME").max()
+    if len(monthly_peak) > 0:
+        heat_df = pd.DataFrame({
+            "year":  monthly_peak.index.year,
+            "month": monthly_peak.index.month,
+            "peak":  monthly_peak.values,
+        })
+        pivot = heat_df.pivot(index="year", columns="month", values="peak").fillna(0)
+        pivot.columns = [
+            ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][c - 1]
+            for c in pivot.columns
+        ]
+        fig_heat = px.imshow(
+            pivot,
+            color_continuous_scale="Blues",
+            text_auto=".0f",
+            title="Monthly Peak Margin ($)",
+            aspect="auto",
+        )
+        fig_heat.update_layout(height=max(200, len(pivot) * 40 + 80))
+        st.plotly_chart(fig_heat, use_container_width=True)

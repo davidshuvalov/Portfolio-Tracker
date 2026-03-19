@@ -845,28 +845,49 @@ Sub EligibilityTracking(wsSummary As Worksheet, i As Long)
     End If
         
     
-    If ProfitMonth1 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth3 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth3or6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value <= 0 And wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value < 0 Then EligibilityStatus = "No"
-    If ProfitMonth9 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_9_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonth12 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_12_MONTHS).value <= 0 Then EligibilityStatus = "No"
-    If ProfitMonthOOS = "Yes" And wsSummary.Cells(i, COL_PROFIT_SINCE_OOS_START).value <= 0 Then EligibilityStatus = "No"
-    
-    If LossMonth1 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value >= 0 Then EligibilityStatus = "No"
-    If LossMonth3 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value >= 0 Then EligibilityStatus = "No"
-    If LossMonth6 = "Yes" And wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value >= 0 Then EligibilityStatus = "No"
-    
-    If EfficiencyMonth1 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth3 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth6 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth9 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth12 = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_12_MONTHS).value <= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonthOOS = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_SINCE_OOS_START).value <= efficiencyRatio Then EligibilityStatus = "No"
-        
-    If EfficiencyMonth1Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value >= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth3Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value >= efficiencyRatio Then EligibilityStatus = "No"
-    If EfficiencyMonth6Loss = "Yes" And wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value >= efficiencyRatio Then EligibilityStatus = "No"
+    ' Guard all numeric comparisons with IsNumeric: profit/efficiency cells are set to "" when a
+    ' strategy lacks sufficient OOS history.  Comparing "" to a number raises Type Mismatch (Error 13)
+    ' in VBA, which was silently swallowing the entire EligibilityTracking call via the outer
+    ' On Error GoTo ErrorHandler / Resume Next, leaving the Eligibility column blank.
+    ' Blank cells are treated as "no data yet" — the criterion is skipped (not disqualifying).
+
+    Dim v1M As Variant, v3M As Variant, v6M As Variant, v9M As Variant, v12M As Variant, vOOS As Variant
+    Dim e1M As Variant, e3M As Variant, e6M As Variant, e9M As Variant, e12M As Variant, eOOS As Variant
+    v1M  = wsSummary.Cells(i, COL_PROFIT_LAST_1_MONTH).value
+    v3M  = wsSummary.Cells(i, COL_PROFIT_LAST_3_MONTHS).value
+    v6M  = wsSummary.Cells(i, COL_PROFIT_LAST_6_MONTHS).value
+    v9M  = wsSummary.Cells(i, COL_PROFIT_LAST_9_MONTHS).value
+    v12M = wsSummary.Cells(i, COL_PROFIT_LAST_12_MONTHS).value
+    vOOS = wsSummary.Cells(i, COL_PROFIT_SINCE_OOS_START).value
+    e1M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_1_MONTH).value
+    e3M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_3_MONTHS).value
+    e6M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_6_MONTHS).value
+    e9M  = wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value
+    e12M = wsSummary.Cells(i, COL_EFFICIENCY_LAST_12_MONTHS).value
+    eOOS = wsSummary.Cells(i, COL_EFFICIENCY_SINCE_OOS_START).value
+
+    If ProfitMonth1   = "Yes" And IsNumeric(v1M)  And CDbl(v1M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth3   = "Yes" And IsNumeric(v3M)  And CDbl(v3M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth6   = "Yes" And IsNumeric(v6M)  And CDbl(v6M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth3or6 = "Yes" And IsNumeric(v3M) And IsNumeric(v6M) And CDbl(v3M) <= 0 And CDbl(v6M) < 0 Then EligibilityStatus = "No"
+    If ProfitMonth9   = "Yes" And IsNumeric(v9M)  And CDbl(v9M)  <= 0 Then EligibilityStatus = "No"
+    If ProfitMonth12  = "Yes" And IsNumeric(v12M) And CDbl(v12M) <= 0 Then EligibilityStatus = "No"
+    If ProfitMonthOOS = "Yes" And IsNumeric(vOOS) And CDbl(vOOS) <= 0 Then EligibilityStatus = "No"
+
+    If LossMonth1 = "Yes" And IsNumeric(v1M) And CDbl(v1M) >= 0 Then EligibilityStatus = "No"
+    If LossMonth3 = "Yes" And IsNumeric(v3M) And CDbl(v3M) >= 0 Then EligibilityStatus = "No"
+    If LossMonth6 = "Yes" And IsNumeric(v3M) And CDbl(v3M) >= 0 Then EligibilityStatus = "No"  ' Note: intentionally checks 3M (matches original logic)
+
+    If EfficiencyMonth1   = "Yes" And IsNumeric(e1M)  And CDbl(e1M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth3   = "Yes" And IsNumeric(e3M)  And CDbl(e3M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth6   = "Yes" And IsNumeric(e6M)  And CDbl(e6M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth9   = "Yes" And IsNumeric(e9M)  And CDbl(e9M)  <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth12  = "Yes" And IsNumeric(e12M) And CDbl(e12M) <= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonthOOS = "Yes" And IsNumeric(eOOS) And CDbl(eOOS) <= efficiencyRatio Then EligibilityStatus = "No"
+
+    If EfficiencyMonth1Loss = "Yes" And IsNumeric(e1M) And CDbl(e1M) >= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth3Loss = "Yes" And IsNumeric(e3M) And CDbl(e3M) >= efficiencyRatio Then EligibilityStatus = "No"
+    If EfficiencyMonth6Loss = "Yes" And IsNumeric(e6M) And CDbl(e6M) >= efficiencyRatio Then EligibilityStatus = "No"
         
         
     If PositiveMonthsCheck = "Yes" And wsSummary.Cells(i, COL_COUNT_PROFIT_MONTHS).value < MinPositiveMonths Then EligibilityStatus = "No"
@@ -1021,8 +1042,10 @@ Sub CalculateProfitAndDrawdown(wsM2MEquity As Worksheet, strategyColumn As Long,
         End If
     Next row
 
-    ' Ensure we found valid rows
-    If OOSBeginRow = 0 Or OOSEndRow = 0 Or OOSBeginRow = OOSEndRow Then Exit Sub
+    ' Ensure we found valid rows.
+    ' NOTE: OOSBeginRow = OOSEndRow is intentionally allowed — Buy & Hold strategies
+    ' often have a single-day OOS window or start on the very first data row.
+    If OOSBeginRow = 0 Or OOSEndRow = 0 Then Exit Sub
 
     ' Loop through the rows within the OOS period
     For row = OOSBeginRow To OOSEndRow
@@ -1294,7 +1317,7 @@ Sub CalculateProfitAndDrawdown(wsM2MEquity As Worksheet, strategyColumn As Long,
             If profitLast9Months = "" Then
                 wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = ""
             Else
-                wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = profitLast9Months / (ISAnnualizedProfit / (3 / 4))
+                wsSummary.Cells(i, COL_EFFICIENCY_LAST_9_MONTHS).value = profitLast9Months / (ISAnnualizedProfit * (3 / 4))
             End If
             
             If profitLast12Months = "" Then
@@ -1816,12 +1839,47 @@ Sub ApplyConditionalFormatting()
     Dim lastRow As Long
     lastRow = wsSummary.Cells(wsSummary.rows.count, 1).End(xlUp).row
 
-    ' Shading for different sections (alternate row shading)
-    Dim i As Long
+    ' Status-based row shading (replaces alternate-row grey).
+    ' Rows within the same status group are alternated between the base colour and a
+    ' slightly darker shade so individual rows stay easy to read.
+    Dim portSt As String, passSt As String, bnhSt As String
+    portSt = GetNamedRangeValue("Port_Status")
+    passSt = GetNamedRangeValue("Pass_Status")
+    bnhSt  = GetNamedRangeValue("BuyandHoldStatus")
+
+    Dim i As Long, sv As String, grpCount As Long, prevStatus As String
+    grpCount = 0
+    prevStatus = ""
     For i = 2 To lastRow
-        If i Mod 2 = 0 Then
-            wsSummary.rows(i).Interior.Color = RGB(242, 242, 242) ' Light Gray for alternate rows
+        sv = wsSummary.Cells(i, COL_STATUS).value
+        If sv <> prevStatus Then
+            grpCount = 0
+            prevStatus = sv
         End If
+        grpCount = grpCount + 1
+
+        Dim baseR As Long, baseG As Long, baseB As Long
+        Select Case sv
+            Case portSt  ' Live / portfolio — green
+                baseR = 198: baseG = 239: baseB = 206
+            Case passSt  ' Passing — steel blue
+                baseR = 189: baseG = 214: baseB = 238
+            Case bnhSt   ' Buy & Hold — grey
+                baseR = 220: baseG = 220: baseB = 220
+            Case "Failed"
+                baseR = 255: baseG = 199: baseB = 206  ' red
+            Case Else
+                baseR = 255: baseG = 243: baseB = 205  ' soft yellow for New / other
+        End Select
+
+        ' Alternate: even rows within a group get a slightly darker shade
+        If grpCount Mod 2 = 0 Then
+            baseR = Application.Max(0, baseR - 15)
+            baseG = Application.Max(0, baseG - 15)
+            baseB = Application.Max(0, baseB - 15)
+        End If
+
+        wsSummary.rows(i).Interior.Color = RGB(baseR, baseG, baseB)
     Next i
 
     ' Highlight if last re-opt happened within the last 6 weeks (42 days)
@@ -2544,6 +2602,57 @@ End Function
 
 
 
+Sub RecalculatePerformance()
+    ' Phase 2 of the three-phase workflow:
+    '   Phase 1 — Save Status Changes  (UpdateStrategyStatuses)
+    '   Phase 2 — Recalculate Performance  (this sub)
+    '   Phase 3 — Update Portfolio  (CreatePortfolioSummary)
+    '
+    ' Rebuilds all Summary performance metrics using existing imported data.
+    ' Requires DailyM2MEquity (and Walkforward Details) to already be present
+    ' in the workbook — run "Import Data" first if they are missing.
+
+    If Not IsLicenseValid() Then
+        MsgBox "Invalid or missing license. The tool will not function without a valid license.", vbCritical
+        Exit Sub
+    End If
+
+    ' Validate that the required data sheets are present
+    Dim wsDM2M As Worksheet
+    Dim wsWF As Worksheet
+    On Error Resume Next
+    Set wsDM2M = ThisWorkbook.Sheets("DailyM2MEquity")
+    Set wsWF   = ThisWorkbook.Sheets("Walkforward Details")
+    On Error GoTo 0
+
+    If wsDM2M Is Nothing Then
+        MsgBox "DailyM2MEquity sheet not found." & vbCrLf & vbCrLf & _
+               "Please run 'Import Data' first to load strategy data, " & _
+               "then re-run Recalculate Performance.", _
+               vbExclamation, "Data Not Found"
+        Exit Sub
+    End If
+
+    If wsWF Is Nothing Then
+        MsgBox "Walkforward Details sheet not found." & vbCrLf & vbCrLf & _
+               "Please run 'Import Data' first to load strategy data, " & _
+               "then re-run Recalculate Performance.", _
+               vbExclamation, "Data Not Found"
+        Exit Sub
+    End If
+
+    ' Rebuild Summary metrics from existing data sheets
+    Call UpdateStrategySummaryWithArray("Yes")
+
+    ' Reposition the Summary tab in the correct place
+    Call ResetAndMoveSummaryTab
+
+    MsgBox "Performance recalculation complete." & vbCrLf & vbCrLf & _
+           "Next step: click 'Update Portfolio' to rebuild the Portfolio sheet.", _
+           vbInformation, "Recalculate Performance"
+End Sub
+
+
 Sub CreateSummaryButtons(ws As Worksheet, colNumber As Long, currenttab As String)
     Dim btn As Object
     Dim captions As Variant
@@ -2553,15 +2662,20 @@ Sub CreateSummaryButtons(ws As Worksheet, colNumber As Long, currenttab As Strin
     
     
     If currenttab = "Summary" Then
-    ' Define button captions and their corresponding macros
-    captions = Array("Control Tab", "Strategies Tab", "Inputs Tab", "Portfolio Tab", "Update Portfolio", "Save Status Changes")
-    actions = Array("GoToControl", "GoToStrategies", "GoToInputs", "GoToPortfolio", "CreatePortfolioSummary", "UpdateStrategyStatuses")
+    ' Three-phase workflow buttons:
+    '   Navigation  |  Phase 1: Save Status Changes
+    '               |  Phase 2: Recalculate Performance
+    '               |  Phase 3: Update Portfolio
+    captions = Array("Control Tab", "Strategies Tab", "Inputs Tab", "Portfolio Tab", _
+                     "Save Status Changes", "Recalculate Performance", "Update Portfolio")
+    actions  = Array("GoToControl", "GoToStrategies", "GoToInputs", "GoToPortfolio", _
+                     "UpdateStrategyStatuses", "RecalculatePerformance", "CreatePortfolioSummary")
     End If
     
     If currenttab = "Portfolio" Then
     ' Define button captions and their corresponding macros
-    captions = Array("Control Tab", "Inputs Tab", "Check New Strats", "Summary Tab", "Update Portfolio", "Save Contract Changes")
-    actions = Array("GoToControl", "GoToInputs", "IdentifyNewStrategiesAndContractChanges", "GoToSummary", "CreatePortfolioSummary", "UpdateStrategyContracts")
+    captions = Array("Control Tab", "Inputs Tab", "Check New Strats", "Summary Tab", "Update Portfolio", "Save Contract Changes", "Portfolio History")
+    actions = Array("GoToControl", "GoToInputs", "IdentifyNewStrategiesAndContractChanges", "GoToSummary", "CreatePortfolioSummary", "UpdateStrategyContracts", "GoToPortfolioHistory")
     End If
     
     
@@ -2590,71 +2704,88 @@ End Sub
 
 
 
+' Sort Summary rows by: Status priority → Sector → Symbol → OOS Begin Date.
+' Status order comes from GetStatusOrderNumber() / GetOrderedStatusList():
+'   1. Port_Status (live portfolio)
+'   2. Pass_Status (passing/backtest)
+'   3+ StatusOptions (comma-separated named range — user-defined middle tiers)
+'   last: BuyandHoldStatus  (always sorted to the bottom)
+' Called automatically at the end of UpdateStrategySummaryWithArray.
+' Can also be assigned to a button for on-demand re-sort after manual status changes.
 Sub ReorderSummaryTab()
     On Error GoTo ErrorHandler
-    
-    Dim wsStrategies As Worksheet
+
+    Call InitializeColumnConstantsManually
+
     Dim wsSummary As Worksheet
-    Dim lastRowStrat As Long, lastRowSum As Long
-    Dim i As Long, j As Long
-    Dim strategyName As String
-    Dim strategyNumber As String
-    Dim foundRow As Long
-    Dim tempArray() As Variant
-    
+    Dim wsStrategies As Worksheet
+    Set wsSummary   = ThisWorkbook.Sheets("Summary")
     Set wsStrategies = ThisWorkbook.Sheets("Strategies")
-    Set wsSummary = ThisWorkbook.Sheets("Summary")
-    
+
     Application.ScreenUpdating = False
-    
-    ' Get last rows
-    lastRowStrat = wsStrategies.Cells(wsStrategies.rows.count, COL_STRAT_STRATEGY_NAME).End(xlUp).row
-    lastRowSum = wsSummary.Cells(wsSummary.rows.count, "A").End(xlUp).row
-    
-    ' Store Summary data in array
-    Dim lastCol As Long
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsSummary.Cells(wsSummary.rows.count, 1).End(xlUp).row
     lastCol = wsSummary.Cells(1, wsSummary.Columns.count).End(xlToLeft).column
-    tempArray = wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRowSum, lastCol)).value
-    
-    ' Create new array for reordered data
-    Dim newArray() As Variant
-    ReDim newArray(1 To lastRowSum, 1 To lastCol)
-    
-    ' Copy header row
-    For j = 1 To lastCol
-        newArray(1, j) = tempArray(1, j)
-    Next j
-    
-    ' Reorder based on Strategies tab
-    Dim newRow As Long
-    newRow = 2
-    
-    For i = 2 To lastRowStrat
-        strategyName = wsStrategies.Cells(i, COL_STRAT_STRATEGY_NAME).value
-        strategyNumber = wsStrategies.Cells(i, COL_STRAT_STRATEGY_NUMBER).value
-        ' Find matching row in Summary data
-        For j = 2 To lastRowSum
-            If StrComp(tempArray(j, COL_STRATEGY_NAME), strategyName, vbTextCompare) = 0 Then
-                wsStrategies.Cells(i, COL_STRAT_SYMBOL).value = tempArray(j, COL_SYMBOL)
-                wsStrategies.Cells(i, COL_STRAT_TIMEFRAME).value = tempArray(j, COL_TIMEFRAME)
-                ' Copy entire row to new array
-                For K = 1 To lastCol
-                    newArray(newRow, K) = tempArray(j, K)
-                    newArray(newRow, 1) = strategyNumber
-                Next K
-                newRow = newRow + 1
+
+    If lastRow < 3 Then GoTo CleanExit  ' nothing to sort
+
+    ' Write a temporary sort-key column (after lastCol) with numeric priority.
+    ' GetStatusOrderNumber returns the position in GetOrderedStatusList:
+    '   Port_Status=1, Pass_Status=2, ...StatusOptions..., BuyandHold=last, unknown=999.
+    Dim helperCol As Long
+    helperCol = lastCol + 1
+    wsSummary.Cells(1, helperCol).value = "_SortPriority"
+    Dim i As Long, sv As String
+    For i = 2 To lastRow
+        sv = wsSummary.Cells(i, COL_STATUS).value
+        wsSummary.Cells(i, helperCol).value = GetStatusOrderNumber(sv)
+    Next i
+
+    ' 4-key sort using Excel's built-in engine
+    With wsSummary.Sort
+        .SortFields.Clear
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, helperCol), wsSummary.Cells(lastRow, helperCol)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_SECTOR), wsSummary.Cells(lastRow, COL_SECTOR)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_SYMBOL), wsSummary.Cells(lastRow, COL_SYMBOL)), _
+                         Order:=xlAscending
+        .SortFields.Add Key:=wsSummary.Range(wsSummary.Cells(1, COL_OOS_BEGIN_DATE), wsSummary.Cells(lastRow, COL_OOS_BEGIN_DATE)), _
+                         Order:=xlAscending
+        .SetRange wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRow, helperCol))
+        .Header  = xlYes
+        .MatchCase = False
+        .Apply
+    End With
+
+    ' Remove the temporary helper column
+    wsSummary.Columns(helperCol).Delete
+
+    ' Renumber strategies sequentially (1, 2, 3 …) to match new sort order
+    For i = 2 To lastRow
+        wsSummary.Cells(i, COL_STRATEGY_NUMBER).value = i - 1
+    Next i
+
+    ' Sync symbol / timeframe back to Strategies tab so it stays consistent
+    Dim lastRowStrat As Long
+    lastRowStrat = wsStrategies.Cells(wsStrategies.rows.count, COL_STRAT_STRATEGY_NAME).End(xlUp).row
+    Dim j As Long, stratName As String
+    For i = 2 To lastRow
+        stratName = wsSummary.Cells(i, COL_STRATEGY_NAME).value
+        For j = 2 To lastRowStrat
+            If StrComp(wsStrategies.Cells(j, COL_STRAT_STRATEGY_NAME).value, stratName, vbTextCompare) = 0 Then
+                wsStrategies.Cells(j, COL_STRAT_SYMBOL).value    = wsSummary.Cells(i, COL_SYMBOL).value
+                wsStrategies.Cells(j, COL_STRAT_TIMEFRAME).value = wsSummary.Cells(i, COL_TIMEFRAME).value
                 Exit For
             End If
         Next j
     Next i
-    
-    ' Write reordered data back to Summary sheet
-    wsSummary.Range(wsSummary.Cells(1, 1), wsSummary.Cells(lastRowSum, lastCol)).value = newArray
-    
+
 CleanExit:
     Application.ScreenUpdating = True
     Exit Sub
-    
+
 ErrorHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical
     Resume CleanExit
