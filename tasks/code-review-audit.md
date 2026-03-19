@@ -15,35 +15,30 @@ This audit reviews the Portfolio Tracker across **five dimensions**: core analyt
 
 ## 1. CRITICAL FINDINGS (Must Fix)
 
-### C1 — Look-Ahead Bias in Rule Backtest Walk-Forward
-**File:** `v2/core/analytics/eligibility/rule_backtest.py:166-169`
-**Issue:** `last_eval_month` is computed but never used as the loop bound. The loop iterates over ALL months including those too close to the end, allowing strategies to "peek" at future data.
-**Impact:** Backtest results are overly optimistic. Eligibility rules appear more effective than they actually are.
-**Fix:** Replace `range(n_months)` with `range(last_eval_month + 1)`.
+### ~~C1 — Dead Variable in Rule Backtest~~ ✅ FIXED
+**File:** `v2/core/analytics/eligibility/rule_backtest.py:166`
+**Issue:** `last_eval_month` was computed but unused. On closer review, the inner guards (`future_end >= n_months`) correctly prevent look-ahead — this was NOT a correctness bug, just dead code.
+**Fix:** Removed dead variable, added clarifying comment.
 
-### C2 — OOS Annual SD Uses Wrong Sharpe Ratio
-**File:** `v2/core/ingestion/walkforward_reader.py:385-389`
-**Issue:** `annual_sd_isoos` divides by `sharpe_is` (IS Sharpe) instead of `sharpe_isoos`. This produces incorrect OOS volatility estimates.
-**Impact:** Quitting status calculations and margin estimates are wrong for the OOS period.
-**Fix:** Use `sharpe_isoos` in the denominator.
+### ~~C2 — OOS Annual SD Uses Wrong Sharpe Ratio~~ ✅ FIXED
+**File:** `v2/core/ingestion/walkforward_reader.py:389`
+**Issue:** `annual_sd_isoos` divided by `sharpe_is` instead of `sharpe_isoos`.
+**Fix:** Changed to `sharpe_isoos`.
 
-### C3 — Monte Carlo RNG Is Non-Deterministic
-**File:** `v2/core/analytics/monte_carlo.py:66`
-**Issue:** Numba's `np.random.randint()` uses global RNG state. No seed parameter is exposed. Results vary between runs even with identical inputs.
-**Impact:** MC results are not reproducible — makes debugging and regression testing unreliable.
-**Fix:** Accept a seed parameter and call `np.random.seed()` before `_mc_core()`.
+### ~~C3 — Monte Carlo RNG Is Non-Deterministic~~ ✅ FIXED
+**File:** `v2/core/analytics/monte_carlo.py`, `v2/core/config.py`
+**Issue:** No seed parameter exposed for MC reproducibility.
+**Fix:** Added `seed: int | None` to `MCConfig`; `run_monte_carlo()` calls `np.random.seed()` when set.
 
-### C4 — Drawdown Clamped at 100% Masks Bankruptcy
+### ~~C4 — Drawdown Clamped at 100%~~ ✅ DOCUMENTED
 **File:** `v2/core/analytics/monte_carlo.py:72`
-**Issue:** `drawdown = raw_dd if raw_dd < 1.0 else 1.0` — when equity goes negative, drawdown exceeds 100% but is silently clipped to 100%.
-**Impact:** Risk metrics understate tail risk. Portfolio could appear safer than it is.
-**Fix:** Track raw drawdown or flag negative equity explicitly.
+**Issue:** Drawdown fraction clamped to 1.0 when equity goes negative.
+**Resolution:** This is a deliberate design choice — negative equity is captured by the ruin flag; the fraction stays in [0,1] for percentile stats. Added clarifying comment.
 
-### C5 — Incubation Check Uses Row Index Instead of Trading Days
-**File:** `v2/core/portfolio/summary.py:609-615`
-**Issue:** `days_elapsed = i + 1` assumes every row is exactly one trading day. Data gaps (weekends, holidays, missing data) cause the index to diverge from actual elapsed trading days.
-**Impact:** Strategies may pass incubation early if data has gaps. Incorrect quitting/recovery transitions downstream.
-**Fix:** Use actual date differences: `(ts - cum.index[0]).days` or count business days.
+### ~~C5 — Incubation/Quitting Use Row Index Instead of Calendar Days~~ ✅ FIXED
+**File:** `v2/core/portfolio/summary.py:609-615, 672-677`
+**Issue:** `days_elapsed = i + 1` counted rows (trading days) but compared against calendar-day thresholds (`incubation_days = months * 30.5`). Weekends/holidays caused ~30% undercounting.
+**Fix:** Changed to `(ts - first_date).days + 1` in both `_calc_incubation()` and `_calc_quitting_status()`.
 
 ---
 

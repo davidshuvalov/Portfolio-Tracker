@@ -32,6 +32,7 @@ class MCConfig(BaseModel):
     solve_mode: Literal["none", "ror", "max_dd"] = "ror"
     max_dd_target: float = 0.20         # Target max drawdown fraction (solve_mode="max_dd")
     max_dd_percentile: float = 0.50     # 0.5=median, 0.95=95th pct (solve_mode="max_dd")
+    seed: int | None = None             # RNG seed for reproducibility (None = non-deterministic)
 
 
 class PortfolioContractConfig(BaseModel):

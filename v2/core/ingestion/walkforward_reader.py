@@ -386,7 +386,7 @@ def read_walkforward_csv(
     )
     avg_trade = abs(g.flt(COL_ISOOS_AVG_TRADE))
     annual_sd_isoos = abs(
-        (avg_trade * trades_per_year) / ((sharpe_is * (365.25 ** 0.5)) + 1e-9)
+        (avg_trade * trades_per_year) / ((sharpe_isoos * (365.25 ** 0.5)) + 1e-9)
     )
 
     return WalkforwardMetrics(

@@ -162,9 +162,9 @@ def run_rule_backtest(
     ]
     base_stats: dict[int, dict] = {h: {"n": 0, "wins": 0, "sum_pnl": 0.0} for h in h_range}
 
-    # Walk-forward: for each evaluation month m (need m + max_horizon months ahead)
-    last_eval_month = n_months - 1 - max_horizon
-
+    # Walk-forward: for each evaluation month m.
+    # Inner guards (future_end >= n_months) handle months near the end where
+    # only shorter horizons have data — no look-ahead bias.
     for m_idx in range(n_months):
         month_end = months[m_idx]
 

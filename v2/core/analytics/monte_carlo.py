@@ -69,6 +69,8 @@ def _mc_core(
             if equity > peak:
                 peak = equity
             raw_dd = (peak - equity) / peak if peak > 1e-9 else 0.0
+            # Clamp to 1.0: equity < 0 is captured by the ruin flag below;
+            # the drawdown fraction stays in [0, 1] for percentile stats.
             drawdown = raw_dd if raw_dd < 1.0 else 1.0
             if drawdown > dd:
                 dd = drawdown
@@ -319,6 +321,10 @@ def run_monte_carlo(
 
     pnl_samples = _get_pnl_samples(m2m_filtered, closed_filtered, config.trade_option)
     trades_per_year = _estimate_trades_per_year(m2m_filtered, config.trade_option)
+
+    # Seed RNG for reproducibility when requested
+    if config.seed is not None:
+        np.random.seed(config.seed)
 
     if config.solve_mode == "ror":
         equity, ror, fe, dd = solve_starting_equity(

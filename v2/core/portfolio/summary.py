@@ -604,10 +604,13 @@ def _calc_incubation(
     expected_daily = expected_annual_profit / 365.25
 
     cum = oos_pnl.cumsum()
+    first_date = cum.index[0]
     reached_threshold = False
 
-    for i, (ts, cum_val) in enumerate(cum.items()):
-        days_elapsed = i + 1
+    for ts, cum_val in cum.items():
+        # Use actual calendar days elapsed (not row index) to match the
+        # calendar-day-based incubation_days threshold.
+        days_elapsed = (ts - first_date).days + 1
         if days_elapsed >= incubation_days:
             reached_threshold = True
             target = expected_daily * days_elapsed * min_incubation_ratio
@@ -668,13 +671,16 @@ def _calc_quitting_status(
     peak_equity = 0.0
     current_equity = 0.0
     last_quit_equity_high = 0.0
+    first_date = oos_pnl.index[0]
 
-    for day_idx, (ts, daily_pnl) in enumerate(oos_pnl.items()):
+    for ts, daily_pnl in oos_pnl.items():
         current_equity += float(daily_pnl)
         if current_equity > peak_equity:
             peak_equity = current_equity
 
-        days_elapsed = day_idx + 1
+        # Use actual calendar days (not row index) for consistency with
+        # expected_daily rate which is calendar-day based.
+        days_elapsed = (ts - first_date).days + 1
 
         # Compute quit equity threshold
         if quitting_method == "Drawdown":
