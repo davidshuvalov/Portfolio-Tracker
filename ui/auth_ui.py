@@ -57,12 +57,11 @@ def render_auth_forms() -> None:
             else:
                 ok, msg = signup(email, password)
                 if ok:
-                    st.success(msg)
-                    if "logged in" not in msg.lower() and "account created" in msg.lower():
-                        st.rerun()
-                    elif "check your email" in msg.lower():
-                        pass  # Show message, no rerun needed
+                    if "check your email" in msg.lower():
+                        # Email confirmation required — show message, wait for user
+                        st.success(msg)
                     else:
+                        # Session created immediately — rerun to enter the app
                         st.rerun()
                 else:
                     st.error(f"Sign-up failed: {msg}")

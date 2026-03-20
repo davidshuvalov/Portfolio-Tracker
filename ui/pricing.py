@@ -11,6 +11,7 @@ Checkout flow:
 
 from __future__ import annotations
 
+import json
 import os
 
 import requests
@@ -125,9 +126,11 @@ def fetch_billing_portal_url() -> str | None:
 def js_redirect(url: str) -> None:
     """Redirect the browser to an external URL using a JS snippet."""
     # window.parent targets the top frame even when Streamlit is iframed
-    # (e.g. on Streamlit Community Cloud)
+    # (e.g. on Streamlit Community Cloud).
+    # json.dumps() safely encodes the URL so quotes/special chars can't
+    # break out of the JS string (XSS hardening).
     components.html(
-        f'<script>window.parent.location.href = "{url}";</script>',
+        f"<script>window.parent.location.href = {json.dumps(url)};</script>",
         height=0,
     )
 

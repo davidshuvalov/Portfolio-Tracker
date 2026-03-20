@@ -9,6 +9,7 @@ Session state keys used:
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
 import streamlit as st
@@ -53,6 +54,7 @@ def get_profile() -> Optional[dict]:
 
 def fetch_and_cache_profile() -> Optional[dict]:
     """Load the profile from Supabase and cache it in session state."""
+    _maybe_refresh_session()
     user = get_user()
     if not user:
         return None
@@ -82,6 +84,28 @@ def fetch_and_cache_profile() -> Optional[dict]:
 def invalidate_profile() -> None:
     """Force the profile to be re-fetched on the next access."""
     st.session_state.pop("_sb_profile", None)
+
+
+def _maybe_refresh_session() -> None:
+    """
+    Refresh the Supabase JWT if it has expired or expires within 60 seconds.
+    Without this, users silently hit a 401 error after ~1 hour and see the
+    'Could not load your account profile' screen until they manually log out.
+    """
+    s = _session()
+    if not s:
+        return
+    expires_at = getattr(s, "expires_at", None)
+    if expires_at is None or time.time() < expires_at - 60:
+        return  # Token still valid
+    try:
+        sb = get_supabase()
+        sb.auth.set_session(s.access_token, s.refresh_token)
+        refreshed = sb.auth.refresh_session()
+        if refreshed and refreshed.session:
+            _set_session(refreshed.session)
+    except Exception:
+        pass  # Let the caller surface the auth error naturally
 
 
 # ── Auth actions ──────────────────────────────────────────────────────────────
