@@ -1,6 +1,70 @@
 # Portfolio Tracker v2 — Task Board
 
-_Last updated: 2026-03-18_
+_Last updated: 2026-03-20_
+
+---
+
+## Sprint E: Remove Cloud File Storage, Keep Auth + Subscription — PLANNED
+
+### Goal
+Convert to a **local-only installation** model:
+- **Remove**: Supabase Storage CSV upload/download (the "File Upload" import mode)
+- **Keep**: Supabase auth (login/signup/logout), subscription checks via `profiles` table, and settings/strategy cloud sync via `user_settings` table
+
+Users install and run locally. On login, the app checks Supabase to verify an active subscription. Settings/strategies still sync to Supabase so the user can restore them on reinstall. No CSV files are ever uploaded.
+
+---
+
+### Files to Change
+
+#### E1 — `core/cloud_sync.py`
+- [ ] Remove `_STORAGE_BUCKET = "user-csv-data"` constant
+- [ ] Remove `_authed_storage()` helper (only used for CSV storage)
+- [ ] Remove `upload_csv()` function
+- [ ] Remove `list_user_csvs()` function
+- [ ] Remove `download_csv()` function
+- [ ] Remove `delete_csv()` function
+- [ ] Update module docstring (remove CSV storage references)
+- **Keep**: `_authed_postgrest()`, `save_settings_to_cloud()`, `load_settings_from_cloud()`, `save_strategies_to_cloud()`, `load_strategies_from_cloud()`
+
+#### E2 — `ui/pages/01_Import.py`
+- [ ] Remove `_uploads_to_strategy_folders()` function (entire function, lines 19–73)
+- [ ] Remove `_cloud_to_strategy_folders()` function (entire function, lines 76–123)
+- [ ] Remove `import tempfile` (no longer needed)
+- [ ] Remove "Import method" radio button (folder import is now the only mode)
+- [ ] Remove the entire "File Upload" `else` branch (cloud restore panel, `st.file_uploader`, cloud file management UI)
+- [ ] Remove the "⬆️ File Upload" branch in Section 3 (Import Data), including `_use_cloud_files`, `_has_cloud_files` logic
+- [ ] Update `tab_import` caption (remove "or upload files" reference)
+- [ ] Simplify Section 3 so it's always folder-mode (remove mode branching for import button / scan button)
+
+#### E3 — `supabase/schema.sql`
+- [ ] Remove the entire `user-csv-data` storage bucket section (comment block + 4 RLS `storage.objects` policies, lines 104–143)
+- **Note**: This is a reference schema file — no live Supabase changes needed by this PR, but keeps the file accurate for fresh installations
+
+#### E4 — Verify nothing else references CSV storage
+- [ ] Search codebase for `upload_csv`, `download_csv`, `list_user_csvs`, `delete_csv`, `_cloud_to_strategy_folders`, `_uploads_to_strategy_folders`, `upload_temp_dir`, `user-csv-data`, `_authed_storage`
+- [ ] Confirm `app.py` `_restore_cloud_settings()` is untouched (it only syncs settings/strategies — no CSV involvement)
+- [ ] Confirm `ui/pages/12_Settings.py` still works (it uses `st.file_uploader` for ZIP config import/export — that's fine, it's not cloud storage)
+
+---
+
+### What Is NOT Changing
+- `auth/supabase_client.py` — untouched
+- `auth/session.py` — untouched (login, logout, subscription checks)
+- `ui/auth_ui.py` — untouched
+- `ui/pricing.py` — untouched
+- `ui/plan_gate.py` — untouched
+- `backend/` — untouched (Stripe checkout/webhooks)
+- `app.py` — untouched (`_restore_cloud_settings` only does settings/strategies)
+- `supabase/schema.sql` `profiles` and `user_settings` tables — untouched
+
+---
+
+### Outcome
+- Local install: users point the app at local MultiWalk folders — no file upload needed
+- Auth and subscription gate work exactly as before via Supabase
+- Settings and strategy config still sync to/from cloud (so users can restore after reinstall)
+- No Supabase Storage bucket required — can be deleted from the Supabase dashboard
 
 ---
 
