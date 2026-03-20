@@ -4,14 +4,63 @@ Mirrors the VBA 'Retrieve Folder Data' + 'Import Data' + Strategy Configure work
 """
 
 import datetime
+import tempfile
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 
 from core.config import AppConfig
+from core.data_types import StrategyFolder
 from core.ingestion.folder_scanner import scan_folders, reconcile_statuses
 from core.ingestion.csv_importer import import_all
 from core.portfolio.strategies import load_strategies, save_strategies
+
+
+def _uploads_to_strategy_folders(uploaded_files) -> list[StrategyFolder]:
+    """
+    Convert Streamlit UploadedFile objects into StrategyFolder instances by
+    writing them to a per-session temp directory.
+
+    Naming convention (case-insensitive suffix matching):
+      "<Name> EquityData.csv"  → equity CSV for strategy <Name>
+      "<Name> TradeData.csv"   → trade CSV for strategy <Name>
+      Any other .csv           → treated as equity CSV; strategy name = filename stem
+    """
+    if "upload_temp_dir" not in st.session_state:
+        st.session_state.upload_temp_dir = tempfile.mkdtemp(prefix="pt_upload_")
+    temp_dir = Path(st.session_state.upload_temp_dir)
+
+    equity_files: dict[str, Path] = {}
+    trade_files: dict[str, Path] = {}
+
+    for uf in uploaded_files:
+        fname = uf.name
+        dest = temp_dir / fname
+        dest.write_bytes(uf.getvalue())
+
+        lower = fname.lower()
+        if lower.endswith(" equitydata.csv"):
+            strat_name = fname[: -len(" EquityData.csv")]
+            equity_files[strat_name] = dest
+        elif lower.endswith(" tradedata.csv"):
+            strat_name = fname[: -len(" TradeData.csv")]
+            trade_files[strat_name] = dest
+        else:
+            # Fallback: use the stem as the strategy name
+            strat_name = Path(fname).stem
+            equity_files[strat_name] = dest
+
+    return [
+        StrategyFolder(
+            name=name,
+            path=temp_dir,
+            equity_csv=equity_csv,
+            trade_csv=trade_files.get(name),
+            walkforward_csv=None,
+            base_folder=None,
+        )
+        for name, equity_csv in sorted(equity_files.items())
+    ]
 
 st.set_page_config(page_title="Import", layout="wide")
 st.title("Import")
@@ -26,83 +75,126 @@ tab_import, tab_configure = st.tabs(["📥 Import Data", "⚙ Configure Strategi
 # ══════════════════════════════════════════════════════════════════
 
 with tab_import:
-    st.caption("Steps 1 & 2 of 4 — add folders, then scan and load strategy CSV data.")
+    st.caption("Steps 1 & 2 of 4 — add folders (or upload files), then load strategy CSV data.")
 
-    # ─── Section 1: Base Folder Configuration ─────────────────────
-    st.subheader("MultiWalk Base Folders")
-    st.caption(
-        "Add the folders that contain your MultiWalk strategy subfolders. "
-        "Equivalent to Folder1–Folder10 and FolderBH in v1.24."
+    # ─── Import mode ───────────────────────────────────────────────
+    _import_mode = st.radio(
+        "Import method",
+        ["📁 Folder Import", "⬆️ File Upload"],
+        horizontal=True,
+        key="import_mode_radio",
+        help=(
+            "**Folder Import**: point the app at local MultiWalk directories (desktop / server).  \n"
+            "**File Upload**: upload CSV files directly — no server-side paths needed (Streamlit Cloud)."
+        ),
     )
+    _uploaded_files: list = []
 
-    _STATUS_OPTIONS = ["New", "Live", "Paper", "Pass", "Retired", "Buy&Hold"]
+    st.divider()
 
-    if config.folders:
-        _fdr_hdr = st.columns([5, 2, 1])
-        _fdr_hdr[0].caption("Folder path")
-        _fdr_hdr[1].caption("Default status for new strategies")
-        _fdr_hdr[2].caption("Remove")
-        for folder in config.folders:
-            exists = folder.exists()
-            icon = "✓" if exists else "✗"
-            colour = "green" if exists else "red"
-            _fc1, _fc2, _fc3 = st.columns([5, 2, 1])
-            with _fc1:
-                st.markdown(
-                    f":{colour}[{icon}] `{folder}`",
-                    help="Folder exists" if exists else "Folder not found on disk",
+    if _import_mode == "📁 Folder Import":
+        # ─── Section 1: Base Folder Configuration ─────────────────────
+        st.subheader("MultiWalk Base Folders")
+        st.caption(
+            "Add the folders that contain your MultiWalk strategy subfolders. "
+            "Equivalent to Folder1–Folder10 and FolderBH in v1.24."
+        )
+
+        _STATUS_OPTIONS = ["New", "Live", "Paper", "Pass", "Retired", "Buy&Hold"]
+
+        if config.folders:
+            _fdr_hdr = st.columns([5, 2, 1])
+            _fdr_hdr[0].caption("Folder path")
+            _fdr_hdr[1].caption("Default status for new strategies")
+            _fdr_hdr[2].caption("Remove")
+            for folder in config.folders:
+                exists = folder.exists()
+                icon = "✓" if exists else "✗"
+                colour = "green" if exists else "red"
+                _fc1, _fc2, _fc3 = st.columns([5, 2, 1])
+                with _fc1:
+                    st.markdown(
+                        f":{colour}[{icon}] `{folder}`",
+                        help="Folder exists" if exists else "Folder not found on disk",
+                    )
+                with _fc2:
+                    _cur_default = config.folder_default_status.get(str(folder), "New")
+                    _safe_idx = _STATUS_OPTIONS.index(_cur_default) if _cur_default in _STATUS_OPTIONS else 0
+                    _new_default = st.selectbox(
+                        "Default",
+                        _STATUS_OPTIONS,
+                        index=_safe_idx,
+                        key=f"folder_status_{folder}",
+                        label_visibility="collapsed",
+                        help="Status assigned to strategies from this folder when first discovered.",
+                    )
+                    if _new_default != _cur_default:
+                        config.set_folder_default_status(folder, _new_default)
+                        st.session_state.config = config
+                with _fc3:
+                    if st.button("✕", key=f"remove_{folder}", help=f"Remove {folder}"):
+                        config.remove_folder(folder)
+                        st.session_state.config = config
+                        st.rerun()
+        else:
+            st.info("No folders configured yet. Add a folder below.")
+
+        with st.form("add_folder_form", clear_on_submit=True):
+            _af1, _af2 = st.columns([4, 2])
+            with _af1:
+                new_folder = st.text_input(
+                    "Add folder path",
+                    placeholder=r"C:\MultiWalk\Strategies",
                 )
-            with _fc2:
-                _cur_default = config.folder_default_status.get(str(folder), "New")
-                _safe_idx = _STATUS_OPTIONS.index(_cur_default) if _cur_default in _STATUS_OPTIONS else 0
-                _new_default = st.selectbox(
-                    "Default",
+            with _af2:
+                new_folder_status = st.selectbox(
+                    "Default status",
                     _STATUS_OPTIONS,
-                    index=_safe_idx,
-                    key=f"folder_status_{folder}",
-                    label_visibility="collapsed",
-                    help="Status assigned to strategies from this folder when first discovered.",
+                    index=0,
+                    help="Status assigned to strategies found in this folder when they are first discovered.",
                 )
-                if _new_default != _cur_default:
-                    config.set_folder_default_status(folder, _new_default)
+            submitted = st.form_submit_button("Add Folder")
+            if submitted and new_folder:
+                p = Path(new_folder.strip())
+                if not p.exists():
+                    st.error(f"Folder not found: {p}")
+                elif p in config.folders:
+                    st.warning("Folder already in list.")
+                else:
+                    config.add_folder(p, default_status=new_folder_status)
                     st.session_state.config = config
-            with _fc3:
-                if st.button("✕", key=f"remove_{folder}", help=f"Remove {folder}"):
-                    config.remove_folder(folder)
-                    st.session_state.config = config
+                    st.success(f"Added: {p} (default status: **{new_folder_status}**)")
                     st.rerun()
+
+        if config.folders:
+            st.success("**Step 1 complete** — folders configured. Now scan and import data below.")
+
     else:
-        st.info("No folders configured yet. Add a folder below.")
-
-    with st.form("add_folder_form", clear_on_submit=True):
-        _af1, _af2 = st.columns([4, 2])
-        with _af1:
-            new_folder = st.text_input(
-                "Add folder path",
-                placeholder=r"C:\MultiWalk\Strategies",
+        # ─── Section 1 (upload mode): File Upload ─────────────────────
+        st.subheader("Upload CSV Files")
+        st.caption(
+            "Upload your MultiWalk `*EquityData.csv` and (optionally) `*TradeData.csv` files.  \n"
+            "Name files as `MyStrategy EquityData.csv` / `MyStrategy TradeData.csv` — "
+            "the strategy name is taken from the filename prefix."
+        )
+        _uploaded_files = st.file_uploader(
+            "Upload CSV files",
+            accept_multiple_files=True,
+            type=["csv"],
+            help=(
+                "Upload one or more `*EquityData.csv` files. "
+                "Optionally include matching `*TradeData.csv` files with the same name prefix."
+            ),
+        )
+        if _uploaded_files:
+            _eq_count = sum(1 for f in _uploaded_files if "equitydata" in f.name.lower())
+            _tr_count = sum(1 for f in _uploaded_files if "tradedata" in f.name.lower())
+            _other = len(_uploaded_files) - _eq_count - _tr_count
+            st.success(
+                f"**{len(_uploaded_files)}** file(s) ready — "
+                f"{_eq_count} EquityData, {_tr_count} TradeData"
+                + (f", {_other} other (treated as equity)" if _other else "") + "."
             )
-        with _af2:
-            new_folder_status = st.selectbox(
-                "Default status",
-                _STATUS_OPTIONS,
-                index=0,
-                help="Status assigned to strategies found in this folder when they are first discovered.",
-            )
-        submitted = st.form_submit_button("Add Folder")
-        if submitted and new_folder:
-            p = Path(new_folder.strip())
-            if not p.exists():
-                st.error(f"Folder not found: {p}")
-            elif p in config.folders:
-                st.warning("Folder already in list.")
-            else:
-                config.add_folder(p, default_status=new_folder_status)
-                st.session_state.config = config
-                st.success(f"Added: {p} (default status: **{new_folder_status}**)")
-                st.rerun()
-
-    if config.folders:
-        st.success("**Step 1 complete** — folders configured. Now scan and import data below.")
 
     st.divider()
 
@@ -143,22 +235,32 @@ with tab_import:
     st.divider()
 
     # ─── Section 3: Scan & Import ──────────────────────────────────
-    st.subheader("Scan & Import")
+    st.subheader("Import Data")
 
-    if not config.folders:
-        st.warning("Add at least one base folder above before scanning.")
-        st.stop()
+    if _import_mode == "📁 Folder Import":
+        if not config.folders:
+            st.warning("Add at least one base folder above before scanning.")
+            st.stop()
 
-    col_scan, col_import, _ = st.columns([1, 1, 4])
-    with col_scan:
-        scan_clicked = st.button("Scan Folders", use_container_width=True)
-    with col_import:
-        import_clicked = st.button(
-            "Import Data",
-            type="primary",
-            use_container_width=True,
-            disabled=not bool(config.folders),
-        )
+        col_scan, col_import, _ = st.columns([1, 1, 4])
+        with col_scan:
+            scan_clicked = st.button("Scan Folders", use_container_width=True)
+        with col_import:
+            import_clicked = st.button(
+                "Import Data",
+                type="primary",
+                use_container_width=True,
+                disabled=not bool(config.folders),
+            )
+    else:
+        scan_clicked = False
+        if not _uploaded_files:
+            st.warning("Upload at least one EquityData.csv file above before importing.")
+            st.stop()
+
+        col_import, _ = st.columns([1, 5])
+        with col_import:
+            import_clicked = st.button("Import Data", type="primary", use_container_width=True)
 
     if scan_clicked:
         with st.spinner("Scanning folders..."):
@@ -218,17 +320,20 @@ with tab_import:
             st.warning("No strategies found. Check your folder paths.")
 
     if import_clicked:
-        if st.session_state.get("scan_result") is None:
-            with st.spinner("Scanning folders…"):
-                _auto = scan_folders(config.folders)
-            st.session_state.scan_result = _auto
-        result = st.session_state.scan_result
-
         cutoff = None
         if use_cutoff and cutoff_date:
             cutoff = cutoff_date if isinstance(cutoff_date, datetime.date) else None
 
-        n_strats_to_import = len(result.strategies)
+        if _import_mode == "📁 Folder Import":
+            if st.session_state.get("scan_result") is None:
+                with st.spinner("Scanning folders…"):
+                    _auto = scan_folders(config.folders)
+                st.session_state.scan_result = _auto
+            _strategy_folders = st.session_state.scan_result.strategies
+        else:
+            _strategy_folders = _uploads_to_strategy_folders(_uploaded_files)
+
+        n_strats_to_import = len(_strategy_folders)
         progress = st.progress(0, text=f"Importing 0 / {n_strats_to_import} strategies…")
         status_text = st.empty()
 
@@ -238,7 +343,7 @@ with tab_import:
 
         try:
             imported, warnings = import_all(
-                result.strategies,
+                _strategy_folders,
                 date_format=config.date_format,
                 use_cutoff=use_cutoff,
                 cutoff_date=cutoff,
@@ -264,12 +369,10 @@ with tab_import:
 
             _actual_names = set(imported.strategy_names)
             _post_configured = load_strategies()
-            _scan_result = st.session_state.get("scan_result")
-            _sf_list = _scan_result.strategies if _scan_result else []
             _post_reconciled = reconcile_statuses(
                 _actual_names,
                 _post_configured,
-                strategy_folders=_sf_list,
+                strategy_folders=_strategy_folders,
                 folder_default_status=config.folder_default_status,
             )
             save_strategies(_post_reconciled)
