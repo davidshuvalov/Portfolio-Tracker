@@ -291,13 +291,21 @@ class AppConfig(BaseModel):
         return cls.model_validate(data)
 
     def save(self) -> None:
-        """Persist current config to the user config file."""
+        """Persist current config to the local YAML file and sync to cloud if logged in."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         data = self.model_dump(mode="json")
         # Convert Path objects to strings for YAML serialisation
         data["folders"] = [str(p) for p in self.folders]
         with open(USER_CONFIG_FILE, "w") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        # Best-effort cloud sync — never raises
+        try:
+            import streamlit as st
+            if st.session_state.get("_sb_session"):
+                from core.cloud_sync import save_settings_to_cloud
+                save_settings_to_cloud(data)
+        except Exception:
+            pass
 
     def add_folder(self, folder: Path, default_status: str = "New") -> None:
         if folder not in self.folders:
