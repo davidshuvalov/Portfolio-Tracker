@@ -56,8 +56,14 @@ def fetch_and_cache_profile() -> Optional[dict]:
     user = get_user()
     if not user:
         return None
+    access_token = get_access_token()
     try:
         sb = get_supabase()
+        # Set the user's JWT so RLS (auth.uid() = user_id) allows the read.
+        # get_supabase() returns a fresh anon client each time, so we must
+        # explicitly attach the session token before making PostgREST calls.
+        if access_token:
+            sb.postgrest.auth(access_token)
         result = (
             sb.table("profiles")
             .select("*")
