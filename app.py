@@ -107,6 +107,20 @@ def _auth_gate() -> bool:
     if get_profile() is None:
         fetch_and_cache_profile()
 
+    # ── Profile fetch failed (network error, missing row, etc.) ──────────────
+    if get_profile() is None:
+        render_logo()
+        st.error(
+            "Could not load your account profile. "
+            "This can happen if your subscription is still being activated or there is a temporary connection issue."
+        )
+        if st.button("Retry", type="primary"):
+            st.rerun()
+        from auth.session import logout as _logout
+        if st.button("Log out", type="secondary"):
+            _logout()
+        return False
+
     # ── Logged in but no active subscription → show pricing ──────────────────
     if not is_subscribed():
         _show_subscribe_page()
