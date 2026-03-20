@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from auth.session import login, signup
+from auth.session import login, signup, reset_password
 
 
 def render_auth_forms() -> None:
@@ -25,6 +25,18 @@ def render_auth_forms() -> None:
                 st.error("Please enter your email and password.")
             elif login(email, password):
                 st.rerun()
+
+        with st.expander("Forgot your password?"):
+            reset_email = st.text_input("Enter your account email", placeholder="you@example.com", key="reset_email")
+            if st.button("Send Reset Link", use_container_width=True):
+                if not reset_email:
+                    st.error("Please enter your email address.")
+                else:
+                    ok, msg = reset_password(reset_email)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(f"Reset failed: {msg}")
 
     with tab_signup:
         with st.form("pt_signup_form", clear_on_submit=True):
