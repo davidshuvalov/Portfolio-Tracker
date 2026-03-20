@@ -72,15 +72,19 @@ def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
+_TIMEOUT = 40  # Render.com free tier can take up to ~30 s to cold-start
+
+
 def fetch_checkout_url(plan: str) -> str | None:
     """Call the backend to create a Stripe Checkout session. Returns the URL."""
     try:
-        r = requests.post(
-            f"{BACKEND_URL}/api/create-checkout-session",
-            json={"plan": plan},
-            headers=_auth_headers(),
-            timeout=10,
-        )
+        with st.spinner("Connecting to payment server — this may take a moment on first load…"):
+            r = requests.post(
+                f"{BACKEND_URL}/api/create-checkout-session",
+                json={"plan": plan},
+                headers=_auth_headers(),
+                timeout=_TIMEOUT,
+            )
         if r.ok:
             return r.json()["url"]
         st.error(f"Could not start checkout: {r.json().get('detail', r.text)}")
@@ -92,11 +96,12 @@ def fetch_checkout_url(plan: str) -> str | None:
 def fetch_billing_portal_url() -> str | None:
     """Call the backend to create a Stripe Billing Portal session. Returns the URL."""
     try:
-        r = requests.post(
-            f"{BACKEND_URL}/api/create-billing-portal-session",
-            headers=_auth_headers(),
-            timeout=10,
-        )
+        with st.spinner("Connecting to payment server — this may take a moment on first load…"):
+            r = requests.post(
+                f"{BACKEND_URL}/api/create-billing-portal-session",
+                headers=_auth_headers(),
+                timeout=_TIMEOUT,
+            )
         if r.ok:
             return r.json()["url"]
         st.error(f"Could not open billing portal: {r.json().get('detail', r.text)}")
