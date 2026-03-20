@@ -71,9 +71,10 @@ Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Fil
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Remove any Streamlit cache / numba cache left behind
+; Remove Streamlit cache, numba JIT cache, and app data left behind
 Type: filesandordirs; Name: "{localappdata}\portfolio-tracker"
 Type: filesandordirs; Name: "{localappdata}\streamlit"
+Type: filesandordirs; Name: "{localappdata}\numba_cache"
 
 [Code]
 // ─── Pre-install: warn if old version is running ────────────────────────────
@@ -90,4 +91,37 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   // Nothing extra needed — the app opens the browser automatically on launch
+end;
+
+// ─── Pre-uninstall: kill any running instance ───────────────────────────────
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('taskkill', '/F /IM PortfolioTracker.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// ─── Uninstall step: optionally remove user settings ────────────────────────
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  UserDataPath: String;
+  MsgResult: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    UserDataPath := ExpandConstant('{%USERPROFILE%}\.portfolio_tracker');
+    if DirExists(UserDataPath) then
+    begin
+      MsgResult := MsgBox(
+        'Do you want to delete your Portfolio Tracker settings and configuration?' + #13#10 +
+        '(Saved folder paths, analytics settings, and preferences.)' + #13#10 + #13#10 +
+        'Click Yes to remove everything — recommended for a clean uninstall.' + #13#10 +
+        'Click No to keep your settings — useful if you plan to reinstall.',
+        mbConfirmation, MB_YESNO
+      );
+      if MsgResult = IDYES then
+        DelTree(UserDataPath, True, True, True);
+    end;
+  end;
 end;
