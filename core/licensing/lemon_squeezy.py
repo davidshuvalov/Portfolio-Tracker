@@ -15,6 +15,9 @@ License key format (Lemon Squeezy default): XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
 
 from __future__ import annotations
 
+import base64
+import getpass
+import hashlib
 import json
 import re
 import socket
@@ -22,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
+from cryptography.fernet import Fernet, InvalidToken
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -184,10 +188,24 @@ def _validate_online(key: str, instance_id: str) -> tuple[bool, str]:
 
 # ── Cache helpers ──────────────────────────────────────────────────────────────
 
+def _get_fernet() -> Fernet:
+    """Derive a stable, machine-specific Fernet key from hostname + username."""
+    machine_id = f"portfolio-tracker:{socket.gethostname()}:{getpass.getuser()}"
+    key_bytes = hashlib.sha256(machine_id.encode()).digest()  # 32 bytes
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
 def _load_cache() -> dict:
     try:
         if _CACHE_FILE.exists():
-            return json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+            raw = _CACHE_FILE.read_bytes()
+            try:
+                # Try decrypted read first
+                plaintext = _get_fernet().decrypt(raw)
+                return json.loads(plaintext)
+            except (InvalidToken, Exception):
+                # Fallback: plaintext cache from before encryption was added
+                return json.loads(raw.decode("utf-8"))
     except Exception:
         pass
     return {}
@@ -196,7 +214,8 @@ def _load_cache() -> dict:
 def _save_cache(data: dict) -> None:
     try:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        ciphertext = _get_fernet().encrypt(json.dumps(data).encode("utf-8"))
+        _CACHE_FILE.write_bytes(ciphertext)
     except Exception:
         pass
 
