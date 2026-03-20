@@ -113,6 +113,16 @@ def signup(email: str, password: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def reset_password(email: str) -> tuple[bool, str]:
+    """Send a password reset email via Supabase. Returns (success, message)."""
+    try:
+        sb = get_supabase()
+        sb.auth.reset_password_email(email)
+        return True, "Password reset email sent. Check your inbox."
+    except Exception as exc:
+        return False, str(exc)
+
+
 def logout() -> None:
     try:
         sb = get_supabase()
