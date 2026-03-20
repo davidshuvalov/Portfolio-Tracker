@@ -72,3 +72,71 @@ create index if not exists profiles_stripe_customer_id_idx
 
 create index if not exists profiles_subscription_status_idx
     on public.profiles (subscription_status);
+
+
+-- ============================================================
+-- Per-user app settings (app config + strategy configuration)
+-- ============================================================
+
+create table if not exists public.user_settings (
+    user_id         uuid references auth.users(id) on delete cascade primary key,
+    settings_json   jsonb not null default '{}'::jsonb,
+    -- Full AppConfig serialised as JSON (folders, date_format, portfolio params, etc.)
+    strategies_json jsonb not null default '[]'::jsonb,
+    -- List of strategy config dicts (name, status, contracts, symbol, sector, …)
+    updated_at      timestamptz not null default now()
+);
+
+alter table public.user_settings enable row level security;
+
+-- Users can read and write only their own settings row
+create policy "Users can manage own settings"
+    on public.user_settings for all
+    using  (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
+
+drop trigger if exists set_user_settings_updated_at on public.user_settings;
+create trigger set_user_settings_updated_at
+    before update on public.user_settings
+    for each row execute procedure public.set_updated_at();
+
+
+-- ============================================================
+-- Supabase Storage: per-user CSV file storage
+--
+-- Bucket "user-csv-data" must be created in the Supabase
+-- dashboard (Storage → New bucket, name = user-csv-data,
+-- Public = off).  Then run these RLS policies.
+-- ============================================================
+
+-- Files are stored at the path  <user_id>/<filename>.csv
+-- The RLS policies below use storage.foldername() to extract
+-- the first path segment and compare it to auth.uid().
+
+create policy "Users can upload own CSV files"
+    on storage.objects for insert
+    with check (
+        bucket_id = 'user-csv-data'
+        and auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+create policy "Users can read own CSV files"
+    on storage.objects for select
+    using (
+        bucket_id = 'user-csv-data'
+        and auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+create policy "Users can update own CSV files"
+    on storage.objects for update
+    using (
+        bucket_id = 'user-csv-data'
+        and auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+create policy "Users can delete own CSV files"
+    on storage.objects for delete
+    using (
+        bucket_id = 'user-csv-data'
+        and auth.uid()::text = (storage.foldername(name))[1]
+    );

@@ -164,6 +164,42 @@ def _show_subscribe_page() -> None:
         logout()
 
 
+# ── Cloud settings restore ────────────────────────────────────────────────────
+def _restore_cloud_settings() -> None:
+    """
+    Pull this user's settings and strategy config from Supabase and apply them
+    for the current session.  Runs once per login session (guarded by the
+    '_cloud_restored' session-state flag).
+
+    On success the local YAML files are also updated so that AppConfig.load()
+    and load_strategies() remain consistent for the rest of the session.
+    """
+    if st.session_state.get("_cloud_restored"):
+        return
+
+    st.session_state["_cloud_restored"] = True   # set early to avoid re-entry
+
+    try:
+        from core.cloud_sync import load_settings_from_cloud, load_strategies_from_cloud
+        from core.config import AppConfig, USER_CONFIG_FILE, CONFIG_DIR
+        from core.portfolio.strategies import save_strategies
+        import yaml
+
+        cloud_cfg = load_settings_from_cloud()
+        if cloud_cfg:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(USER_CONFIG_FILE, "w") as f:
+                yaml.dump(cloud_cfg, f, default_flow_style=False, sort_keys=False)
+            st.session_state.config = AppConfig.load()
+
+        cloud_strats = load_strategies_from_cloud()
+        if cloud_strats is not None:
+            save_strategies(cloud_strats)
+
+    except Exception:
+        pass  # Never block the app on a sync failure
+
+
 # ── Step card renderer ────────────────────────────────────────────────────────
 def _step_card(
     col,
@@ -441,6 +477,9 @@ def main():
 
     if not _auth_gate():
         return
+
+    # ── Restore cloud settings once per session ───────────────────────────────
+    _restore_cloud_settings()
 
     from ui.workflow import render_workflow_sidebar
     from auth.session import get_user, logout

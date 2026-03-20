@@ -19,7 +19,8 @@ from core.portfolio.strategies import load_strategies, save_strategies
 def _uploads_to_strategy_folders(uploaded_files) -> list[StrategyFolder]:
     """
     Convert Streamlit UploadedFile objects into StrategyFolder instances by
-    writing them to a per-session temp directory.
+    writing them to a per-session temp directory.  Also uploads each file to
+    Supabase Storage (best-effort) so the user never needs to re-upload.
 
     Naming convention (case-insensitive suffix matching):
       "<Name> EquityData.csv"  → equity CSV for strategy <Name>
@@ -33,10 +34,20 @@ def _uploads_to_strategy_folders(uploaded_files) -> list[StrategyFolder]:
     equity_files: dict[str, Path] = {}
     trade_files: dict[str, Path] = {}
 
+    try:
+        from core.cloud_sync import upload_csv as _cloud_upload
+        _do_cloud = True
+    except Exception:
+        _do_cloud = False
+
     for uf in uploaded_files:
         fname = uf.name
+        data = uf.getvalue()
         dest = temp_dir / fname
-        dest.write_bytes(uf.getvalue())
+        dest.write_bytes(data)
+
+        if _do_cloud:
+            _cloud_upload(fname, data)   # best-effort, silently ignored on failure
 
         lower = fname.lower()
         if lower.endswith(" equitydata.csv"):
@@ -46,7 +57,56 @@ def _uploads_to_strategy_folders(uploaded_files) -> list[StrategyFolder]:
             strat_name = fname[: -len(" TradeData.csv")]
             trade_files[strat_name] = dest
         else:
-            # Fallback: use the stem as the strategy name
+            strat_name = Path(fname).stem
+            equity_files[strat_name] = dest
+
+    return [
+        StrategyFolder(
+            name=name,
+            path=temp_dir,
+            equity_csv=equity_csv,
+            trade_csv=trade_files.get(name),
+            walkforward_csv=None,
+            base_folder=None,
+        )
+        for name, equity_csv in sorted(equity_files.items())
+    ]
+
+
+def _cloud_to_strategy_folders() -> list[StrategyFolder]:
+    """
+    Download all CSV files from the current user's Supabase Storage folder,
+    write them to a temp directory, and return StrategyFolder instances.
+    Returns an empty list if not logged in or on any error.
+    """
+    from core.cloud_sync import list_user_csvs, download_csv
+
+    file_names = list_user_csvs()
+    if not file_names:
+        return []
+
+    if "upload_temp_dir" not in st.session_state:
+        st.session_state.upload_temp_dir = tempfile.mkdtemp(prefix="pt_upload_")
+    temp_dir = Path(st.session_state.upload_temp_dir)
+
+    equity_files: dict[str, Path] = {}
+    trade_files: dict[str, Path] = {}
+
+    for fname in file_names:
+        data = download_csv(fname)
+        if data is None:
+            continue
+        dest = temp_dir / fname
+        dest.write_bytes(data)
+
+        lower = fname.lower()
+        if lower.endswith(" equitydata.csv"):
+            strat_name = fname[: -len(" EquityData.csv")]
+            equity_files[strat_name] = dest
+        elif lower.endswith(" tradedata.csv"):
+            strat_name = fname[: -len(" TradeData.csv")]
+            trade_files[strat_name] = dest
+        else:
             strat_name = Path(fname).stem
             equity_files[strat_name] = dest
 
@@ -172,10 +232,48 @@ with tab_import:
     else:
         # ─── Section 1 (upload mode): File Upload ─────────────────────
         st.subheader("Upload CSV Files")
+
+        # ── Cloud restore ──────────────────────────────────────────────
+        # If the user has previously uploaded files they are stored in
+        # Supabase Storage.  Show a "restore" panel so they don't have
+        # to re-upload every session.
+        try:
+            from core.cloud_sync import list_user_csvs
+            _cloud_files = list_user_csvs()
+        except Exception:
+            _cloud_files = []
+
+        if _cloud_files:
+            _eq_saved = sum(1 for f in _cloud_files if "equitydata" in f.lower())
+            _tr_saved = sum(1 for f in _cloud_files if "tradedata" in f.lower())
+            st.info(
+                f"**{len(_cloud_files)} file(s) saved in your cloud storage** — "
+                f"{_eq_saved} EquityData, {_tr_saved} TradeData.  \n"
+                "Click **Import from Cloud** below to load them without re-uploading."
+            )
+            _c1, _c2 = st.columns([2, 5])
+            with _c1:
+                if st.button("🔄 Import from Cloud", use_container_width=True):
+                    st.session_state["_use_cloud_files"] = True
+            with _c2:
+                with st.expander("Manage cloud files"):
+                    for _cf in sorted(_cloud_files):
+                        _col_name, _col_del = st.columns([5, 1])
+                        _col_name.caption(_cf)
+                        if _col_del.button("✕", key=f"del_cloud_{_cf}", help=f"Delete {_cf}"):
+                            try:
+                                from core.cloud_sync import delete_csv
+                                delete_csv(_cf)
+                                st.rerun()
+                            except Exception:
+                                st.error("Could not delete file.")
+            st.divider()
+
         st.caption(
             "Upload your MultiWalk `*EquityData.csv` and (optionally) `*TradeData.csv` files.  \n"
             "Name files as `MyStrategy EquityData.csv` / `MyStrategy TradeData.csv` — "
-            "the strategy name is taken from the filename prefix."
+            "the strategy name is taken from the filename prefix.  \n"
+            "Uploaded files are saved to your cloud storage so you never need to re-upload."
         )
         _uploaded_files = st.file_uploader(
             "Upload CSV files",
@@ -254,13 +352,18 @@ with tab_import:
             )
     else:
         scan_clicked = False
-        if not _uploaded_files:
-            st.warning("Upload at least one EquityData.csv file above before importing.")
+        _has_cloud_files = st.session_state.get("_use_cloud_files", False)
+        if not _uploaded_files and not _has_cloud_files:
+            st.warning("Upload CSV files above or click **Import from Cloud** to use saved files.")
             st.stop()
 
         col_import, _ = st.columns([1, 5])
         with col_import:
             import_clicked = st.button("Import Data", type="primary", use_container_width=True)
+        # If "Import from Cloud" was clicked it sets _use_cloud_files and triggers a
+        # rerun; the import fires automatically on that rerun.
+        if _has_cloud_files and not import_clicked:
+            import_clicked = True
 
     if scan_clicked:
         with st.spinner("Scanning folders..."):
@@ -330,6 +433,12 @@ with tab_import:
                     _auto = scan_folders(config.folders)
                 st.session_state.scan_result = _auto
             _strategy_folders = st.session_state.scan_result.strategies
+        elif st.session_state.pop("_use_cloud_files", False):
+            with st.spinner("Downloading files from cloud storage…"):
+                _strategy_folders = _cloud_to_strategy_folders()
+            if not _strategy_folders:
+                st.error("No files found in cloud storage. Upload files below.")
+                st.stop()
         else:
             _strategy_folders = _uploads_to_strategy_folders(_uploaded_files)
 
