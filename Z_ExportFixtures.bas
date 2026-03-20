@@ -10,7 +10,7 @@ Option Explicit
 ' Output folder: Desktop\pt_fixtures\
 ' ============================================================
 
-Public Sub ExportGoldenDataset()
+Public Sub ExportGoldenDataset(Optional Silent As Boolean = False)
 
     Dim exportPath As String
     exportPath = Environ("USERPROFILE") & "\Desktop\pt_fixtures\"
@@ -96,11 +96,13 @@ NextSheet:
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
 
-    MsgBox "Export complete!" & vbCrLf & vbCrLf & _
-           "Exported: " & exported & " sheets" & vbCrLf & _
-           "Skipped:  " & skipped & " sheets (not found or error)" & vbCrLf & vbCrLf & _
-           "Output folder:" & vbCrLf & exportPath & vbCrLf & vbCrLf & _
-           "Copy this folder to:" & vbCrLf & "  tests\fixtures\sample_data\", _
-           vbInformation, "Golden Dataset Export"
+    If Not Silent Then
+        MsgBox "Export complete!" & vbCrLf & vbCrLf & _
+               "Exported: " & exported & " sheets" & vbCrLf & _
+               "Skipped:  " & skipped & " sheets (not found or error)" & vbCrLf & vbCrLf & _
+               "Output folder:" & vbCrLf & exportPath & vbCrLf & vbCrLf & _
+               "Copy this folder to:" & vbCrLf & "  tests\fixtures\sample_data\", _
+               vbInformation, "Golden Dataset Export"
+    End If
 
 End Sub
