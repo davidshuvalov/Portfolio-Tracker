@@ -62,10 +62,11 @@ def fetch_and_cache_profile() -> Optional[dict]:
             sb.table("profiles")
             .select("*")
             .eq("user_id", user.id)
-            .single()
+            .maybe_single()
             .execute()
         )
-        profile = result.data or {}
+        # result.data is None when no profile row exists yet (new / unsubscribed user)
+        profile = result.data if result.data is not None else {}
         st.session_state["_sb_profile"] = profile
         return profile
     except Exception:
