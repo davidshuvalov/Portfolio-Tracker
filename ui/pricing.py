@@ -87,7 +87,13 @@ def fetch_checkout_url(plan: str) -> str | None:
             )
         if r.ok:
             return r.json()["url"]
-        st.error(f"Could not start checkout: {r.json().get('detail', r.text)}")
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text or f"HTTP {r.status_code}"
+        st.error(f"Could not start checkout: {detail}")
+    except requests.exceptions.Timeout:
+        st.error("Payment server timed out. It may be starting up — please try again in a moment.")
     except Exception as exc:
         st.error(f"Backend unreachable: {exc}")
     return None
@@ -104,7 +110,13 @@ def fetch_billing_portal_url() -> str | None:
             )
         if r.ok:
             return r.json()["url"]
-        st.error(f"Could not open billing portal: {r.json().get('detail', r.text)}")
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text or f"HTTP {r.status_code}"
+        st.error(f"Could not open billing portal: {detail}")
+    except requests.exceptions.Timeout:
+        st.error("Payment server timed out. It may be starting up — please try again in a moment.")
     except Exception as exc:
         st.error(f"Backend unreachable: {exc}")
     return None
