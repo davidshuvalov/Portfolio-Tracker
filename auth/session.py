@@ -8,6 +8,7 @@ Session state keys used:
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import streamlit as st
@@ -117,8 +118,33 @@ def reset_password(email: str) -> tuple[bool, str]:
     """Send a password reset email via Supabase. Returns (success, message)."""
     try:
         sb = get_supabase()
-        sb.auth.reset_password_email(email)
+        app_url = st.secrets.get("APP_URL", "") or os.getenv("APP_URL", "")
+        options = {"redirect_to": app_url} if app_url else {}
+        sb.auth.reset_password_email(email, options)
         return True, "Password reset email sent. Check your inbox."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def exchange_recovery_code(code: str) -> bool:
+    """Exchange a PKCE recovery code for a session. Returns True on success."""
+    try:
+        sb = get_supabase()
+        response = sb.auth.exchange_code_for_session(code)
+        if response.session:
+            _set_session(response.session)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def update_password(new_password: str) -> tuple[bool, str]:
+    """Update the current user's password. Returns (success, message)."""
+    try:
+        sb = get_supabase()
+        sb.auth.update_user({"password": new_password})
+        return True, "Password updated successfully."
     except Exception as exc:
         return False, str(exc)
 

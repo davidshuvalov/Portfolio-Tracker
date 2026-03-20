@@ -35,6 +35,54 @@ if "portfolio_data" not in st.session_state:
     st.session_state.portfolio_data = None
 
 
+# ── Password recovery handler ─────────────────────────────────────────────────
+
+def _handle_password_recovery() -> bool:
+    """
+    If a PKCE recovery code is present in query params, show the set-new-password
+    form. Returns True if the recovery flow was handled (caller should return).
+    """
+    from auth.session import exchange_recovery_code, is_logged_in, update_password, logout
+
+    code = st.query_params.get("code")
+    if not code:
+        return False
+
+    render_logo()
+    st.markdown("## Set New Password")
+
+    # Exchange the one-time code for a session (only needed once)
+    if not is_logged_in():
+        if not exchange_recovery_code(code):
+            st.error("This reset link is invalid or has expired. Please request a new one.")
+            if st.button("Back to Login"):
+                st.query_params.clear()
+                st.rerun()
+            return True
+        # Clear the code from the URL now that we have a session
+        st.query_params.clear()
+
+    with st.form("reset_password_form"):
+        new_password = st.text_input("New Password (min 8 chars)", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        submitted = st.form_submit_button("Update Password", type="primary", use_container_width=True)
+
+    if submitted:
+        if len(new_password) < 8:
+            st.error("Password must be at least 8 characters.")
+        elif new_password != confirm_password:
+            st.error("Passwords do not match.")
+        else:
+            ok, msg = update_password(new_password)
+            if ok:
+                st.success(msg + " You can now log in.")
+                logout()
+            else:
+                st.error(f"Failed to update password: {msg}")
+
+    return True
+
+
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 def _auth_gate() -> bool:
     """
@@ -373,6 +421,9 @@ def main():
         ],
         position="hidden",
     )
+
+    if _handle_password_recovery():
+        return
 
     if not _auth_gate():
         return
